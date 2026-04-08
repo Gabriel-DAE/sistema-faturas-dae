@@ -21,9 +21,6 @@ esconder_botoes = """
     
     /* Oculta o botão de "Deploy" se ele estiver aparecendo */
     .stAppDeployButton {display:none;}
-    
-    /* Oculta o cabeçalho decorativo padrão do Streamlit (opcional, deixa a tela mais limpa) */
-    header {visibility: hidden;}
     </style>
 """
 st.markdown(esconder_botoes, unsafe_allow_html=True)

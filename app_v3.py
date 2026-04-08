@@ -111,7 +111,8 @@ inicializar_banco()
 @st.cache_data(show_spinner="Carregando e processando banco de dados...")
 def carregar_dados():
     # Usando SQLAlchemy para facilitar a vida do Pandas ao ler do Postgres
-    engine = create_engine(DATABASE_URL)
+    url_sqlalchemy = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://")
+    engine = create_engine(url_sqlalchemy)
     df = pd.read_sql_query("SELECT * FROM faturas_cpfl", engine)
     
     if df.empty:

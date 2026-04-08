@@ -10,6 +10,24 @@ from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 
 st.set_page_config(page_title="Gestão de Energia - DAE", layout="wide", page_icon="⚡")
 
+# --- OCULTAR ELEMENTOS PADRÃO DO STREAMLIT ---
+esconder_botoes = """
+    <style>
+    /* Oculta o menu hambúrguer no canto superior direito */
+    #MainMenu {visibility: hidden;}
+    
+    /* Oculta o rodapé "Made with Streamlit" */
+    footer {visibility: hidden;}
+    
+    /* Oculta o botão de "Deploy" se ele estiver aparecendo */
+    .stAppDeployButton {display:none;}
+    
+    /* Oculta o cabeçalho decorativo padrão do Streamlit (opcional, deixa a tela mais limpa) */
+    header {visibility: hidden;}
+    </style>
+"""
+st.markdown(esconder_botoes, unsafe_allow_html=True)
+
 # --- CONEXÃO SEGURA COM O BANCO DE DADOS ---
 # Se for rodar localmente antes de por na nuvem, crie uma pasta .streamlit e um arquivo secrets.toml
 try:

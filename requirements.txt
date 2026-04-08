@@ -3,3 +3,5 @@ pandas
 pdfplumber
 streamlit-aggrid
 openpyxl
+psycopg[binary]
+SQLAlchemy

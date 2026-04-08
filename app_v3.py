@@ -34,7 +34,7 @@ except FileNotFoundError:
     st.stop()
 
 def obter_conexao():
-    return psycopg.connect(DATABASE_URL, autocommit=True)
+    return psycopg.connect(DATABASE_URL, autocommit=True, prepare_threshold=None)
 
 # --- CABEÇALHO COM LOGOTIPO ---
 col_logo, col_titulo, _ = st.columns([0.6, 5, 1])

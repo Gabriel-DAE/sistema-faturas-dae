@@ -37,7 +37,7 @@ except FileNotFoundError:
     st.stop()
 
 def obter_conexao():
-    return psycopg.connect(DATABASE_URL)
+    return psycopg.connect(DATABASE_URL, autocommit=True)
 
 # --- CABEÇALHO COM LOGOTIPO ---
 col_logo, col_titulo, _ = st.columns([0.6, 5, 1])
@@ -117,7 +117,6 @@ def inicializar_banco():
         ) ON CONFLICT (mes_referencia, classificacao) DO NOTHING;
     ''')
     
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_faturas_id ON faturas_cpfl (id);")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_faturas_uc_mes ON faturas_cpfl (unidade_consumidora, mes_referencia);")
     
     conexao.commit()

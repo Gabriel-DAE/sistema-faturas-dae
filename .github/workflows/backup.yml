@@ -1,0 +1,29 @@
+name: Rotina de Backup Semanal
+on:
+  schedule:
+    # Este código "cron" define o horário (ex: Todo domingo às 03:00 UTC)
+    - cron: '0 3 * * 0'
+  workflow_dispatch: # Permite que você rode o backup manualmente pelo site do GitHub
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar código do repositório
+        uses: actions/checkout@v3
+
+      - name: Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: Instalar dependências
+        run: pip install psycopg[binary] pandas openpyxl
+
+      - name: Executar Script de Backup
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          EMAIL_SENDER: ${{ secrets.EMAIL_SENDER }}
+          EMAIL_PASSWORD: ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_RECEIVER: ${{ secrets.EMAIL_RECEIVER }}
+        run: python backup_diario.py

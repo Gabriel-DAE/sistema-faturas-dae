@@ -545,42 +545,41 @@ def calcular_faturamento(uc, mes, q_c_p, q_c_fp, q_d_reg_p, q_d_reg_fp, q_r_p, q
 aba_dash, aba_dados, aba_pdf, aba_manual, aba_config = st.tabs(["📈 Dashboard", "📊 Banco de Dados", "📄 Upload PDF", "✍️ Cadastro Manual", "⚙️ Configurações"])
 
 # ==========================================
-# ABA DASHBOARD: GRÁFICOS E INTERAÇÃO CRUZADA
+# ABA DASHBOARD: BI AVANÇADO E FILTRO MÚLTIPLO
 # ==========================================
 with aba_dash:
     df_dash = carregar_dados()
     
     if not df_dash.empty:
         st.markdown("### ⚡ Business Intelligence - Consumo DAE")
-        st.info("💡 Clique em qualquer gráfico para filtrar os outros. Use o botão abaixo para resetar.")
+        st.info("💡 **Dica PRO:** Segure a tecla **SHIFT** ao clicar nos gráficos para selecionar vários Meses, Anos ou Unidades de uma só vez! (Ou use a ferramenta de seleção no menu do gráfico).")
         
         # 1. Preparação dos Dados
         df_dash['Ano'] = df_dash['Data Referência Oculta'].dt.year.astype(str)
-        # Criamos o nome do mês e o número (para ordenação correta)
         df_dash['Mes_Nome'] = df_dash['Data Referência Oculta'].dt.strftime('%B')
         df_dash['Mes_Num'] = df_dash['Data Referência Oculta'].dt.month
         
-        # 2. Inicialização da Memória de Filtros
-        if 'clique_ano' not in st.session_state: st.session_state.clique_ano = None
-        if 'clique_mes' not in st.session_state: st.session_state.clique_mes = None
-        if 'clique_uc' not in st.session_state: st.session_state.clique_uc = None
+        # 2. Inicialização da Memória (Agora guardamos LISTAS vazias [])
+        if 'clique_ano' not in st.session_state: st.session_state.clique_ano = []
+        if 'clique_mes' not in st.session_state: st.session_state.clique_mes = []
+        if 'clique_uc' not in st.session_state: st.session_state.clique_uc = []
 
-        # Botão de Reset
-        if any([st.session_state.clique_ano, st.session_state.clique_mes, st.session_state.clique_uc]):
+        # Botão de Reset (Aparece se houver qualquer item dentro das listas)
+        if st.session_state.clique_ano or st.session_state.clique_mes or st.session_state.clique_uc:
             if st.button("🧹 Limpar Todos os Filtros Cruzados"):
-                st.session_state.clique_ano = None
-                st.session_state.clique_mes = None
-                st.session_state.clique_uc = None
+                st.session_state.clique_ano = []
+                st.session_state.clique_mes = []
+                st.session_state.clique_uc = []
                 st.rerun()
 
-        # 3. Lógica de Filtragem Cruzada
+        # 3. Lógica de Filtragem Múltipla (Usando o comando .isin() do Pandas)
         df_filtrado_dash = df_dash.copy()
         if st.session_state.clique_ano:
-            df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Ano'] == st.session_state.clique_ano]
+            df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Ano'].isin(st.session_state.clique_ano)]
         if st.session_state.clique_mes:
-            df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Mes_Nome'] == st.session_state.clique_mes]
+            df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Mes_Nome'].isin(st.session_state.clique_mes)]
         if st.session_state.clique_uc:
-            df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Nome da Unidade'] == st.session_state.clique_uc]
+            df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Nome da Unidade'].isin(st.session_state.clique_uc)]
 
         col_graf1, col_graf2 = st.columns(2)
         
@@ -589,56 +588,60 @@ with aba_dash:
         fig_ano = px.bar(df_ano, x='Ano', y='Total Consumo', text_auto='.2s', 
                          title=f"Consumo por Ano {'(Filtrado)' if st.session_state.clique_uc or st.session_state.clique_mes else ''}",
                          color_discrete_sequence=["#0055A5"])
+                         
+        # Apagando título X e ajustando título Y
+        fig_ano.update_layout(xaxis_title=None, yaxis_title="Consumo (kWh)", xaxis={'type': 'category'})
         
-        evento_ano = col_graf1.plotly_chart(fig_ano, use_container_width=True, on_select="rerun", selection_mode="points")
+        # Liberamos a seleção por cliques, caixa (box) e laço (lasso)
+        evento_ano = col_graf1.plotly_chart(fig_ano, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
         if evento_ano and len(evento_ano.selection.get("points", [])) > 0:
-            val = str(evento_ano.selection["points"][0]["x"])
-            if st.session_state.clique_ano != val:
-                st.session_state.clique_ano = val
+            # Captura TODOS os anos clicados/selecionados e joga na nossa lista
+            anos_selecionados = [str(pt["x"]) for pt in evento_ano.selection["points"]]
+            if st.session_state.clique_ano != anos_selecionados:
+                st.session_state.clique_ano = anos_selecionados
                 st.rerun()
 
-        # --- GRÁFICO 2: Consumo Mensal Cíclico (Soma dos anos) ---
-        # Agrupamos por nome do mês e número para manter a ordem Jan -> Dez
+        # --- GRÁFICO 2: Consumo Mensal Cíclico ---
         df_mes_ciclo = df_filtrado_dash.groupby(['Mes_Num', 'Mes_Nome'])['Total Consumo'].sum().reset_index().sort_values('Mes_Num')
         
         fig_mes = px.line(df_mes_ciclo, x='Mes_Nome', y='Total Consumo', markers=True,
-                          title="Sazonalidade Mensal (Soma dos Anos Selecionados)",
+                          title="Sazonalidade Mensal (Soma dos Filtros)",
                           color_discrete_sequence=["#0055A5"])
+                          
+        # Apagando título X e ajustando título Y
+        fig_mes.update_layout(xaxis_title=None, yaxis_title="Consumo (kWh)")
         
-        evento_mes = col_graf2.plotly_chart(fig_mes, use_container_width=True, on_select="rerun", selection_mode="points")
+        evento_mes = col_graf2.plotly_chart(fig_mes, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
         if evento_mes and len(evento_mes.selection.get("points", [])) > 0:
-            val = str(evento_mes.selection["points"][0]["x"])
-            if st.session_state.clique_mes != val:
-                st.session_state.clique_mes = val
+            # Captura TODOS os meses clicados/selecionados
+            meses_selecionados = [str(pt["x"]) for pt in evento_mes.selection["points"]]
+            if st.session_state.clique_mes != meses_selecionados:
+                st.session_state.clique_mes = meses_selecionados
                 st.rerun()
 
         st.divider()
         
-        # --- GRÁFICO 3: Top 20 Unidades (Com Filtro Cruzado) ---
-        # Título dinâmico para saber o que estamos olhando
-        contexto = ""
-        if st.session_state.clique_ano: contexto += f" em {st.session_state.clique_ano}"
-        if st.session_state.clique_mes: contexto += f" em {st.session_state.clique_mes}"
-        
-        st.markdown(f"#### 🏆 Top 20 Unidades Consumidoras{contexto}")
+        # --- GRÁFICO 3: Top 20 Unidades ---
+        st.markdown("#### 🏆 Top 20 Unidades Consumidoras")
         
         df_top20 = df_filtrado_dash.groupby('Nome da Unidade')['Total Consumo'].sum().reset_index()
         df_top20 = df_top20.sort_values('Total Consumo', ascending=False).head(20)
         
         fig_top20 = px.bar(df_top20, x='Total Consumo', y='Nome da Unidade', orientation='h', 
                            text_auto='.2s', color_discrete_sequence=["#0055A5"])
-        fig_top20.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Consumo (kWh)", yaxis_title="")
+                           
+        # Como é barra horizontal, apagamos o título Y e mantemos o X com a unidade (kWh)
+        fig_top20.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Consumo (kWh)", yaxis_title=None)
         
-        # Habilitamos a seleção também neste gráfico!
-        evento_uc = st.plotly_chart(fig_top20, use_container_width=True, on_select="rerun", selection_mode="points")
+        evento_uc = st.plotly_chart(fig_top20, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
         if evento_uc and len(evento_uc.selection.get("points", [])) > 0:
-            # No gráfico horizontal, o Nome da Unidade está no eixo Y
-            val = str(evento_uc.selection["points"][0]["y"])
-            if st.session_state.clique_uc != val:
-                st.session_state.clique_uc = val
+            # Atenção: No gráfico horizontal, capturamos o eixo Y (que guarda o nome)
+            ucs_selecionadas = [str(pt["y"]) for pt in evento_uc.selection["points"]]
+            if st.session_state.clique_uc != ucs_selecionadas:
+                st.session_state.clique_uc = ucs_selecionadas
                 st.rerun()
         
     else:

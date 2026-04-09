@@ -552,7 +552,7 @@ with aba_dash:
     
     if not df_dash.empty:
         st.markdown("##### ⚡ Business Intelligence - Consumo DAE")
-        st.markdown("💡 **Dica PRO:** Segure a tecla **SHIFT** ao clicar nos gráficos para selecionar vários Meses, Anos ou Unidades de uma só vez!")
+        st.markdown("💡 **Dica:** Segure a tecla **SHIFT** ao clicar nos gráficos para selecionar vários Meses, Anos ou Unidades.")
         
         # 1. Preparação dos Dados
         df_dash['Ano'] = df_dash['Data Referência Oculta'].dt.year.astype(str)

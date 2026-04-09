@@ -558,7 +558,37 @@ with aba1:
             # Remove apenas o fuso horário das datas. O resto dos dados fica intacto!
             if pd.api.types.is_datetime64_any_dtype(df[col]):
                 df[col] = df[col].dt.tz_localize(None)
-                
+
+        # --- NOVO PAINEL DE FILTROS ---
+        st.write("") # Dá um espacinho
+        
+        # Dividimos em 4 colunas agora
+        col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+        
+        # Cria as caixas de seleção buscando os dados únicos
+        filtro_mes = col_f1.multiselect("📅 Filtrar por Mês", options=df['Mês Referência'].unique())
+        filtro_classe = col_f2.multiselect("⚡ Filtrar Classificação", options=df['Classificação'].unique())
+        filtro_uc = col_f3.multiselect("📍 Filtrar por UC", options=df['UC'].unique())
+        filtro_busca = col_f4.text_input("🔍 Busca Livre", placeholder="Nome da unidade...")
+
+        # Aplica a "peneira" sequencial nos dados
+        df_filtrado = df.copy()
+        
+        if filtro_mes:
+            df_filtrado = df_filtrado[df_filtrado['Mês Referência'].isin(filtro_mes)]
+        if filtro_classe:
+            df_filtrado = df_filtrado[df_filtrado['Classificação'].isin(filtro_classe)]
+        if filtro_uc:
+            df_filtrado = df_filtrado[df_filtrado['UC'].isin(filtro_uc)]
+        if filtro_busca:
+            df_filtrado = df_filtrado[
+                df_filtrado['UC'].astype(str).str.contains(filtro_busca, case=False, na=False) |
+                df_filtrado['Nome da Unidade'].astype(str).str.contains(filtro_busca, case=False, na=False)
+            ]
+
+        # --- TABELA NATIVA (AGORA COM DADOS FILTRADOS) ---
+        # (O código do evento = st.dataframe... continua igualzinho logo aqui embaixo)
+        
         # --- NOVA TABELA NATIVA DO STREAMLIT (ADEUS AGGRID) ---
         evento = st.dataframe(
             df,

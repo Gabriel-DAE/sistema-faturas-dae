@@ -552,19 +552,19 @@ with aba_dash:
     
     if not df_dash.empty:
         st.markdown("### ⚡ Business Intelligence - Consumo DAE")
-        st.info("💡 **Dica PRO:** Segure a tecla **SHIFT** ao clicar nos gráficos para selecionar vários Meses, Anos ou Unidades de uma só vez! (Ou use a ferramenta de seleção no menu do gráfico).")
+        st.info("💡 **Dica PRO:** Segure a tecla **SHIFT** ao clicar nos gráficos para selecionar vários Meses, Anos ou Unidades de uma só vez!")
         
         # 1. Preparação dos Dados
         df_dash['Ano'] = df_dash['Data Referência Oculta'].dt.year.astype(str)
         df_dash['Mes_Nome'] = df_dash['Data Referência Oculta'].dt.strftime('%B')
         df_dash['Mes_Num'] = df_dash['Data Referência Oculta'].dt.month
         
-        # 2. Inicialização da Memória (Agora guardamos LISTAS vazias [])
+        # 2. Inicialização da Memória
         if 'clique_ano' not in st.session_state: st.session_state.clique_ano = []
         if 'clique_mes' not in st.session_state: st.session_state.clique_mes = []
         if 'clique_uc' not in st.session_state: st.session_state.clique_uc = []
 
-        # Botão de Reset (Aparece se houver qualquer item dentro das listas)
+        # Botão de Reset
         if st.session_state.clique_ano or st.session_state.clique_mes or st.session_state.clique_uc:
             if st.button("🧹 Limpar Todos os Filtros Cruzados"):
                 st.session_state.clique_ano = []
@@ -572,7 +572,7 @@ with aba_dash:
                 st.session_state.clique_uc = []
                 st.rerun()
 
-        # 3. Lógica de Filtragem Múltipla (Usando o comando .isin() do Pandas)
+        # 3. Lógica de Filtragem Múltipla
         df_filtrado_dash = df_dash.copy()
         if st.session_state.clique_ano:
             df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Ano'].isin(st.session_state.clique_ano)]
@@ -589,14 +589,11 @@ with aba_dash:
                          title=f"Consumo por Ano {'(Filtrado)' if st.session_state.clique_uc or st.session_state.clique_mes else ''}",
                          color_discrete_sequence=["#0055A5"])
                          
-        # Apagando título X e ajustando título Y
         fig_ano.update_layout(xaxis_title=None, yaxis_title="Consumo (kWh)", xaxis={'type': 'category'})
         
-        # Liberamos a seleção por cliques, caixa (box) e laço (lasso)
         evento_ano = col_graf1.plotly_chart(fig_ano, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
         if evento_ano and len(evento_ano.selection.get("points", [])) > 0:
-            # Captura TODOS os anos clicados/selecionados e joga na nossa lista
             anos_selecionados = [str(pt["x"]) for pt in evento_ano.selection["points"]]
             if st.session_state.clique_ano != anos_selecionados:
                 st.session_state.clique_ano = anos_selecionados
@@ -609,13 +606,28 @@ with aba_dash:
                           title="Sazonalidade Mensal (Soma dos Filtros)",
                           color_discrete_sequence=["#0055A5"])
                           
-        # Apagando título X e ajustando título Y
         fig_mes.update_layout(xaxis_title=None, yaxis_title="Consumo (kWh)")
+        
+        # MELHORIA 1: Forçar o eixo Y a sempre começar do zero
+        fig_mes.update_yaxes(rangemode="tozero")
+        
+        # MELHORIA 2: Linha horizontal de Média
+        if not df_mes_ciclo.empty:
+            media_mensal = df_mes_ciclo['Total Consumo'].mean()
+            # Formata a string para o padrão brasileiro (ex: 1.500.200)
+            texto_media = f"Média: {media_mensal:,.0f} kWh".replace(',', 'X').replace('.', ',').replace('X', '.')
+            
+            fig_mes.add_hline(
+                y=media_mensal, 
+                line_dash="dash", 
+                line_color="#FF4B4B", # Um vermelho elegante para contrastar com o Azul DAE
+                annotation_text=texto_media, 
+                annotation_position="top right"
+            )
         
         evento_mes = col_graf2.plotly_chart(fig_mes, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
         if evento_mes and len(evento_mes.selection.get("points", [])) > 0:
-            # Captura TODOS os meses clicados/selecionados
             meses_selecionados = [str(pt["x"]) for pt in evento_mes.selection["points"]]
             if st.session_state.clique_mes != meses_selecionados:
                 st.session_state.clique_mes = meses_selecionados
@@ -632,13 +644,11 @@ with aba_dash:
         fig_top20 = px.bar(df_top20, x='Total Consumo', y='Nome da Unidade', orientation='h', 
                            text_auto='.2s', color_discrete_sequence=["#0055A5"])
                            
-        # Como é barra horizontal, apagamos o título Y e mantemos o X com a unidade (kWh)
         fig_top20.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Consumo (kWh)", yaxis_title=None)
         
         evento_uc = st.plotly_chart(fig_top20, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
         if evento_uc and len(evento_uc.selection.get("points", [])) > 0:
-            # Atenção: No gráfico horizontal, capturamos o eixo Y (que guarda o nome)
             ucs_selecionadas = [str(pt["y"]) for pt in evento_uc.selection["points"]]
             if st.session_state.clique_uc != ucs_selecionadas:
                 st.session_state.clique_uc = ucs_selecionadas

@@ -553,6 +553,14 @@ with aba1:
     if not df.empty:
         st.markdown("##### 📋 Histórico Geral")
         st.markdown("💡 **Dica:** Marque as caixinhas no início das linhas para excluir múltiplos registros de uma só vez.")
+
+        for col in df.columns:
+            # 1. Se for data, remove o fuso horário para não bugar a tela
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                df[col] = df[col].dt.tz_localize(None)
+            # 2. Converte os números decimais do Supabase e textos "estranhos" para o padrão do Python
+            elif df[col].dtype == "object":
+                df[col] = df[col].astype(str)
         
         gb = GridOptionsBuilder.from_dataframe(df)
         gb.configure_column('id', hide=True)

@@ -554,7 +554,7 @@ with aba1:
         st.markdown("##### 📋 Histórico Geral")
         st.markdown("💡 **Dica:** Marque as caixinhas no início das linhas para excluir múltiplos registros de uma só vez.")
 
-for col in df.columns:
+        for col in df.columns:
             # Remove apenas o fuso horário das datas. O resto dos dados fica intacto!
             if pd.api.types.is_datetime64_any_dtype(df[col]):
                 df[col] = df[col].dt.tz_localize(None)

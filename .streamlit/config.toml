@@ -1,0 +1,12 @@
+[theme]
+# Cor principal (Azul DAE) para botões, caixas de seleção da tabela e destaques
+primaryColor = "#0055A5"
+
+# Força o sistema a ficar no modo claro (combina mais com relatórios)
+base = "light"
+
+# Cor do texto principal
+textColor = "#31333F"
+
+# Fonte do sistema
+font = "sans serif"

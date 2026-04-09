@@ -587,33 +587,27 @@ with aba1:
             ]
 
         # --- TABELA NATIVA (AGORA COM DADOS FILTRADOS) ---
-        # (O código do evento = st.dataframe... continua igualzinho logo aqui embaixo)
-        
-        # --- NOVA TABELA NATIVA DO STREAMLIT (ADEUS AGGRID) ---
         evento = st.dataframe(
-            df,
+            df_filtrado, # Usa a tabela já filtrada
             hide_index=True,
             use_container_width=True,
             height=400,
             column_config={
-                "id": None, # Oculta a coluna ID
-                "Data Referência Oculta": None # Oculta a data técnica
+                "id": None, 
+                "Data Referência Oculta": None 
             },
             selection_mode="multi-row",
             on_select="rerun"
         )
         
-        # Pega as posições das linhas que o usuário marcou na caixinha
         linhas_selecionadas = evento.selection.rows
         
         if len(linhas_selecionadas) > 0:
-            # Busca os IDs exatos no banco de dados para essas linhas
-            ids_para_excluir = [int(df.iloc[i]['id']) for i in linhas_selecionadas]
+            # Puxa o ID correto da tabela filtrada
+            ids_para_excluir = [int(df_filtrado.iloc[i]['id']) for i in linhas_selecionadas]
             qtd_selecionada = len(ids_para_excluir)
             
             st.markdown(f"🔴 **{qtd_selecionada} Fatura(s) Selecionada(s)** para exclusão.")
-            
-            # --- O seu código de botões de excluir continua exatamente igual daqui para baixo ---
             
             if st.session_state.get('confirmar_exclusao_ids') != ids_para_excluir:
                 if st.button("🗑️ Excluir Selecionadas"):

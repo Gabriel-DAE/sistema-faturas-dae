@@ -554,51 +554,36 @@ with aba1:
         st.markdown("##### 📋 Histórico Geral")
         st.markdown("💡 **Dica:** Marque as caixinhas no início das linhas para excluir múltiplos registros de uma só vez.")
 
-        for col in df.columns:
-            # 1. Se for data, remove o fuso horário para não bugar a tela
+for col in df.columns:
+            # Remove apenas o fuso horário das datas. O resto dos dados fica intacto!
             if pd.api.types.is_datetime64_any_dtype(df[col]):
                 df[col] = df[col].dt.tz_localize(None)
-            # 2. Converte os números decimais do Supabase e textos "estranhos" para o padrão do Python
-            elif df[col].dtype == "object":
-                df[col] = df[col].astype(str)
-        
-        gb = GridOptionsBuilder.from_dataframe(df)
-        gb.configure_column('id', hide=True)
-        gb.configure_column('Data Referência Oculta', hide=True)
-        gb.configure_default_column(resizable=True, filter=True, sortable=True) 
-        gb.configure_selection(selection_mode="multiple", use_checkbox=True) 
-        gb.configure_column('UC', checkboxSelection=True, headerCheckboxSelection=True) 
-        gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=100)
-        
-        grid_options = gb.build()
-
-        custom_css = {
-            ".ag-header-cell": { "background-color": "#0055A5 !important", "color": "white !important", "font-weight": "bold !important" },
-            ".ag-header-group-cell": { "background-color": "#0055A5 !important", "color": "white !important" }
-        }
-
-        grid_response = AgGrid(
+                
+        # --- NOVA TABELA NATIVA DO STREAMLIT (ADEUS AGGRID) ---
+        evento = st.dataframe(
             df,
-            gridOptions=grid_options,
-            custom_css=custom_css,
-            update_mode=GridUpdateMode.SELECTION_CHANGED,
-            theme='alpine', 
+            hide_index=True,
+            use_container_width=True,
             height=400,
-            fit_columns_on_grid_load=False 
+            column_config={
+                "id": None, # Oculta a coluna ID
+                "Data Referência Oculta": None # Oculta a data técnica
+            },
+            selection_mode="multi-row",
+            on_select="rerun"
         )
         
-        selecao = grid_response.get('selected_rows', [])
+        # Pega as posições das linhas que o usuário marcou na caixinha
+        linhas_selecionadas = evento.selection.rows
         
-        if isinstance(selecao, pd.DataFrame):
-            selecao_lista = selecao.to_dict('records')
-        else:
-            selecao_lista = selecao
-            
-        if selecao_lista and len(selecao_lista) > 0:
-            ids_para_excluir = [int(linha['id']) for linha in selecao_lista]
+        if len(linhas_selecionadas) > 0:
+            # Busca os IDs exatos no banco de dados para essas linhas
+            ids_para_excluir = [int(df.iloc[i]['id']) for i in linhas_selecionadas]
             qtd_selecionada = len(ids_para_excluir)
             
             st.markdown(f"🔴 **{qtd_selecionada} Fatura(s) Selecionada(s)** para exclusão.")
+            
+            # --- O seu código de botões de excluir continua exatamente igual daqui para baixo ---
             
             if st.session_state.get('confirmar_exclusao_ids') != ids_para_excluir:
                 if st.button("🗑️ Excluir Selecionadas"):

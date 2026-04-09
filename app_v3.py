@@ -1060,7 +1060,7 @@ with aba4:
                 "demanda_contratada_fponta": [275.0, 0.0]
             })
             
-            st.dataframe(df_faturas.astype(str))
+            st.dataframe(df_exemplo, hide_index=True, use_container_width=True)
             
             arquivo_ucs_excel = st.file_uploader("Selecione a planilha de UCs (.xlsx)", type=["xlsx"], key="upload_uc")
             

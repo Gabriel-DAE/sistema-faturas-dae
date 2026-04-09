@@ -5,3 +5,4 @@ streamlit-aggrid
 openpyxl
 psycopg[binary]
 SQLAlchemy
+plotly==5.24.1

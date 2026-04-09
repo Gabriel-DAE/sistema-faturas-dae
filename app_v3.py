@@ -6,7 +6,7 @@ import io
 import pdfplumber
 import re
 from datetime import datetime
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+import plotly.express as px
 
 st.set_page_config(page_title="Gestão de Energia - DAE", layout="wide", page_icon="⚡")
 
@@ -542,12 +542,83 @@ def calcular_faturamento(uc, mes, q_c_p, q_c_fp, q_d_reg_p, q_d_reg_fp, q_r_p, q
     }
 
 # --- 4. INTERFACE ---
-aba1, aba2, aba3, aba4 = st.tabs(["📊 Banco de Dados", "📄 Upload PDF", "✍️ Cadastro Manual", "⚙️ Configurações"])
+aba_dash, aba_dados, aba_pdf, aba_manual, aba_config = st.tabs(["📈 Dashboard", "📊 Banco de Dados", "📄 Upload PDF", "✍️ Cadastro Manual", "⚙️ Configurações"])
 
 # ==========================================
-# ABA 1: DASHBOARD
+# ABA DASHBOARD: GRÁFICOS E INDICADORES
 # ==========================================
-with aba1:
+with aba_dash:
+    df_dash = carregar_dados()
+    
+    if not df_dash.empty:
+        st.markdown("### ⚡ Visão Geral - Consumo de Energia (kWh)")
+        st.markdown("Análise do histórico total de consumo (Ponta + Fora Ponta) das unidades cadastradas.")
+        st.write("")
+        
+        # 1. Preparar os dados (Criar coluna de Ano para o gráfico)
+        df_dash['Ano'] = df_dash['Data Referência Oculta'].dt.year
+        
+        # Divide a tela para os dois primeiros gráficos ficarem lado a lado
+        col_graf1, col_graf2 = st.columns(2)
+        
+        # --- GRÁFICO 1: Consumo Anual ---
+        df_ano = df_dash.groupby('Ano')['Total Consumo'].sum().reset_index()
+        fig_ano = px.bar(
+            df_ano, 
+            x='Ano', 
+            y='Total Consumo', 
+            text_auto='.2s', # Mostra o valor formatado na barra (ex: 1.5M)
+            title="Consumo Total por Ano",
+            color_discrete_sequence=["#0055A5"] # Azul DAE
+        )
+        # Ajusta visual do gráfico
+        fig_ano.update_layout(xaxis_title="Ano", yaxis_title="Consumo (kWh)")
+        fig_ano.update_xaxes(type='category') # Força o ano a aparecer sem vírgula (2025 ao invés de 2.025)
+        col_graf1.plotly_chart(fig_ano, use_container_width=True)
+        
+        
+        # --- GRÁFICO 2: Evolução Mensal ---
+        df_mes = df_dash.groupby('Data Referência Oculta')['Total Consumo'].sum().reset_index()
+        fig_mes = px.line(
+            df_mes, 
+            x='Data Referência Oculta', 
+            y='Total Consumo', 
+            markers=True, # Coloca as bolinhas nos meses
+            title="Evolução Histórica Mensal",
+            color_discrete_sequence=["#0055A5"]
+        )
+        fig_mes.update_layout(xaxis_title="Mês/Ano", yaxis_title="Consumo (kWh)")
+        col_graf2.plotly_chart(fig_mes, use_container_width=True)
+        
+        st.divider()
+        
+        # --- GRÁFICO 3: Top 20 Unidades Consumidoras ---
+        st.markdown("#### 🏆 As 20 Unidades que Mais Consomem Energia")
+        
+        # Soma tudo por unidade, ordena do maior pro menor, e pega as 20 primeiras
+        df_top20 = df_dash.groupby('Nome da Unidade')['Total Consumo'].sum().reset_index()
+        df_top20 = df_top20.sort_values('Total Consumo', ascending=False).head(20)
+        
+        # Usamos gráfico de barras horizontais porque os nomes das unidades são grandes
+        fig_top20 = px.bar(
+            df_top20, 
+            x='Total Consumo', 
+            y='Nome da Unidade', 
+            orientation='h', 
+            text_auto='.2s',
+            color_discrete_sequence=["#0055A5"]
+        )
+        # Inverte o eixo Y para o maior ficar no topo da lista
+        fig_top20.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Consumo Histórico Total (kWh)", yaxis_title="")
+        st.plotly_chart(fig_top20, use_container_width=True)
+        
+    else:
+        st.info("O banco de dados ainda está vazio. Faça o upload de faturas para visualizar o dashboard.")
+
+# ==========================================
+# ABA DADOS
+# ==========================================
+with aba_dados:
     df = carregar_dados()
     
     if not df.empty:
@@ -661,9 +732,9 @@ with aba1:
         st.info("Nenhum dado encontrado.")
 
 # ==========================================
-# ABA 2: IMPORTAÇÃO (PDF E EXCEL)
+# ABA IMPORTAÇÃO (PDF E EXCEL)
 # ==========================================
-with aba2:
+with aba_pdf:
     st.markdown("##### 📥 Importação de Faturas")
     
     tab_pdf, tab_excel = st.tabs(["📄 Importação de Faturas (PDF)", "📊 Upload de Excel (Lote Histórico)"])
@@ -802,9 +873,9 @@ with aba2:
                     st.error(f"Erro ao processar a planilha. Verifique se os nomes das colunas estão corretos. Erro detalhado: {e}")
 
 # ==========================================
-# ABA 3: INSERÇÃO MANUAL INTELIGENTE
+# ABA INSERÇÃO MANUAL INTELIGENTE
 # ==========================================
-with aba3:
+with aba_manual:
     st.markdown("##### 📝 Cadastro Manual de Fatura")
     st.markdown("Cadastre manualmente apenas as faturas que não possuírem arquivo PDF.")
     
@@ -979,9 +1050,9 @@ with aba3:
                         st.rerun()
 
 # ==========================================
-# ABA 4: CONFIGURAÇÕES DE CADASTRO E TARIFAS
+# ABA CONFIGURAÇÕES DE CADASTRO E TARIFAS
 # ==========================================
-with aba4:
+with aba_config:
     st.markdown("##### ⚙️ Configurações Gerais do Sistema")
     
     col_cad, col_tar = st.columns(2)

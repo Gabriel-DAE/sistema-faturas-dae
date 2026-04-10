@@ -182,6 +182,9 @@ def carregar_dados():
     df['Valor Total Cons. Reat.'] = df['Valor Cons. Reat. Ponta'] + df['Valor Cons. Reat. F.Ponta']
     df['Valor Total Dem. Reat.'] = df['Valor Dem. Reat. Ponta'] + df['Valor Dem. Reat. F.Ponta']
 
+    df['Valor Total Dem.'] = df['Valor Dem. Ponta'] + df['Valor Dem. F.Ponta']
+    df['Valor Total Reativo'] = df['Valor Total Cons. Reat.'] + df['Valor Total Dem. Reat.']
+
     mes_map = {'JAN': '01', 'FEV': '02', 'MAR': '03', 'ABR': '04', 'MAI': '05', 'JUN': '06', 
                'JUL': '07', 'AGO': '08', 'SET': '09', 'OUT': '10', 'NOV': '11', 'DEZ': '12'}
     
@@ -211,8 +214,8 @@ def carregar_dados():
         'Dem. Reat. Ponta', 'Tarifa Dem. Reat. Ponta', 'Tarifa Trib. Dem. Reat. Ponta', 'Valor Dem. Reat. Ponta', 
         'Dem. Reat. F.Ponta', 'Tarifa Dem. Reat. F.Ponta', 'Tarifa Trib. Dem. Reat. F.Ponta', 'Valor Dem. Reat. F.Ponta', 
         'CIP', 'Retenção Cons. IRRF', 'Retenção Dem. IRRF', 'Valor PIS', 'Valor COFINS', 'Valor ICMS', 
-        'Total Consumo', 'Valor Total Consumo', 'Valor Total Dem. Isenta', 'Valor Total Dem. Ultrap.', 
-        'Valor Total Desv. Dem.', 'Total Cons. Reat.', 'Valor Total Cons. Reat.', 'Valor Total Dem. Reat.', 
+        'Total Consumo', 'Valor Total Consumo', 'Valor Total Dem.', 'Valor Total Dem. Isenta', 'Valor Total Dem. Ultrap.', 
+        'Valor Total Desv. Dem.', 'Total Cons. Reat.', 'Valor Total Cons. Reat.', 'Valor Total Dem. Reat.', 'Valor Total Reativo',
         'Valor Total Fatura', 'Data Cadastro'
     ]
     
@@ -585,8 +588,9 @@ with aba_dash:
             "Consumo Total (kWh)": "Total Consumo",
             "Valor Total Fatura (R$)": "Valor Total Fatura",
             "Valor Total Consumo (R$)": "Valor Total Consumo",
+            "Valor Total Demanda (R$)": "Valor Total Dem.",
             "Valor Total Desv. Dem. (R$)": "Valor Total Desv. Dem.",
-            "Valor Total Cons. Reat. (R$)": "Valor Total Cons. Reat."
+            "Valor Total Reativo (R$)": "Valor Total Reativo"
         }
         
         param_nome = st.selectbox("🎯 **Selecione o Indicador para Análise:**", list(dic_parametros.keys()))
@@ -718,7 +722,9 @@ with aba_dados:
             height=400,
             column_config={
                 "id": None, 
-                "Data Referência Oculta": None 
+                "Data Referência Oculta": None,
+                "Valor Total Cons. Reat.": None,
+                "Valor Total Dem. Reat.": None
             },
             selection_mode="multi-row",
             on_select="rerun"

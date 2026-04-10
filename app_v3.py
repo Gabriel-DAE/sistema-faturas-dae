@@ -569,7 +569,7 @@ with aba_dash:
 
         # Ajuste 3: Botão de Reset menor e mais discreto
         if st.session_state.clique_ano or st.session_state.clique_mes or st.session_state.clique_uc:
-            col_btn, _ = st.columns([1, 4])
+            col_btn, _ = st.columns([1, 3])
             if col_btn.button("🧹 Limpar Filtros"):
                 st.session_state.clique_ano = []
                 st.session_state.clique_mes = []
@@ -598,7 +598,7 @@ with aba_dash:
         }
         
         # Ajuste 4: Selectbox ocupando apenas um pedaço da tela
-        col_sel, _ = st.columns([1.5, 2.5]) 
+        col_sel, _ = st.columns([2, 3]) 
         param_nome = col_sel.selectbox("🎯 **Selecione o Indicador para Análise:**", list(dic_parametros.keys()))
         param_coluna = dic_parametros[param_nome]
         

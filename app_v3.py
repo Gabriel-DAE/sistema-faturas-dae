@@ -569,7 +569,7 @@ with aba_dash:
 
         # Ajuste 3: Botão de Reset menor e mais discreto
         if st.session_state.clique_ano or st.session_state.clique_mes or st.session_state.clique_uc:
-            col_btn, _ = st.columns([1, 3])
+            col_btn, _ = st.columns([1, 4])
             if col_btn.button("🧹 Limpar Filtros"):
                 st.session_state.clique_ano = []
                 st.session_state.clique_mes = []

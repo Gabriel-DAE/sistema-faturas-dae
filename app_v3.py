@@ -567,15 +567,6 @@ with aba_dash:
         if 'clique_mes' not in st.session_state: st.session_state.clique_mes = []
         if 'clique_uc' not in st.session_state: st.session_state.clique_uc = []
 
-        # Ajuste 3: Botão de Reset menor e mais discreto
-        if st.session_state.clique_ano or st.session_state.clique_mes or st.session_state.clique_uc:
-            col_btn, _ = st.columns([1, 4])
-            if col_btn.button("🧹 Limpar Filtros"):
-                st.session_state.clique_ano = []
-                st.session_state.clique_mes = []
-                st.session_state.clique_uc = []
-                st.rerun()
-
         # 3. Filtragem Múltipla
         df_filtrado_dash = df_dash.copy()
         if st.session_state.clique_ano:
@@ -587,7 +578,7 @@ with aba_dash:
 
         st.divider()
 
-        # --- A CHAVE MESTRA ---
+        # --- A CHAVE MESTRA E O BOTÃO DE RESET (ALINHADOS) ---
         dic_parametros = {
             "Consumo Total (kWh)": "Total Consumo",
             "Valor Total Fatura (R$)": "Valor Total Fatura",
@@ -597,12 +588,23 @@ with aba_dash:
             "Valor Total Reativo (R$)": "Valor Total Reativo"
         }
         
-        # Ajuste 4: Selectbox ocupando apenas um pedaço da tela
-        col_sel, _ = st.columns([1, 4]) 
+        # Criação de 3 colunas: Seletor (30%), Espaço Vazio (50%), Botão (20%)
+        col_sel, col_vazio, col_btn = st.columns([3, 5, 2]) 
+        
+        # Seletor na extrema esquerda
         param_nome = col_sel.selectbox("🎯 **Selecione o Indicador para Análise:**", list(dic_parametros.keys()))
         param_coluna = dic_parametros[param_nome]
-        
         is_dinheiro = "(R$)" in param_nome
+
+        # Botão na extrema direita (só aparece se houver filtros ativos)
+        if st.session_state.clique_ano or st.session_state.clique_mes or st.session_state.clique_uc:
+            # Truque para empurrar o botão para baixo e alinhar com a caixa do seletor
+            col_btn.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+            if col_btn.button("🧹 Limpar Filtros", use_container_width=True):
+                st.session_state.clique_ano = []
+                st.session_state.clique_mes = []
+                st.session_state.clique_uc = []
+                st.rerun()
 
         st.write("")
         col_graf1, col_graf2 = st.columns(2)
@@ -610,13 +612,11 @@ with aba_dash:
         # --- GRÁFICO 1: Análise Anual ---
         df_ano = df_filtrado_dash.groupby('Ano')[param_coluna].sum().reset_index()
         
-        # Ajuste 2: text_auto='.3s' para 1 casa após a vírgula com as letras k/M
         fig_ano = px.bar(df_ano, x='Ano', y=param_coluna, text_auto='.3s', 
                          title=f"{param_nome} por Ano", color_discrete_sequence=["#0055A5"])
         
         fig_ano.update_layout(xaxis_title=None, yaxis_title=param_nome, xaxis={'type': 'category'})
         
-        # Ajuste 1 e 2: Retirado o kWh e setado para .3s
         if is_dinheiro:
             fig_ano.update_traces(texttemplate='R$ %{y:.3s}', textposition='outside')
         else:
@@ -644,7 +644,7 @@ with aba_dash:
             if is_dinheiro:
                 texto_media = f"Média: R$ {media_val:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
             else:
-                texto_media = f"Média: {media_val:,.0f}".replace(',', 'X').replace('.', ',').replace('X', '.') # Removido o kWh daqui também
+                texto_media = f"Média: {media_val:,.0f}".replace(',', 'X').replace('.', ',').replace('X', '.')
                 
             fig_mes.add_hline(y=media_val, line_dash="dash", line_color="#FF4B4B", annotation_text=texto_media, annotation_position="top right")
 
@@ -665,7 +665,6 @@ with aba_dash:
         
         fig_top20.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title=param_nome, yaxis_title=None)
         
-        # Ajuste 1 e 2: Retirado o kWh e setado para .3s
         if is_dinheiro:
             fig_top20.update_traces(texttemplate='R$ %{x:.3s}', textposition='outside')
         else:

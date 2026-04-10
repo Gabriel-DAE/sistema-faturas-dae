@@ -545,14 +545,14 @@ def calcular_faturamento(uc, mes, q_c_p, q_c_fp, q_d_reg_p, q_d_reg_fp, q_r_p, q
 aba_dash, aba_dados, aba_pdf, aba_manual, aba_config = st.tabs(["📈 Dashboard", "📊 Banco de Dados", "📄 Upload PDF", "✍️ Cadastro Manual", "⚙️ Configurações"])
 
 # ==========================================
-# ABA DASHBOARD: BI AVANÇADO E FILTRO MÚLTIPLO
+# ABA DASHBOARD: BI COM CHAVE DE PARÂMETRO
 # ==========================================
 with aba_dash:
     df_dash = carregar_dados()
     
     if not df_dash.empty:
         st.markdown("##### ⚡ Business Intelligence - Consumo DAE")
-        st.markdown("💡 **Dica:** Segure a tecla **SHIFT** ao clicar nos gráficos para selecionar vários Meses, Anos ou Unidades.")
+        st.markdown("💡 **Dica PRO:** Escolha o indicador abaixo. Segure a tecla **SHIFT** ao clicar nos gráficos para selecionar vários itens.")
         
         # 1. Preparação dos Dados
         df_dash['Ano'] = df_dash['Data Referência Oculta'].dt.year.astype(str)
@@ -564,15 +564,12 @@ with aba_dash:
         if 'clique_mes' not in st.session_state: st.session_state.clique_mes = []
         if 'clique_uc' not in st.session_state: st.session_state.clique_uc = []
 
-        # Botão de Reset
         if st.session_state.clique_ano or st.session_state.clique_mes or st.session_state.clique_uc:
             if st.button("🧹 Limpar Todos os Filtros Cruzados"):
-                st.session_state.clique_ano = []
-                st.session_state.clique_mes = []
-                st.session_state.clique_uc = []
+                st.session_state.clique_ano = []; st.session_state.clique_mes = []; st.session_state.clique_uc = []
                 st.rerun()
 
-        # 3. Lógica de Filtragem Múltipla
+        # 3. Filtragem Múltipla
         df_filtrado_dash = df_dash.copy()
         if st.session_state.clique_ano:
             df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Ano'].isin(st.session_state.clique_ano)]
@@ -581,81 +578,95 @@ with aba_dash:
         if st.session_state.clique_uc:
             df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Nome da Unidade'].isin(st.session_state.clique_uc)]
 
+        st.divider()
+
+        # --- A CHAVE MESTRA (SELETOR DE INDICADOR) ---
+        dic_parametros = {
+            "Consumo Total (kWh)": "Total Consumo",
+            "Valor Total Fatura (R$)": "Valor Total Fatura",
+            "Valor Total Consumo (R$)": "Valor Total Consumo",
+            "Valor Total Desv. Dem. (R$)": "Valor Total Desv. Dem.",
+            "Valor Total Cons. Reat. (R$)": "Valor Total Cons. Reat."
+        }
+        
+        param_nome = st.selectbox("🎯 **Selecione o Indicador para Análise:**", list(dic_parametros.keys()))
+        param_coluna = dic_parametros[param_nome]
+        
+        # Identifica se é dinheiro para formatar os textos corretamente
+        is_dinheiro = "(R$)" in param_nome
+
+        st.write("")
         col_graf1, col_graf2 = st.columns(2)
         
-        # --- GRÁFICO 1: Consumo Anual ---
-        df_ano = df_filtrado_dash.groupby('Ano')['Total Consumo'].sum().reset_index()
-        fig_ano = px.bar(df_ano, x='Ano', y='Total Consumo', text_auto='.2s', 
-                         title=f"Consumo por Ano {'(Filtrado)' if st.session_state.clique_uc or st.session_state.clique_mes else ''}",
-                         color_discrete_sequence=["#0055A5"])
-                         
-        fig_ano.update_layout(xaxis_title=None, yaxis_title="Consumo (kWh)", xaxis={'type': 'category'})
+        # --- GRÁFICO 1: Análise Anual ---
+        df_ano = df_filtrado_dash.groupby('Ano')[param_coluna].sum().reset_index()
         
+        fig_ano = px.bar(df_ano, x='Ano', y=param_coluna, text_auto='.2s', 
+                         title=f"{param_nome} por Ano", color_discrete_sequence=["#0055A5"])
+        
+        fig_ano.update_layout(xaxis_title=None, yaxis_title=param_nome, xaxis={'type': 'category'})
+        
+        # Formatação dinâmica (R$ ou kWh)
+        if is_dinheiro:
+            fig_ano.update_traces(texttemplate='R$ %{y:.2s}', textposition='outside')
+        else:
+            fig_ano.update_traces(texttemplate='%{y:.2s} kWh', textposition='outside')
+
         evento_ano = col_graf1.plotly_chart(fig_ano, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
         if evento_ano and len(evento_ano.selection.get("points", [])) > 0:
-            anos_selecionados = [str(pt["x"]) for pt in evento_ano.selection["points"]]
+            anos_selecionados = list(set([str(pt["x"]) for pt in evento_ano.selection["points"]]))
             if st.session_state.clique_ano != anos_selecionados:
-                st.session_state.clique_ano = anos_selecionados
-                st.rerun()
+                st.session_state.clique_ano = anos_selecionados; st.rerun()
 
-        # --- GRÁFICO 2: Consumo Mensal Cíclico ---
-        df_mes_ciclo = df_filtrado_dash.groupby(['Mes_Num', 'Mes_Nome'])['Total Consumo'].sum().reset_index().sort_values('Mes_Num')
+        # --- GRÁFICO 2: Sazonalidade Mensal ---
+        df_mes_ciclo = df_filtrado_dash.groupby(['Mes_Num', 'Mes_Nome'])[param_coluna].sum().reset_index().sort_values('Mes_Num')
         
-        fig_mes = px.line(df_mes_ciclo, x='Mes_Nome', y='Total Consumo', markers=True,
-                          title="Sazonalidade Mensal (Soma dos Filtros)",
-                          color_discrete_sequence=["#0055A5"])
+        fig_mes = px.line(df_mes_ciclo, x='Mes_Nome', y=param_coluna, markers=True,
+                          title=f"Sazonalidade Mensal ({param_nome})", color_discrete_sequence=["#0055A5"])
                           
-        fig_mes.update_layout(xaxis_title=None, yaxis_title="Consumo (kWh)")
-        
-        # MELHORIA 1: Forçar o eixo Y a sempre começar do zero
+        fig_mes.update_layout(xaxis_title=None, yaxis_title=param_nome)
         fig_mes.update_yaxes(rangemode="tozero")
         
-        # MELHORIA 2: Linha horizontal de Média
+        # Média Dinâmica (R$ ou kWh)
         if not df_mes_ciclo.empty:
-            media_mensal = df_mes_ciclo['Total Consumo'].mean()
-            # Formata a string para o padrão brasileiro (ex: 1.500.200)
-            texto_media = f"Média: {media_mensal:,.0f} kWh".replace(',', 'X').replace('.', ',').replace('X', '.')
-            
-            fig_mes.add_hline(
-                y=media_mensal, 
-                line_dash="dash", 
-                line_color="#FF4B4B", # Um vermelho elegante para contrastar com o Azul DAE
-                annotation_text=texto_media, 
-                annotation_position="top right"
-            )
-        
+            media_val = df_mes_ciclo[param_coluna].mean()
+            if is_dinheiro:
+                texto_media = f"Média: R$ {media_val:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+            else:
+                texto_media = f"Média: {media_val:,.0f} kWh".replace(',', 'X').replace('.', ',').replace('X', '.')
+                
+            fig_mes.add_hline(y=media_val, line_dash="dash", line_color="#FF4B4B", annotation_text=texto_media, annotation_position="top right")
+
         evento_mes = col_graf2.plotly_chart(fig_mes, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
         if evento_mes and len(evento_mes.selection.get("points", [])) > 0:
-            meses_selecionados = [str(pt["x"]) for pt in evento_mes.selection["points"]]
+            meses_selecionados = list(set([str(pt["x"]) for pt in evento_mes.selection["points"]]))
             if st.session_state.clique_mes != meses_selecionados:
-                st.session_state.clique_mes = meses_selecionados
-                st.rerun()
+                st.session_state.clique_mes = meses_selecionados; st.rerun()
 
         st.divider()
         
         # --- GRÁFICO 3: Top 20 Unidades ---
-        st.markdown("#### 🏆 Top 20 Unidades Consumidoras")
+        st.markdown(f"#### 🏆 Top 20 Unidades por {param_nome}")
+        df_top20 = df_filtrado_dash.groupby('Nome da Unidade')[param_coluna].sum().reset_index().sort_values(param_coluna, ascending=False).head(20)
         
-        df_top20 = df_filtrado_dash.groupby('Nome da Unidade')['Total Consumo'].sum().reset_index()
-        df_top20 = df_top20.sort_values('Total Consumo', ascending=False).head(20)
+        fig_top20 = px.bar(df_top20, x=param_coluna, y='Nome da Unidade', orientation='h', text_auto='.2s', color_discrete_sequence=["#0055A5"])
         
-        fig_top20 = px.bar(df_top20, x='Total Consumo', y='Nome da Unidade', orientation='h', 
-                           text_auto='.2s', color_discrete_sequence=["#0055A5"])
-                           
-        fig_top20.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title="Consumo (kWh)", yaxis_title=None)
+        fig_top20.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title=param_nome, yaxis_title=None)
+        
+        # Formatação dinâmica (R$ ou kWh)
+        if is_dinheiro:
+            fig_top20.update_traces(texttemplate='R$ %{x:.2s}', textposition='outside')
+        else:
+            fig_top20.update_traces(texttemplate='%{x:.2s} kWh', textposition='outside')
         
         evento_uc = st.plotly_chart(fig_top20, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
         if evento_uc and len(evento_uc.selection.get("points", [])) > 0:
-            ucs_selecionadas = [str(pt["y"]) for pt in evento_uc.selection["points"]]
+            ucs_selecionadas = list(set([str(pt["y"]) for pt in evento_uc.selection["points"]]))
             if st.session_state.clique_uc != ucs_selecionadas:
-                st.session_state.clique_uc = ucs_selecionadas
-                st.rerun()
-        
-    else:
-        st.info("Aguardando dados para gerar o Dashboard...")
+                st.session_state.clique_uc = ucs_selecionadas; st.rerun()
 
 # ==========================================
 # ABA DADOS

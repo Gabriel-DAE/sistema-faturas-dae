@@ -598,7 +598,7 @@ with aba_dash:
         }
         
         # Ajuste 4: Selectbox ocupando apenas um pedaço da tela
-        col_sel, _ = st.columns([1, 3]) 
+        col_sel, _ = st.columns([1, 4]) 
         param_nome = col_sel.selectbox("🎯 **Selecione o Indicador para Análise:**", list(dic_parametros.keys()))
         param_coluna = dic_parametros[param_nome]
         

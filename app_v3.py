@@ -548,7 +548,7 @@ def calcular_faturamento(uc, mes, q_c_p, q_c_fp, q_d_reg_p, q_d_reg_fp, q_r_p, q
 aba_dash, aba_dados, aba_pdf, aba_manual, aba_config = st.tabs(["📈 Dashboard", "📊 Banco de Dados", "📄 Upload PDF", "✍️ Cadastro Manual", "⚙️ Configurações"])
 
 # ==========================================
-# ABA DASHBOARD: BI COM CHAVE DE PARÂMETRO
+# ABA DASHBOARD
 # ==========================================
 with aba_dash:
     df_dash = carregar_dados()
@@ -567,9 +567,13 @@ with aba_dash:
         if 'clique_mes' not in st.session_state: st.session_state.clique_mes = []
         if 'clique_uc' not in st.session_state: st.session_state.clique_uc = []
 
+        # Ajuste 3: Botão de Reset menor e mais discreto
         if st.session_state.clique_ano or st.session_state.clique_mes or st.session_state.clique_uc:
-            if st.button("🧹 Limpar Todos os Filtros Cruzados"):
-                st.session_state.clique_ano = []; st.session_state.clique_mes = []; st.session_state.clique_uc = []
+            col_btn, _ = st.columns([1, 3]) # Coloca o botão em 1/4 da tela
+            if col_btn.button("🧹 Limpar Filtros"):
+                st.session_state.clique_ano = []
+                st.session_state.clique_mes = []
+                st.session_state.clique_uc = []
                 st.rerun()
 
         # 3. Filtragem Múltipla
@@ -583,7 +587,7 @@ with aba_dash:
 
         st.divider()
 
-        # --- A CHAVE MESTRA (SELETOR DE INDICADOR) ---
+        # --- A CHAVE MESTRA ---
         dic_parametros = {
             "Consumo Total (kWh)": "Total Consumo",
             "Valor Total Fatura (R$)": "Valor Total Fatura",
@@ -593,10 +597,11 @@ with aba_dash:
             "Valor Total Reativo (R$)": "Valor Total Reativo"
         }
         
-        param_nome = st.selectbox("🎯 **Selecione o Indicador para Análise:**", list(dic_parametros.keys()))
+        # Ajuste 4: Selectbox ocupando apenas um pedaço da tela
+        col_sel, _ = st.columns([1.5, 2.5]) 
+        param_nome = col_sel.selectbox("🎯 **Selecione o Indicador para Análise:**", list(dic_parametros.keys()))
         param_coluna = dic_parametros[param_nome]
         
-        # Identifica se é dinheiro para formatar os textos corretamente
         is_dinheiro = "(R$)" in param_nome
 
         st.write("")
@@ -605,16 +610,17 @@ with aba_dash:
         # --- GRÁFICO 1: Análise Anual ---
         df_ano = df_filtrado_dash.groupby('Ano')[param_coluna].sum().reset_index()
         
-        fig_ano = px.bar(df_ano, x='Ano', y=param_coluna, text_auto='.2s', 
+        # Ajuste 2: text_auto='.3s' para 1 casa após a vírgula com as letras k/M
+        fig_ano = px.bar(df_ano, x='Ano', y=param_coluna, text_auto='.3s', 
                          title=f"{param_nome} por Ano", color_discrete_sequence=["#0055A5"])
         
         fig_ano.update_layout(xaxis_title=None, yaxis_title=param_nome, xaxis={'type': 'category'})
         
-        # Formatação dinâmica (R$ ou kWh)
+        # Ajuste 1 e 2: Retirado o kWh e setado para .3s
         if is_dinheiro:
-            fig_ano.update_traces(texttemplate='R$ %{y:.2s}', textposition='outside')
+            fig_ano.update_traces(texttemplate='R$ %{y:.3s}', textposition='outside')
         else:
-            fig_ano.update_traces(texttemplate='%{y:.2s} kWh', textposition='outside')
+            fig_ano.update_traces(texttemplate='%{y:.3s}', textposition='outside')
 
         evento_ano = col_graf1.plotly_chart(fig_ano, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
@@ -632,13 +638,13 @@ with aba_dash:
         fig_mes.update_layout(xaxis_title=None, yaxis_title=param_nome)
         fig_mes.update_yaxes(rangemode="tozero")
         
-        # Média Dinâmica (R$ ou kWh)
+        # Média Dinâmica
         if not df_mes_ciclo.empty:
             media_val = df_mes_ciclo[param_coluna].mean()
             if is_dinheiro:
                 texto_media = f"Média: R$ {media_val:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
             else:
-                texto_media = f"Média: {media_val:,.0f} kWh".replace(',', 'X').replace('.', ',').replace('X', '.')
+                texto_media = f"Média: {media_val:,.0f}".replace(',', 'X').replace('.', ',').replace('X', '.') # Removido o kWh daqui também
                 
             fig_mes.add_hline(y=media_val, line_dash="dash", line_color="#FF4B4B", annotation_text=texto_media, annotation_position="top right")
 
@@ -655,15 +661,15 @@ with aba_dash:
         st.markdown(f"#### 🏆 Top 20 Unidades por {param_nome}")
         df_top20 = df_filtrado_dash.groupby('Nome da Unidade')[param_coluna].sum().reset_index().sort_values(param_coluna, ascending=False).head(20)
         
-        fig_top20 = px.bar(df_top20, x=param_coluna, y='Nome da Unidade', orientation='h', text_auto='.2s', color_discrete_sequence=["#0055A5"])
+        fig_top20 = px.bar(df_top20, x=param_coluna, y='Nome da Unidade', orientation='h', text_auto='.3s', color_discrete_sequence=["#0055A5"])
         
         fig_top20.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title=param_nome, yaxis_title=None)
         
-        # Formatação dinâmica (R$ ou kWh)
+        # Ajuste 1 e 2: Retirado o kWh e setado para .3s
         if is_dinheiro:
-            fig_top20.update_traces(texttemplate='R$ %{x:.2s}', textposition='outside')
+            fig_top20.update_traces(texttemplate='R$ %{x:.3s}', textposition='outside')
         else:
-            fig_top20.update_traces(texttemplate='%{x:.2s} kWh', textposition='outside')
+            fig_top20.update_traces(texttemplate='%{x:.3s}', textposition='outside')
         
         evento_uc = st.plotly_chart(fig_top20, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         

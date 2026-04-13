@@ -710,9 +710,7 @@ with aba_dash:
 
         st.divider()
         
-        # --- GRÁFICO 3: Participação Total por Unidade (Vertical) - TOP 30 ---
-        st.markdown(f"##### 📊 Top 30 Unidades por {param_nome}")
-        
+        # --- GRÁFICO 3: Participação Total por Unidade (Vertical) - TOP 30 ---     
         df_unidades = df_filtrado_dash.groupby('Nome da Unidade')[param_coluna].sum().reset_index()
         total_indicador = df_unidades[param_coluna].sum()
         
@@ -728,7 +726,7 @@ with aba_dash:
             df_unidades, 
             x='Nome da Unidade', 
             y=param_coluna, 
-            title=f"Distribuição Relativa de {param_nome}", 
+            title=f"📊 Top 30 Unidades por {param_nome}", 
             color_discrete_sequence=["#0055A5"]
         )
         

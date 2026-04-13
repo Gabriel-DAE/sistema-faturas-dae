@@ -51,9 +51,9 @@ def check_password():
             # Ex: st.image("logo_DAE.png", width=200)
             
             st.markdown("<h2 style='text-align: center; color: #0055A5;'>🔐 Acesso Restrito</h2>", unsafe_allow_html=True)
-            st.markdown("<p style='text-align: center;'>Insira suas credenciais para acessar o Sistema de Inteligência Energética.</p>", unsafe_allow_html=True)
+            st.markdown("<p style='text-align: center;'>Insira suas credenciais para acessar o Sistema de Faturas de Energia.</p>", unsafe_allow_html=True)
             
-            st.text_input("👤 Usuário", key="username")
+            st.text_input("👤 Usuário DAE", key="username")
             st.text_input("🔑 Senha", type="password", key="password")
             
             if st.button("🚀 Entrar no Sistema", type="primary", on_click=password_entered, use_container_width=True):
@@ -104,7 +104,7 @@ with col_logo:
     st.image("logo_DAE.png", use_container_width=True)
 
 with col_titulo:
-    st.subheader("⚡ Registro de Faturas de Energia - CPFL")
+    st.subheader("⚡ Sistema de Faturas de Energia - DAE Bauru")
     st.markdown("*Sistema de Análise Técnica e Auditoria Tarifária*")
 
 # --- 1. BANCO DE DADOS: CRIAÇÃO E PRÉ-CADASTRO ---

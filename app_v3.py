@@ -710,21 +710,53 @@ with aba_dash:
 
         st.divider()
         
-        # --- GRÁFICO 3: Top 20 Unidades ---
-        st.markdown(f"#### 🏆 Top 20 Unidades por {param_nome}")
-        df_top20 = df_filtrado_dash.groupby('Nome da Unidade')[param_coluna].sum().reset_index().sort_values(param_coluna, ascending=False).head(20)
-        fig_top20 = px.bar(df_top20, x=param_coluna, y='Nome da Unidade', orientation='h', text_auto='.3s', color_discrete_sequence=["#0055A5"])
-        fig_top20.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title=param_nome, yaxis_title=None)
+        # --- GRÁFICO 3: Participação Total por Unidade (Vertical) ---
+        st.markdown(f"#### 📊 Participação de Todas as Unidades por {param_nome}")
         
-        if is_dinheiro:
-            fig_top20.update_traces(texttemplate='R$ %{x:.3s}', textposition='outside')
+        # 1. Agrupa todas as unidades
+        df_unidades = df_filtrado_dash.groupby('Nome da Unidade')[param_coluna].sum().reset_index()
+        total_indicador = df_unidades[param_coluna].sum()
+        
+        # 2. Calcula o percentual de cada uma no montante total
+        if total_indicador > 0:
+            df_unidades['Percentual'] = (df_unidades[param_coluna] / total_indicador) * 100
         else:
-            fig_top20.update_traces(texttemplate='%{x:.3s}', textposition='outside')
+            df_unidades['Percentual'] = 0
+            
+        # Ordena do maior para o menor
+        df_unidades = df_unidades.sort_values(param_coluna, ascending=False)
         
-        evento_uc = st.plotly_chart(fig_top20, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
+        # 3. Criação do gráfico vertical
+        # Usamos uma função lambda para criar o rótulo combinado (Valor + %)
+        labels_custom = df_unidades.apply(
+            lambda row: f"{row[param_coluna]:.3s}<br>({row['Percentual']:.1f}%)", axis=1
+        )
+
+        fig_unidades = px.bar(
+            df_unidades, 
+            x='Nome da Unidade', 
+            y=param_coluna, 
+            text=labels_custom,
+            title=f"Distribuição Relativa de {param_nome}", 
+            color_discrete_sequence=["#0055A5"]
+        )
+        
+        # Ajustes de layout para clareza visual
+        fig_unidades.update_layout(
+            xaxis_title=None, 
+            yaxis_title=param_nome,
+            xaxis_tickangle=-45, # Inclina os nomes para leitura em lista grande
+            margin=dict(b=100)    # Aumenta a margem inferior para os nomes não cortarem
+        )
+        
+        fig_unidades.update_traces(textposition='outside')
+        
+        # Sistema de seleção cruzada (clique na barra vertical)
+        evento_uc = st.plotly_chart(fig_unidades, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
         if evento_uc and len(evento_uc.selection.get("points", [])) > 0:
-            ucs_sel = list(set([str(pt["y"]) for pt in evento_uc.selection["points"]]))
+            # Captura o valor do eixo X (Nome da Unidade)
+            ucs_sel = list(set([str(pt["x"]) for pt in evento_uc.selection["points"]]))
             if st.session_state.clique_uc != ucs_sel:
                 st.session_state.clique_uc = ucs_sel; st.rerun()
 

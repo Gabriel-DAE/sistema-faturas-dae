@@ -7,8 +7,69 @@ import pdfplumber
 import re
 from datetime import datetime
 import plotly.express as px
+from plotly.subplots import make_subplots
+import plotly.graph_objects as go
 
 st.set_page_config(page_title="Gestão de Energia - DAE", layout="wide", page_icon="⚡")
+
+# --- 1. SISTEMA DE LOGIN DAE ---
+def check_password():
+    """Valida se o usuário e senha digitados batem com os dados do Secrets."""
+    def password_entered():
+        # Verifica se o usuário existe no secrets e se a senha confere
+        usuario_digitado = st.session_state["username"]
+        senha_digitada = st.session_state["password"]
+        
+        if usuario_digitado in st.secrets["usuarios"] and senha_digitada == st.secrets["usuarios"][usuario_digitado]:
+            st.session_state["password_correct"] = True
+            del st.session_state["password"]  # Apaga a senha da memória por segurança
+        else:
+            st.session_state["password_correct"] = False
+
+    # Se é a primeira vez abrindo o app, o status é Falso
+    if "password_correct" not in st.session_state:
+        st.session_state["password_correct"] = False
+
+    # Se não estiver logado, desenha a tela de Login
+    if not st.session_state["password_correct"]:
+        # Criamos 3 colunas para centralizar a tela de login no meio do monitor
+        col1, col2, col3 = st.columns([1, 1.5, 1])
+        with col2:
+            st.write("")
+            st.write("")
+            st.write("") # Espaçadores para empurrar pro meio da tela
+            
+            # Centraliza a logo usando HTML
+            st.markdown(
+                """
+                <div style="text-align: center;">
+                    <img src="https://via.placeholder.com/200x80?text=Logo+DAE" width="200">
+                </div>
+                """, unsafe_allow_html=True
+            )
+            # Dica: Substitua a linha acima pela sua imagem se tiver como subir o arquivo para o github.
+            # Ex: st.image("logo_DAE.png", width=200)
+            
+            st.markdown("<h2 style='text-align: center; color: #0055A5;'>🔐 Acesso Restrito</h2>", unsafe_allow_html=True)
+            st.markdown("<p style='text-align: center;'>Insira suas credenciais para acessar o Sistema de Inteligência Energética.</p>", unsafe_allow_html=True)
+            
+            st.text_input("👤 Usuário", key="username")
+            st.text_input("🔑 Senha", type="password", key="password")
+            
+            if st.button("🚀 Entrar no Sistema", type="primary", on_click=password_entered, use_container_width=True):
+                pass
+            
+            if st.session_state.get("password_correct") == False:
+                st.error("🚨 Usuário ou senha incorretos. Tente novamente.")
+                
+        return False # Interrompe aqui e não deixa ver o resto
+    
+    return True # Se a senha bateu, libera o acesso
+
+# --- 2. A "CATRACA" DO STREAMLIT ---
+# Se a função retornar falso (não logado), o st.stop() mata o código na hora e esconde o painel
+if not check_password():
+    st.stop()
 
 # --- OCULTAR ELEMENTOS PADRÃO DO STREAMLIT ---
 esconder_botoes = """

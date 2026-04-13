@@ -710,7 +710,7 @@ with aba_dash:
 
         st.divider()
         
-        # --- GRÁFICO 3: Participação Total por Unidade (Vertical) ---
+# --- GRÁFICO 3: Participação Total por Unidade (Vertical) ---
         st.markdown(f"#### 📊 Participação de Todas as Unidades por {param_nome}")
         
         # 1. Agrupa todas as unidades
@@ -726,36 +726,36 @@ with aba_dash:
         # Ordena do maior para o menor
         df_unidades = df_unidades.sort_values(param_coluna, ascending=False)
         
-        # 3. Criação do gráfico vertical
-        # Usamos uma função lambda para criar o rótulo combinado (Valor + %)
-        labels_custom = df_unidades.apply(
-            lambda row: f"{row[param_coluna]:.3s}<br>({row['Percentual']:.1f}%)", axis=1
-        )
-
+        # 3. Criação do gráfico vertical (Agora sem o erro de formatação do Pandas)
         fig_unidades = px.bar(
             df_unidades, 
             x='Nome da Unidade', 
             y=param_coluna, 
-            text=labels_custom,
             title=f"Distribuição Relativa de {param_nome}", 
             color_discrete_sequence=["#0055A5"]
         )
+        
+        # Passamos a coluna Percentual "escondida" para o Plotly através do customdata
+        fig_unidades.update_traces(customdata=df_unidades['Percentual'], textposition='outside')
+        
+        # Deixamos o Plotly fazer a mágica de colocar "k/M" (%{y:.3s}) e injetar o percentual (%{customdata})
+        if is_dinheiro:
+            fig_unidades.update_traces(texttemplate='R$ %{y:.3s}<br>(%{customdata:.1f}%)')
+        else:
+            fig_unidades.update_traces(texttemplate='%{y:.3s}<br>(%{customdata:.1f}%)')
         
         # Ajustes de layout para clareza visual
         fig_unidades.update_layout(
             xaxis_title=None, 
             yaxis_title=param_nome,
-            xaxis_tickangle=-45, # Inclina os nomes para leitura em lista grande
-            margin=dict(b=100)    # Aumenta a margem inferior para os nomes não cortarem
+            xaxis_tickangle=-45, # Inclina os nomes para leitura
+            margin=dict(b=100)   # Aumenta a margem para não cortar nomes longos
         )
         
-        fig_unidades.update_traces(textposition='outside')
-        
-        # Sistema de seleção cruzada (clique na barra vertical)
+        # Sistema de seleção cruzada (Lembrando que no gráfico vertical, o nome agora está no eixo X)
         evento_uc = st.plotly_chart(fig_unidades, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
         if evento_uc and len(evento_uc.selection.get("points", [])) > 0:
-            # Captura o valor do eixo X (Nome da Unidade)
             ucs_sel = list(set([str(pt["x"]) for pt in evento_uc.selection["points"]]))
             if st.session_state.clique_uc != ucs_sel:
                 st.session_state.clique_uc = ucs_sel; st.rerun()

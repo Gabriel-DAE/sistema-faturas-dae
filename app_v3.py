@@ -640,8 +640,8 @@ with aba_dash:
             "Valor Total Reativo (R$)": "Valor Total Reativo"
         }
         
-        # Ajuste de layout: Indicador (2.5), Classificação (3.5), Espaço (2), Botão (2)
-        col_ind, col_cla, col_vazio, col_btn = st.columns([2.5, 3.5, 2, 2]) 
+        # Ajuste de layout: Indicador (2.5), Classificação (2.5), Espaço (2), Botão (2)
+        col_ind, col_cla, col_vazio, col_btn = st.columns([2.5, 2.5, 2, 2]) 
         
         param_nome = col_ind.selectbox("🎯 **Indicador:**", list(dic_parametros.keys()))
         param_coluna = dic_parametros[param_nome]
@@ -649,7 +649,7 @@ with aba_dash:
 
         # Ajuste: Mudança para multiselect
         opcoes_classes = sorted(list(df_dash['Classificação'].unique()))
-        filtro_classe_fixo = col_cla.multiselect("🏷️ **Filtrar Classificações:**", options=opcoes_classes, placeholder="Todas as classes")
+        filtro_classe_fixo = col_cla.multiselect("🏷️ **Classificação:**", options=opcoes_classes, placeholder="Todas as classes")
 
         # Botão de Reset (Extrema direita)
         if st.session_state.clique_ano or st.session_state.clique_mes or st.session_state.clique_uc:

@@ -641,16 +641,14 @@ with aba_dash:
         }
         
         # Ajuste de layout: Indicador (2.5), Classificação (2.5), Espaço (3), Botão (2)
-        col_ind, col_cla, col_vazio, col_btn = st.columns([2.5, 2.5, 3, 2]) 
+        col_ind, col_cla, col_vazio, col_btn = st.columns([2.5, 3.5, 2, 2]) 
         
-        # Seletor de Indicador
         param_nome = col_ind.selectbox("🎯 **Indicador:**", list(dic_parametros.keys()))
         param_coluna = dic_parametros[param_nome]
-        is_dinheiro = "(R$)" in param_nome
 
-        # Seletor de Classificação (Dropdown fixo)
-        lista_classes = ["Todas"] + sorted(list(df_dash['Classificação'].unique()))
-        filtro_classe_fixo = col_cla.selectbox("🏷️ **Classificação:**", lista_classes)
+        # Ajuste: Mudança para multiselect
+        opcoes_classes = sorted(list(df_dash['Classificação'].unique()))
+        filtro_classe_fixo = col_cla.multiselect("🏷️ **Filtrar Classificações:**", options=opcoes_classes, placeholder="Todas as classes")
 
         # Botão de Reset (Extrema direita)
         if st.session_state.clique_ano or st.session_state.clique_mes or st.session_state.clique_uc:
@@ -659,12 +657,12 @@ with aba_dash:
                 st.session_state.clique_ano = []; st.session_state.clique_mes = []; st.session_state.clique_uc = []
                 st.rerun()
 
-        # 3. Lógica de Filtragem (Combinando Filtro Fixo + Cliques nos Gráficos)
+        # 3. Lógica de Filtragem (Ajustada para Múltiplas Classes)
         df_filtrado_dash = df_dash.copy()
         
-        # Aplica o filtro fixo de Classificação primeiro
-        if filtro_classe_fixo != "Todas":
-            df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Classificação'] == filtro_classe_fixo]
+        # Se a lista de filtro não estiver vazia, aplica o filtro usando .isin()
+        if filtro_classe_fixo:
+            df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Classificação'].isin(filtro_classe_fixo)]
             
         # Aplica os cliques múltiplos (SHIFT)
         if st.session_state.clique_ano:

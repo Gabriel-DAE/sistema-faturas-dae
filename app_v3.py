@@ -16,55 +16,49 @@ st.set_page_config(page_title="Gestão de Energia - DAE", layout="wide", page_ic
 def check_password():
     """Valida se o usuário e senha digitados batem com os dados do Secrets."""
     def password_entered():
-        # Verifica se o usuário existe no secrets e se a senha confere
         usuario_digitado = st.session_state["username"]
         senha_digitada = st.session_state["password"]
         
+        # Verifica se o usuário existe no secrets e se a senha confere
         if usuario_digitado in st.secrets["usuarios"] and senha_digitada == st.secrets["usuarios"][usuario_digitado]:
             st.session_state["password_correct"] = True
             del st.session_state["password"]  # Apaga a senha da memória por segurança
         else:
+            # Se errar, aí sim o status vira Falso
             st.session_state["password_correct"] = False
 
-    # Se é a primeira vez abrindo o app, o status é Falso
-    if "password_correct" not in st.session_state:
-        st.session_state["password_correct"] = False
+    # Retorna True se o usuário já estiver logado com sucesso
+    if st.session_state.get("password_correct"):
+        return True
 
-    # Se não estiver logado, desenha a tela de Login
-    if not st.session_state["password_correct"]:
-        # Criamos 3 colunas para centralizar a tela de login no meio do monitor
-        col1, col2, col3 = st.columns([1, 1.5, 1])
-        with col2:
-            st.write("")
-            st.write("")
-            st.write("") # Espaçadores para empurrar pro meio da tela
+    # Se chegou até aqui, é porque não está logado. Desenha a tela:
+    col1, col2, col3 = st.columns([1, 1.5, 1])
+    with col2:
+        st.write("")
+        st.write("")
+        st.write("") # Espaçadores
+        
+        # Carrega a sua logo real e centraliza usando colunas internas
+        col_img1, col_img2, col_img3 = st.columns([1, 2, 1])
+        with col_img2:
+            try:
+                st.image("logo_DAE.png", use_container_width=True)
+            except:
+                pass # Caso o nome da logo esteja diferente, ele não quebra a tela
+        
+        st.markdown("<h2 style='text-align: center; color: #0055A5;'>🔐 Acesso Restrito</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center;'>Insira suas credenciais para acessar o Sistema de Inteligência Energética.</p>", unsafe_allow_html=True)
+        
+        st.text_input("👤 Usuário", key="username")
+        st.text_input("🔑 Senha", type="password", key="password")
+        
+        st.button("🚀 Entrar no Sistema", type="primary", on_click=password_entered, use_container_width=True)
+        
+        # O erro só aparece se o status for EXPLICITAMENTE False (após tentativa de login)
+        if st.session_state.get("password_correct") == False:
+            st.error("🚨 Usuário ou senha incorretos. Tente novamente.")
             
-            # Centraliza a logo usando HTML
-            st.markdown(
-                """
-                <div style="text-align: center;">
-                    <img src="https://via.placeholder.com/200x80?text=Logo+DAE" width="200">
-                </div>
-                """, unsafe_allow_html=True
-            )
-            # Dica: Substitua a linha acima pela sua imagem se tiver como subir o arquivo para o github.
-            # Ex: st.image("logo_DAE.png", width=200)
-            
-            st.markdown("<h2 style='text-align: center; color: #0055A5;'>🔐 Acesso Restrito</h2>", unsafe_allow_html=True)
-            st.markdown("<p style='text-align: center;'>Insira suas credenciais para acessar o Sistema de Faturas de Energia.</p>", unsafe_allow_html=True)
-            
-            st.text_input("👤 Usuário DAE", key="username")
-            st.text_input("🔑 Senha", type="password", key="password")
-            
-            if st.button("🚀 Entrar no Sistema", type="primary", on_click=password_entered, use_container_width=True):
-                pass
-            
-            if st.session_state.get("password_correct") == False:
-                st.error("🚨 Usuário ou senha incorretos. Tente novamente.")
-                
-        return False # Interrompe aqui e não deixa ver o resto
-    
-    return True # Se a senha bateu, libera o acesso
+    return False # Bloqueia o acesso ao resto do código
 
 # --- 2. A "CATRACA" DO STREAMLIT ---
 # Se a função retornar falso (não logado), o st.stop() mata o código na hora e esconde o painel

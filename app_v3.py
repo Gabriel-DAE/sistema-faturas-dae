@@ -640,11 +640,12 @@ with aba_dash:
             "Valor Total Reativo (R$)": "Valor Total Reativo"
         }
         
-        # Ajuste de layout: Indicador (2.5), Classificação (2.5), Espaço (3), Botão (2)
+        # Ajuste de layout: Indicador (2.5), Classificação (3.5), Espaço (2), Botão (2)
         col_ind, col_cla, col_vazio, col_btn = st.columns([2.5, 3.5, 2, 2]) 
         
         param_nome = col_ind.selectbox("🎯 **Indicador:**", list(dic_parametros.keys()))
         param_coluna = dic_parametros[param_nome]
+        is_dinheiro = "(R$)" in param_nome
 
         # Ajuste: Mudança para multiselect
         opcoes_classes = sorted(list(df_dash['Classificação'].unique()))

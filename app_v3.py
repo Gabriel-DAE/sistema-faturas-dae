@@ -47,9 +47,9 @@ def check_password():
                 pass # Caso o nome da logo esteja diferente, ele não quebra a tela
         
         st.markdown("<h2 style='text-align: center; color: #0055A5;'>🔐 Acesso Restrito</h2>", unsafe_allow_html=True)
-        st.markdown("<p style='text-align: center;'>Insira suas credenciais para acessar o Sistema de Inteligência Energética.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align: center;'>Insira suas credenciais para acessar o Sistema de Faturas de Energia.</p>", unsafe_allow_html=True)
         
-        st.text_input("👤 Usuário", key="username")
+        st.text_input("👤 Usuário DAE", key="username")
         st.text_input("🔑 Senha", type="password", key="password")
         
         st.button("🚀 Entrar no Sistema", type="primary", on_click=password_entered, use_container_width=True)

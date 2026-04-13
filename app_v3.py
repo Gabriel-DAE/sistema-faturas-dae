@@ -710,49 +710,44 @@ with aba_dash:
 
         st.divider()
         
-# --- GRÁFICO 3: Participação Total por Unidade (Vertical) ---
-        st.markdown(f"#### 📊 Participação de Todas as Unidades por {param_nome}")
+        # --- GRÁFICO 3: Participação Total por Unidade (Vertical) - TOP 30 ---
+        st.markdown(f"#### 📊 Participação (Top 30 Unidades) por {param_nome}")
         
-        # 1. Agrupa todas as unidades
         df_unidades = df_filtrado_dash.groupby('Nome da Unidade')[param_coluna].sum().reset_index()
         total_indicador = df_unidades[param_coluna].sum()
         
-        # 2. Calcula o percentual de cada uma no montante total
         if total_indicador > 0:
             df_unidades['Percentual'] = (df_unidades[param_coluna] / total_indicador) * 100
         else:
             df_unidades['Percentual'] = 0
             
-        # Ordena do maior para o menor
-        df_unidades = df_unidades.sort_values(param_coluna, ascending=False)
+        # O CORTE DE TOP 30 (Sempre após calcular o percentual do total!)
+        df_unidades = df_unidades.sort_values(param_coluna, ascending=False).head(30)
         
-        # 3. Criação do gráfico vertical (Agora sem o erro de formatação do Pandas)
         fig_unidades = px.bar(
             df_unidades, 
             x='Nome da Unidade', 
             y=param_coluna, 
-            title=f"Distribuição Relativa de {param_nome}", 
+            title=f"Distribuição Relativa de {param_nome} (Maior para Menor)", 
             color_discrete_sequence=["#0055A5"]
         )
         
-        # Passamos a coluna Percentual "escondida" para o Plotly através do customdata
-        fig_unidades.update_traces(customdata=df_unidades['Percentual'], textposition='outside')
+        # AUMENTO DE FONTE APLICADO AQUI
+        fig_unidades.update_layout(
+            xaxis_title=None, 
+            yaxis_title=param_nome,
+            xaxis_tickangle=-45, 
+            margin=dict(b=120), # Margem um pouco maior para os nomes
+            font=dict(size=14)
+        )
         
-        # Deixamos o Plotly fazer a mágica de colocar "k/M" (%{y:.3s}) e injetar o percentual (%{customdata})
+        fig_unidades.update_traces(customdata=df_unidades['Percentual'], textposition='outside', textfont_size=13)
+        
         if is_dinheiro:
             fig_unidades.update_traces(texttemplate='R$ %{y:.3s}<br>(%{customdata:.1f}%)')
         else:
             fig_unidades.update_traces(texttemplate='%{y:.3s}<br>(%{customdata:.1f}%)')
         
-        # Ajustes de layout para clareza visual
-        fig_unidades.update_layout(
-            xaxis_title=None, 
-            yaxis_title=param_nome,
-            xaxis_tickangle=-45, # Inclina os nomes para leitura
-            margin=dict(b=100)   # Aumenta a margem para não cortar nomes longos
-        )
-        
-        # Sistema de seleção cruzada (Lembrando que no gráfico vertical, o nome agora está no eixo X)
         evento_uc = st.plotly_chart(fig_unidades, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
         if evento_uc and len(evento_uc.selection.get("points", [])) > 0:

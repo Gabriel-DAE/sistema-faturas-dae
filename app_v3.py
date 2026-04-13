@@ -39,7 +39,7 @@ def check_password():
         st.write("") # Espaçadores
         
         # Carrega a sua logo real e centraliza usando colunas internas
-        col_img1, col_img2, col_img3 = st.columns([1, 1, 1])
+        col_img1, col_img2, col_img3 = st.columns([1, 1.5, 1])
         with col_img2:
             try:
                 st.image("logo_DAE.png", use_container_width=True)

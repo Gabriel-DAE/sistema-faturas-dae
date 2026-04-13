@@ -616,30 +616,21 @@ with aba_dash:
     
     if not df_dash.empty:
         st.markdown("##### ⚡ Business Intelligence - Consumo DAE")
-        st.markdown("💡 **Dica PRO:** Escolha o indicador abaixo. Segure a tecla **SHIFT** ao clicar nos gráficos para selecionar vários itens.")
+        st.markdown("💡 **Dica PRO:** Segure a tecla **SHIFT** para seleção múltipla nos gráficos. Use os filtros superiores para seleções rápidas.")
         
         # 1. Preparação dos Dados
         df_dash['Ano'] = df_dash['Data Referência Oculta'].dt.year.astype(str)
         df_dash['Mes_Nome'] = df_dash['Data Referência Oculta'].dt.strftime('%B')
         df_dash['Mes_Num'] = df_dash['Data Referência Oculta'].dt.month
         
-        # 2. Inicialização da Memória
+        # 2. Inicialização da Memória de Cliques
         if 'clique_ano' not in st.session_state: st.session_state.clique_ano = []
         if 'clique_mes' not in st.session_state: st.session_state.clique_mes = []
         if 'clique_uc' not in st.session_state: st.session_state.clique_uc = []
 
-        # 3. Filtragem Múltipla
-        df_filtrado_dash = df_dash.copy()
-        if st.session_state.clique_ano:
-            df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Ano'].isin(st.session_state.clique_ano)]
-        if st.session_state.clique_mes:
-            df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Mes_Nome'].isin(st.session_state.clique_mes)]
-        if st.session_state.clique_uc:
-            df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Nome da Unidade'].isin(st.session_state.clique_uc)]
-
         st.divider()
 
-        # --- A CHAVE MESTRA E O BOTÃO DE RESET (ALINHADOS) ---
+        # --- SELETORES SUPERIORES E BOTÃO DE RESET ---
         dic_parametros = {
             "Consumo Total (kWh)": "Total Consumo",
             "Valor Total Fatura (R$)": "Valor Total Fatura",
@@ -649,33 +640,47 @@ with aba_dash:
             "Valor Total Reativo (R$)": "Valor Total Reativo"
         }
         
-        # Criação de 3 colunas: Seletor (30%), Espaço Vazio (50%), Botão (20%)
-        col_sel, col_vazio, col_btn = st.columns([3, 5, 2]) 
+        # Ajuste de layout: Indicador (2.5), Classificação (2.5), Espaço (3), Botão (2)
+        col_ind, col_cla, col_vazio, col_btn = st.columns([2.5, 2.5, 3, 2]) 
         
-        # Seletor na extrema esquerda
-        param_nome = col_sel.selectbox("🎯 **Selecione o Indicador para Análise:**", list(dic_parametros.keys()))
+        # Seletor de Indicador
+        param_nome = col_ind.selectbox("🎯 **Indicador:**", list(dic_parametros.keys()))
         param_coluna = dic_parametros[param_nome]
         is_dinheiro = "(R$)" in param_nome
 
-        # Botão na extrema direita (só aparece se houver filtros ativos)
+        # Seletor de Classificação (Dropdown fixo)
+        lista_classes = ["Todas"] + sorted(list(df_dash['Classificação'].unique()))
+        filtro_classe_fixo = col_cla.selectbox("🏷️ **Classificação:**", lista_classes)
+
+        # Botão de Reset (Extrema direita)
         if st.session_state.clique_ano or st.session_state.clique_mes or st.session_state.clique_uc:
-            # Truque para empurrar o botão para baixo e alinhar com a caixa do seletor
             col_btn.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
             if col_btn.button("🧹 Limpar Filtros", use_container_width=True):
-                st.session_state.clique_ano = []
-                st.session_state.clique_mes = []
-                st.session_state.clique_uc = []
+                st.session_state.clique_ano = []; st.session_state.clique_mes = []; st.session_state.clique_uc = []
                 st.rerun()
+
+        # 3. Lógica de Filtragem (Combinando Filtro Fixo + Cliques nos Gráficos)
+        df_filtrado_dash = df_dash.copy()
+        
+        # Aplica o filtro fixo de Classificação primeiro
+        if filtro_classe_fixo != "Todas":
+            df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Classificação'] == filtro_classe_fixo]
+            
+        # Aplica os cliques múltiplos (SHIFT)
+        if st.session_state.clique_ano:
+            df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Ano'].isin(st.session_state.clique_ano)]
+        if st.session_state.clique_mes:
+            df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Mes_Nome'].isin(st.session_state.clique_mes)]
+        if st.session_state.clique_uc:
+            df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Nome da Unidade'].isin(st.session_state.clique_uc)]
 
         st.write("")
         col_graf1, col_graf2 = st.columns(2)
         
         # --- GRÁFICO 1: Análise Anual ---
         df_ano = df_filtrado_dash.groupby('Ano')[param_coluna].sum().reset_index()
-        
         fig_ano = px.bar(df_ano, x='Ano', y=param_coluna, text_auto='.3s', 
                          title=f"{param_nome} por Ano", color_discrete_sequence=["#0055A5"])
-        
         fig_ano.update_layout(xaxis_title=None, yaxis_title=param_nome, xaxis={'type': 'category'})
         
         if is_dinheiro:
@@ -686,44 +691,36 @@ with aba_dash:
         evento_ano = col_graf1.plotly_chart(fig_ano, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
         if evento_ano and len(evento_ano.selection.get("points", [])) > 0:
-            anos_selecionados = list(set([str(pt["x"]) for pt in evento_ano.selection["points"]]))
-            if st.session_state.clique_ano != anos_selecionados:
-                st.session_state.clique_ano = anos_selecionados; st.rerun()
+            anos_sel = list(set([str(pt["x"]) for pt in evento_ano.selection["points"]]))
+            if st.session_state.clique_ano != anos_sel:
+                st.session_state.clique_ano = anos_sel; st.rerun()
 
         # --- GRÁFICO 2: Sazonalidade Mensal ---
         df_mes_ciclo = df_filtrado_dash.groupby(['Mes_Num', 'Mes_Nome'])[param_coluna].sum().reset_index().sort_values('Mes_Num')
-        
         fig_mes = px.line(df_mes_ciclo, x='Mes_Nome', y=param_coluna, markers=True,
                           title=f"Sazonalidade Mensal ({param_nome})", color_discrete_sequence=["#0055A5"])
-                          
         fig_mes.update_layout(xaxis_title=None, yaxis_title=param_nome)
         fig_mes.update_yaxes(rangemode="tozero")
         
-        # Média Dinâmica
         if not df_mes_ciclo.empty:
             media_val = df_mes_ciclo[param_coluna].mean()
-            if is_dinheiro:
-                texto_media = f"Média: R$ {media_val:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-            else:
-                texto_media = f"Média: {media_val:,.0f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-                
-            fig_mes.add_hline(y=media_val, line_dash="dash", line_color="#FF4B4B", annotation_text=texto_media, annotation_position="top right")
+            fmt = f"Média: R$ {media_val:,.2f}" if is_dinheiro else f"Média: {media_val:,.0f}"
+            fmt = fmt.replace(',', 'X').replace('.', ',').replace('X', '.')
+            fig_mes.add_hline(y=media_val, line_dash="dash", line_color="#FF4B4B", annotation_text=fmt, annotation_position="top right")
 
         evento_mes = col_graf2.plotly_chart(fig_mes, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
         if evento_mes and len(evento_mes.selection.get("points", [])) > 0:
-            meses_selecionados = list(set([str(pt["x"]) for pt in evento_mes.selection["points"]]))
-            if st.session_state.clique_mes != meses_selecionados:
-                st.session_state.clique_mes = meses_selecionados; st.rerun()
+            meses_sel = [str(pt["x"]) for pt in evento_mes.selection["points"]]
+            if st.session_state.clique_mes != meses_sel:
+                st.session_state.clique_mes = meses_sel; st.rerun()
 
         st.divider()
         
         # --- GRÁFICO 3: Top 20 Unidades ---
         st.markdown(f"#### 🏆 Top 20 Unidades por {param_nome}")
         df_top20 = df_filtrado_dash.groupby('Nome da Unidade')[param_coluna].sum().reset_index().sort_values(param_coluna, ascending=False).head(20)
-        
         fig_top20 = px.bar(df_top20, x=param_coluna, y='Nome da Unidade', orientation='h', text_auto='.3s', color_discrete_sequence=["#0055A5"])
-        
         fig_top20.update_layout(yaxis={'categoryorder':'total ascending'}, xaxis_title=param_nome, yaxis_title=None)
         
         if is_dinheiro:
@@ -734,9 +731,9 @@ with aba_dash:
         evento_uc = st.plotly_chart(fig_top20, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
         if evento_uc and len(evento_uc.selection.get("points", [])) > 0:
-            ucs_selecionadas = list(set([str(pt["y"]) for pt in evento_uc.selection["points"]]))
-            if st.session_state.clique_uc != ucs_selecionadas:
-                st.session_state.clique_uc = ucs_selecionadas; st.rerun()
+            ucs_sel = list(set([str(pt["y"]) for pt in evento_uc.selection["points"]]))
+            if st.session_state.clique_uc != ucs_sel:
+                st.session_state.clique_uc = ucs_sel; st.rerun()
 
 # ==========================================
 # ABA DADOS

@@ -32,14 +32,14 @@ def check_password():
         return True
 
     # Se chegou até aqui, é porque não está logado. Desenha a tela:
-    col1, col2, col3 = st.columns([1, 1.5, 1])
+    col1, col2, col3 = st.columns([2, 1.5, 2])
     with col2:
         st.write("")
         st.write("")
         st.write("") # Espaçadores
         
         # Carrega a sua logo real e centraliza usando colunas internas
-        col_img1, col_img2, col_img3 = st.columns([1, 2, 1])
+        col_img1, col_img2, col_img3 = st.columns([2, 1, 2])
         with col_img2:
             try:
                 st.image("logo_DAE.png", use_container_width=True)

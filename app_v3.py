@@ -1290,80 +1290,79 @@ with aba_config:
                     st.rerun()
 
         with tab_cad_lote:
-            st.info("💡 Crie uma planilha no Excel com o cabeçalho idêntico à tabela abaixo e faça o upload.")
-            
-            # Atualizado com a coluna status
-            df_exemplo = pd.DataFrame({
-                "unidade_consumidora": ["40190245", "4065530"],
-                "nome_unidade": ["ETA Bauru", "Promocao Social"],
-                "atividade": ["Água", "Administrativa"],
-                "classificacao": ["Tarifa Azul-A4", "Convencional B3"],
-                "demanda_contratada_ponta": [275.0, 0.0],
-                "demanda_contratada_fponta": [275.0, 0.0],
+            st.info("💡 Crie uma planilha no Excel com o cabeçalho idêntico à tabela abaixo e faça o upload.")
+            
+            df_exemplo = pd.DataFrame({
+                "unidade_consumidora": ["40190245", "4065530"],
+                "nome_unidade": ["ETA Bauru", "Promocao Social"],
+                "atividade": ["Água", "Administrativa"],
+                "classificacao": ["Tarifa Azul-A4", "Convencional B3"],
+                "demanda_contratada_ponta": [275.0, 0.0],
+                "demanda_contratada_fponta": [275.0, 0.0],
                 "status": ["ATIVA", "INATIVA"]
-            })
-            
-            st.dataframe(df_exemplo, hide_index=True, use_container_width=True)
-            
-            arquivo_ucs_excel = st.file_uploader("Selecione a planilha de UCs (.xlsx)", type=["xlsx"], key="upload_uc")
-            
-            if arquivo_ucs_excel is not None:
-                if st.button("🚀 Processar e Cadastrar Unidades", type="primary"):
-                    try:
-                        df_ucs = pd.read_excel(arquivo_ucs_excel)
-                        conexao = obter_conexao()
-                        c = conexao.cursor()
-                        
-                        inseridas = 0
-                        
-                        for index, row in df_ucs.iterrows():
-                            uc = str(row.get('unidade_consumidora', '')).strip()
-                            
-                            if not uc or uc == 'nan':
-                                continue
-                            
-                            nome = str(row.get('nome_unidade', '')).strip()
-                            ativ = str(row.get('atividade', 'Administrativa')).strip()
-                            classif = str(row.get('classificacao', 'Tarifa Azul-A4')).strip()
-                            status_uc = str(row.get('status', 'ATIVA')).strip().upper() # Captura o status
-                            
-                            try:
-                                dc_p = float(row.get('demanda_contratada_ponta', 0.0))
-                            except:
-                                dc_p = 0.0
-                                
-                            try:
-                                dc_fp = float(row.get('demanda_contratada_fponta', 0.0))
-                            except:
-                                dc_fp = 0.0
+            })
+            
+            st.dataframe(df_exemplo, hide_index=True, use_container_width=True)
+            
+            arquivo_ucs_excel = st.file_uploader("Selecione a planilha de UCs (.xlsx)", type=["xlsx"], key="upload_uc")
+            
+            if arquivo_ucs_excel is not None:
+                if st.button("🚀 Processar e Cadastrar Unidades", type="primary"):
+                    try:
+                        df_ucs = pd.read_excel(arquivo_ucs_excel)
+                        conexao = obter_conexao()
+                        c = conexao.cursor()
+                        
+                        inseridas = 0
+                        
+                        for index, row in df_ucs.iterrows():
+                            uc = str(row.get('unidade_consumidora', '')).strip()
+                            
+                            if not uc or uc == 'nan':
+                                continue
+                            
+                            nome = str(row.get('nome_unidade', '')).strip()
+                            ativ = str(row.get('atividade', 'Administrativa')).strip()
+                            classif = str(row.get('classificacao', 'Tarifa Azul-A4')).strip()
+                            status_uc = str(row.get('status', 'ATIVA')).strip().upper()
+                            
+                            try:
+                                dc_p = float(row.get('demanda_contratada_ponta', 0.0))
+                            except:
+                                dc_p = 0.0
+                                
+                            try:
+                                dc_fp = float(row.get('demanda_contratada_fponta', 0.0))
+                            except:
+                                dc_fp = 0.0
 
-                            if "Verde" in classif:
-                                dc_p = 0.0
-                            elif "B3" in classif:
-                                dc_p = 0.0
-                                dc_fp = 0.0
-                                
-                            c.execute('''
-                                INSERT INTO cadastro_uc (unidade_consumidora, nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                                ON CONFLICT (unidade_consumidora) DO UPDATE SET 
-                                nome_unidade = EXCLUDED.nome_unidade,
-                                atividade = EXCLUDED.atividade,
-                                classificacao = EXCLUDED.classificacao,
-                                demanda_contratada_ponta = EXCLUDED.demanda_contratada_ponta,
-                                demanda_contratada_fponta = EXCLUDED.demanda_contratada_fponta,
+                            if "Verde" in classif:
+                                dc_p = 0.0
+                            elif "B3" in classif:
+                                dc_p = 0.0
+                                dc_fp = 0.0
+                                
+                            c.execute('''
+                                INSERT INTO cadastro_uc (unidade_consumidora, nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                ON CONFLICT (unidade_consumidora) DO UPDATE SET 
+                                nome_unidade = EXCLUDED.nome_unidade,
+                                atividade = EXCLUDED.atividade,
+                                classificacao = EXCLUDED.classificacao,
+                                demanda_contratada_ponta = EXCLUDED.demanda_contratada_ponta,
+                                demanda_contratada_fponta = EXCLUDED.demanda_contratada_fponta,
                                 status = EXCLUDED.status;
-                            ''', (uc, nome, ativ, classif, dc_p, dc_fp, status_uc))
-                            inseridas += 1
-                            
-                        conexao.commit()
-                        conexao.close()
-                        
-                        st.success(f"✅ Lote processado! **{inseridas}** UCs cadastradas ou atualizadas no sistema.")
-                        st.balloons()
-                        
-                    except Exception as e:
-                        st.error(f"Erro ao processar a planilha. Verifique se o nome das colunas está correto. Detalhe: {e}")
+                            ''', (uc, nome, ativ, classif, dc_p, dc_fp, status_uc))
+                            inseridas += 1
+                            
+                        conexao.commit()
+                        conexao.close()
+                        
+                        st.success(f"✅ Lote processado! **{inseridas}** UCs cadastradas ou atualizadas no sistema.")
+                        st.balloons()
+                        
+                    except Exception as e:
+                        st.error(f"Erro ao processar a planilha. Verifique se o nome das colunas está correto. Detalhe: {e}")
 
     with col_tar:
         st.markdown("###### 📈 Tarifas e Impostos")

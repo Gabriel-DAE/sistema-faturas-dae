@@ -1376,6 +1376,30 @@ with aba_config:
                     except Exception as e:
                         st.error(f"Erro ao processar a planilha. Verifique se o nome das colunas está correto. Detalhe: {e}")
 
+            st.divider()
+            st.markdown("###### 🔄 Sincronização de Histórico")
+            st.info("Use este botão para corrigir o nome, atividade e classe de TODAS as faturas antigas de uma só vez.")
+            
+            if st.button("🔄 Sincronizar Faturas Antigas", type="primary"):
+                try:
+                    conexao = obter_conexao()
+                    c = conexao.cursor()
+                    c.execute('''
+                        UPDATE faturas_cpfl
+                        SET nome_unidade = cadastro_uc.nome_unidade,
+                            atividade = cadastro_uc.atividade,
+                            classificacao = cadastro_uc.classificacao
+                        FROM cadastro_uc
+                        WHERE faturas_cpfl.unidade_consumidora = cadastro_uc.unidade_consumidora;
+                    ''')
+                    linhas_afetadas = c.rowcount
+                    conexao.commit()
+                    conexao.close()
+                    carregar_dados.clear()
+                    st.success(f"✅ Sincronização concluída! {linhas_afetadas} faturas foram atualizadas.")
+                except Exception as e:
+                    st.error(f"Erro ao sincronizar: {e}")
+
     with col_tar:
         st.markdown("###### 📈 Tarifas e Impostos")
         

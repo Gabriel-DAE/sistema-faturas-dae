@@ -616,7 +616,7 @@ def calcular_faturamento(uc, mes, q_c_p, q_c_fp, q_d_reg_p, q_d_reg_fp, q_r_p, q
     }
 
 # --- 4. INTERFACE ---
-aba_dash, aba_dados, aba_pdf, aba_manual, aba_config = st.tabs(["📈 Dashboard", "📊 Banco de Dados", "📄 Upload PDF", "✍️ Cadastro Manual", "⚙️ Configurações"])
+aba_dash, aba_controle, aba_dados, aba_pdf, aba_manual, aba_config = st.tabs(["📈 Dashboard", "🔍 Controle", "📊 Banco de Dados", "📄 Upload PDF", "✍️ Cadastro Manual", "⚙️ Configurações"])
 
 # ==========================================
 # ABA DASHBOARD
@@ -768,6 +768,86 @@ with aba_dash:
             ucs_sel = list(set([str(pt["x"]) for pt in evento_uc.selection["points"]]))
             if st.session_state.clique_uc != ucs_sel:
                 st.session_state.clique_uc = ucs_sel; st.rerun()
+
+# ==========================================
+# ABA CONTROLE E AUDITORIA
+# ==========================================
+with aba_controle:
+    st.markdown("##### 🔍 Painel de Controle e Auditoria de Carga")
+    
+    # 1. Carregar dados necessários
+    df_faturas = carregar_dados()
+    
+    conexao = obter_conexao()
+    df_cadastro = pd.read_sql_query("SELECT unidade_consumidora, nome_unidade, status FROM cadastro_uc WHERE status = 'ATIVA'", conexao)
+    conexao.close()
+
+    if df_faturas.empty:
+        st.info("Nenhuma fatura carregada para auditoria.")
+    else:
+        # --- SEÇÃO 1: RESUMO FINANCEIRO ---
+        col_m1, col_m2, col_m3 = st.columns(3)
+        
+        # Filtro de Mês para Auditoria
+        meses_disponiveis = sorted(df_faturas['Mês Referência'].unique(), reverse=True)
+        mes_auditoria = st.selectbox("📅 Selecione o Mês para Auditoria:", meses_disponiveis)
+        
+        df_mes = df_faturas[df_faturas['Mês Referência'] == mes_auditoria]
+        
+        col_m1.metric("Faturas no Mês", f"{len(df_mes)}")
+        col_m2.metric("Valor Total no Mês", f"R$ {df_mes['Valor Total Fatura'].sum():,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
+        
+        st.divider()
+
+        # --- SEÇÃO 2: FATURAS POR VENCIMENTO ---
+        st.markdown(f"🗓️ **Compromissos Financeiros (Vencimentos em {mes_auditoria})**")
+        
+        df_venc = df_mes.groupby('Vencimento')['Valor Total Fatura'].agg(['count', 'sum']).reset_index()
+        df_venc.columns = ['Data de Vencimento', 'Qtd Faturas', 'Valor Total (R$)']
+        
+        st.dataframe(df_venc, use_container_width=True, hide_index=True)
+
+        st.divider()
+
+        # --- SEÇÃO 3: AUDITORIA DE FALTANTES (O "PULO DO GATO") ---
+        st.markdown("### 🚨 Auditoria: O que falta carregar?")
+        
+        # Pegamos as UCs que estão nas faturas deste mês
+        ucs_carregadas = df_mes['UC'].unique()
+        
+        # Cruzamos com o cadastro de ATIVAS para ver quem não está lá
+        df_faltantes = df_cadastro[~df_cadastro['unidade_consumidora'].isin(ucs_carregadas)]
+        
+        qtd_ativas = len(df_cadastro)
+        qtd_faltantes = len(df_faltantes)
+        progresso = (len(ucs_carregadas) / qtd_ativas) if qtd_ativas > 0 else 0
+        
+        c1, c2 = st.columns([1, 3])
+        c1.metric("Unidades Faltantes", f"{qtd_faltantes} de {qtd_ativas}")
+        c2.write(f"📊 **Progresso da Carga de {mes_auditoria}**")
+        c2.progress(progresso)
+
+        if qtd_faltantes > 0:
+            st.warning(f"As {qtd_faltantes} unidades abaixo estão **ATIVAS** no cadastro, mas não possuem fatura em **{mes_auditoria}**:")
+            
+            # Renomear para exibição amigável
+            df_faltantes_show = df_faltantes.rename(columns={
+                'unidade_consumidora': 'UC Faltante',
+                'nome_unidade': 'Nome da Unidade'
+            })
+            
+            st.dataframe(df_faltantes_show[['UC Faltante', 'Nome da Unidade']], use_container_width=True, hide_index=True)
+            
+            # Botão para exportar a "lista negra"
+            csv = df_faltantes_show.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Baixar Lista de Pendências (CSV)",
+                data=csv,
+                file_name=f"pendencias_{mes_auditoria.replace('/', '_')}.csv",
+                mime='text/csv',
+            )
+        else:
+            st.success(f"✅ Excelente! Todas as {qtd_ativas} unidades ativas já possuem faturas carregadas para {mes_auditoria}.")
 
 # ==========================================
 # ABA DADOS

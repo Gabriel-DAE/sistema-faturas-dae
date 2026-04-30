@@ -786,12 +786,12 @@ with aba_controle:
         st.info("Nenhuma fatura carregada para auditoria.")
     else:
         # --- SEÇÃO 1: RESUMO FINANCEIRO ---
+        col_filtro, _ = st.columns([1, 3]) 
+        meses_disponiveis = df_faturas.sort_values('Data Referência Oculta', ascending=False)['Mês Referência'].unique().tolist()
+        with col_filtro:
+            mes_auditoria = st.selectbox("📅 Mês de Auditoria:", meses_disponiveis)
+        st.write("")
         col_m1, col_m2, col_m3 = st.columns(3)
-        
-        # Filtro de Mês para Auditoria
-        meses_disponiveis = sorted(df_faturas['Mês Referência'].unique(), reverse=True)
-        mes_auditoria = st.selectbox("📅 Selecione o Mês para Auditoria:", meses_disponiveis)
-        
         df_mes = df_faturas[df_faturas['Mês Referência'] == mes_auditoria]
         
         col_m1.metric("Faturas no Mês", f"{len(df_mes)}")

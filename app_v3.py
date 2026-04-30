@@ -1218,79 +1218,76 @@ with aba_config:
         
         tab_cad_manual, tab_cad_lote = st.tabs(["✍️ Cadastro Manual", "📊 Upload em Lote (Excel)"])
         
-with tab_cad_manual:
-            uc_busca = st.text_input("Buscar UC (Ex: 40190245)", value="").strip()
-            
-            if uc_busca:
-                conexao = obter_conexao()
-                c = conexao.cursor()
-                # Atualizado para buscar o status
-                c.execute("SELECT nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status FROM cadastro_uc WHERE unidade_consumidora = %s", (uc_busca,))
-                dados_uc = c.fetchone()
-                conexao.close()
-            else:
-                dados_uc = None
-            
-            if dados_uc:
-                v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = dados_uc
-            else:
-                v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = ("", "Administrativa", "Tarifa Azul-A4", 0.0, 0.0, "ATIVA")
-                
-            with st.form("form_uc"):
-                nome_input = st.text_input("Nome da Instalação/Unidade", value=v_nome, placeholder="Ex: Poço 15 - Geisel")
-                
-                lista_atividades = ["Administrativa", "Água", "Esgoto"]
-                idx_ativ = lista_atividades.index(v_ativ) if v_ativ in lista_atividades else 0
-                ativ_input = st.selectbox("Atividade", lista_atividades, index=idx_ativ)
-                
-                lista_classes = ["Tarifa Azul-A4", "Tarifa Verde-A4", "Convencional B3"]
-                idx_class = lista_classes.index(v_class) if v_class in lista_classes else 0
-                classif_input = st.selectbox("Classificação", lista_classes, index=idx_class)
+        with tab_cad_manual:
+            uc_busca = st.text_input("Buscar UC (Ex: 40190245)", value="").strip()
+            
+            if uc_busca:
+                conexao = obter_conexao()
+                c = conexao.cursor()
+                c.execute("SELECT nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status FROM cadastro_uc WHERE unidade_consumidora = %s", (uc_busca,))
+                dados_uc = c.fetchone()
+                conexao.close()
+            else:
+                dados_uc = None
+            
+            if dados_uc:
+                v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = dados_uc
+            else:
+                v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = ("", "Administrativa", "Tarifa Azul-A4", 0.0, 0.0, "ATIVA")
+                
+            with st.form("form_uc"):
+                nome_input = st.text_input("Nome da Instalação/Unidade", value=v_nome, placeholder="Ex: Poço 15 - Geisel")
+                
+                lista_atividades = ["Administrativa", "Água", "Esgoto"]
+                idx_ativ = lista_atividades.index(v_ativ) if v_ativ in lista_atividades else 0
+                ativ_input = st.selectbox("Atividade", lista_atividades, index=idx_ativ)
+                
+                lista_classes = ["Tarifa Azul-A4", "Tarifa Verde-A4", "Convencional B3"]
+                idx_class = lista_classes.index(v_class) if v_class in lista_classes else 0
+                classif_input = st.selectbox("Classificação", lista_classes, index=idx_class)
 
-                # NOVO CAMPO: Status
-                lista_status = ["ATIVA", "INATIVA"]
-                idx_status = lista_status.index(v_status) if v_status in lista_status else 0
-                status_input = st.selectbox("Status de Operação", lista_status, index=idx_status)
-                
-                if "Verde" in classif_input:
-                    st.info("💡 Na **Tarifa Verde-A4**, informe a Demanda Única no campo 'Fora Ponta'. O campo Ponta será desconsiderado no cálculo.")
-                elif "B3" in classif_input:
-                    st.info("💡 Na **Convencional B3**, não existe demanda contratada. Pode deixar os campos zerados.")
-                
-                dc_p = st.number_input("Demanda Contratada Ponta (kW)", value=float(v_dc_p), format="%.2f", disabled=("B3" in classif_input))
-                dc_fp = st.number_input("Demanda Contratada Fora Ponta (kW)", value=float(v_dc_fp), format="%.2f", disabled=("B3" in classif_input))
-                
-                st.write("")
-                if 'msg_uc' in st.session_state:
-                    st.success(st.session_state['msg_uc'])
-                    del st.session_state['msg_uc']
-                
-                if st.form_submit_button("Salvar Cadastro da UC", type="primary"):
-                    if classif_input == "Tarifa Verde-A4":
-                        dc_p = 0.0 
-                    elif classif_input == "Convencional B3":
-                        dc_p = 0.0
-                        dc_fp = 0.0
-                    
-                    conexao = obter_conexao()
-                    c = conexao.cursor()
-                    # Atualizado com o STATUS
-                    c.execute('''
-                        INSERT INTO cadastro_uc (unidade_consumidora, nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (unidade_consumidora) DO UPDATE SET 
-                        nome_unidade = EXCLUDED.nome_unidade,
-                        atividade = EXCLUDED.atividade,
-                        classificacao = EXCLUDED.classificacao,
-                        demanda_contratada_ponta = EXCLUDED.demanda_contratada_ponta,
-                        demanda_contratada_fponta = EXCLUDED.demanda_contratada_fponta,
+                lista_status = ["ATIVA", "INATIVA"]
+                idx_status = lista_status.index(v_status) if v_status in lista_status else 0
+                status_input = st.selectbox("Status de Operação", lista_status, index=idx_status)
+                
+                if "Verde" in classif_input:
+                    st.info("💡 Na **Tarifa Verde-A4**, informe a Demanda Única no campo 'Fora Ponta'. O campo Ponta será desconsiderado no cálculo.")
+                elif "B3" in classif_input:
+                    st.info("💡 Na **Convencional B3**, não existe demanda contratada. Pode deixar os campos zerados.")
+                
+                dc_p = st.number_input("Demanda Contratada Ponta (kW)", value=float(v_dc_p), format="%.2f", disabled=("B3" in classif_input))
+                dc_fp = st.number_input("Demanda Contratada Fora Ponta (kW)", value=float(v_dc_fp), format="%.2f", disabled=("B3" in classif_input))
+                
+                st.write("")
+                if 'msg_uc' in st.session_state:
+                    st.success(st.session_state['msg_uc'])
+                    del st.session_state['msg_uc']
+                
+                if st.form_submit_button("Salvar Cadastro da UC", type="primary"):
+                    if classif_input == "Tarifa Verde-A4":
+                        dc_p = 0.0 
+                    elif classif_input == "Convencional B3":
+                        dc_p = 0.0
+                        dc_fp = 0.0
+                    
+                    conexao = obter_conexao()
+                    c = conexao.cursor()
+                    c.execute('''
+                        INSERT INTO cadastro_uc (unidade_consumidora, nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (unidade_consumidora) DO UPDATE SET 
+                        nome_unidade = EXCLUDED.nome_unidade,
+                        atividade = EXCLUDED.atividade,
+                        classificacao = EXCLUDED.classificacao,
+                        demanda_contratada_ponta = EXCLUDED.demanda_contratada_ponta,
+                        demanda_contratada_fponta = EXCLUDED.demanda_contratada_fponta,
                         status = EXCLUDED.status;
-                    ''', (uc_busca, nome_input, ativ_input, classif_input, dc_p, dc_fp, status_input))
-                    conexao.commit()
-                    conexao.close()
-                    
-                    st.session_state['msg_uc'] = "✅ Cadastro da UC realizado com sucesso!"
-                    st.rerun()
+                    ''', (uc_busca, nome_input, ativ_input, classif_input, dc_p, dc_fp, status_input))
+                    conexao.commit()
+                    conexao.close()
+                    
+                    st.session_state['msg_uc'] = "✅ Cadastro da UC realizado com sucesso!"
+                    st.rerun()
 
         with tab_cad_lote:
             st.info("💡 Crie uma planilha no Excel com o cabeçalho idêntico à tabela abaixo e faça o upload.")

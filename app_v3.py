@@ -1283,6 +1283,12 @@ with aba_config:
                         demanda_contratada_fponta = EXCLUDED.demanda_contratada_fponta,
                         status = EXCLUDED.status;
                     ''', (uc_busca, nome_input, ativ_input, classif_input, dc_p, dc_fp, status_input))
+                    c.execute('''
+                        UPDATE faturas_cpfl 
+                        SET nome_unidade = %s 
+                        WHERE unidade_consumidora = %s;
+                    ''', (nome_input, uc_busca))
+                    
                     conexao.commit()
                     conexao.close()
                     
@@ -1353,6 +1359,12 @@ with aba_config:
                                 demanda_contratada_fponta = EXCLUDED.demanda_contratada_fponta,
                                 status = EXCLUDED.status;
                             ''', (uc, nome, ativ, classif, dc_p, dc_fp, status_uc))
+                            c.execute('''
+                                UPDATE faturas_cpfl 
+                                SET nome_unidade = %s 
+                                WHERE unidade_consumidora = %s;
+                            ''', (nome, uc))
+
                             inseridas += 1
                             
                         conexao.commit()

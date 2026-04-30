@@ -144,8 +144,8 @@ def inicializar_banco():
         )
     ''')
     
-    # 2. Cria a tabela de Cadastro de UCs
-    cursor.execute('''
+    # 2. Cria a tabela de Cadastro de UCs (Agora com STATUS)
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS cadastro_uc (
             unidade_consumidora TEXT PRIMARY KEY, 
             nome_unidade TEXT, 
@@ -156,11 +156,12 @@ def inicializar_banco():
             status TEXT DEFAULT 'ATIVA'
         )
     ''')
-    
-    try:
-        cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'ATIVA';''')
-    except:
-        pass    
+
+    # Comando de segurança para adicionar a coluna em bancos que já existem
+    try:
+        cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'ATIVA';''')
+    except:
+        pass 
 
 # 3. Cria a tabela de Tarifas
     cursor.execute('''

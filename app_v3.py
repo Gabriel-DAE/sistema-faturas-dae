@@ -810,13 +810,19 @@ with aba_controle:
 
         # --- SEÇÃO 2: FATURAS POR VENCIMENTO ---
         st.markdown(f"🗓️ **Compromissos Financeiros (Vencimentos em {mes_auditoria})**")
-        
         df_venc = df_mes.groupby('Vencimento')['Valor Total Fatura'].agg(['count', 'sum']).reset_index()
         df_venc.columns = ['Data de Vencimento', 'Qtd Faturas', 'Valor Total (R$)']
-        
-        st.dataframe(df_venc, use_container_width=True, hide_index=True)
-
-        st.divider()
+        df_venc['Data_Ordenacao'] = pd.to_datetime(df_venc['Data de Vencimento'], format='%d/%m/%Y')
+        df_venc = df_venc.sort_values('Data_Ordenacao', ascending=True)
+        df_venc = df_venc.drop(columns=['Data_Ordenacao'])
+        st.dataframe(
+            df_venc, 
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "Valor Total (R$)": st.column_config.NumberColumn(format="R$ %.2f")
+            }
+        )
 
         # --- SEÇÃO 3: AUDITORIA DE FALTANTES (O "PULO DO GATO") ---
         st.markdown("### 🚨 Auditoria: O que falta carregar?")

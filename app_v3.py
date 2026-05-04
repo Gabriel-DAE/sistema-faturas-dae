@@ -186,6 +186,18 @@ def inicializar_banco():
         ) ON CONFLICT (mes_referencia, classificacao) DO NOTHING;
     ''')
     
+    # 5. Cria a tabela de Histórico de Envios para o Financeiro
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS historico_financeiro (
+            id SERIAL PRIMARY KEY,
+            unidade_consumidora TEXT,
+            mes_referencia TEXT,
+            valor_fatura REAL,
+            vencimento TEXT,
+            data_envio TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ''')
+    
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_faturas_uc_mes ON faturas_cpfl (unidade_consumidora, mes_referencia);")
     
     conexao.commit()
@@ -625,7 +637,7 @@ def calcular_faturamento(uc, mes, q_c_p, q_c_fp, q_d_reg_p, q_d_reg_fp, q_r_p, q
     }
 
 # --- 4. INTERFACE ---
-aba_dash, aba_controle, aba_dados, aba_pdf, aba_manual, aba_config = st.tabs(["📈 Dashboard", "🔍 Controle", "📊 Banco de Dados", "📄 Upload PDF", "✍️ Cadastro Manual", "⚙️ Configurações"])
+aba_dash, aba_controle, aba_dados, aba_pdf, aba_manual, aba_config = st.tabs(["📈 Dashboard", "💰 Controle Financeiro", "📊 Banco de Dados", "📄 Upload PDF", "✍️ Cadastro Manual", "⚙️ Configurações"])
 
 # ==========================================
 # ABA DASHBOARD
@@ -782,95 +794,111 @@ with aba_dash:
 # ABA CONTROLE E AUDITORIA
 # ==========================================
 with aba_controle:
-    st.markdown("##### 🔍 Painel de Controle e Auditoria de Carga")
+    st.markdown("##### 🔍 Painel de Controle e Auditoria Financeira")
     
-    # 1. Carregar dados necessários
+    # 1. Carregar dados básicos
     df_faturas = carregar_dados()
-    
     conexao = obter_conexao()
     df_cadastro = pd.read_sql_query("SELECT unidade_consumidora, nome_unidade, status FROM cadastro_uc WHERE status = 'ATIVA'", conexao)
-    conexao.close()
-
+    
     if df_faturas.empty:
         st.info("Nenhuma fatura carregada para auditoria.")
+        conexao.close()
     else:
-        # --- SEÇÃO 1: RESUMO FINANCEIRO ---
+        # --- SEÇÃO 1: FILTRO E MÉTRICAS GERAIS ---
         col_filtro, _ = st.columns([1, 3]) 
         meses_disponiveis = df_faturas.sort_values('Data Referência Oculta', ascending=False)['Mês Referência'].unique().tolist()
         with col_filtro:
-            mes_auditoria = st.selectbox("📅 Mês de Auditoria:", meses_disponiveis)
-        st.write("")
-        col_m1, col_m2, col_m3 = st.columns(3)
+            mes_auditoria = st.selectbox("📅 Selecione o Mês:", meses_disponiveis)
+        
         df_mes = df_faturas[df_faturas['Mês Referência'] == mes_auditoria]
         
-        col_m1.metric("Faturas no Mês", f"{len(df_mes)}")
-        col_m2.metric("Valor Total no Mês", f"R$ {df_mes['Valor Total Fatura'].sum():,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Faturas no Mês", f"{len(df_mes)}")
+        c2.metric("Total no Mês", f"R$ {df_mes['Valor Total Fatura'].sum():,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.'))
         
         st.divider()
 
-        # --- SEÇÃO 2: FATURAS POR VENCIMENTO ---
-        st.markdown(f"🗓️ **Compromissos Financeiros (Referência {mes_auditoria})**")
-        
-        # 1. Agrupamento dos dados
-        df_venc = df_mes.groupby('Vencimento')['Valor Total Fatura'].agg(['count', 'sum']).reset_index()
-        df_venc.columns = ['Data de Vencimento', 'Qtd Faturas', 'Valor Total (R$)']
-        
-        # 2. Ordenação Cronológica (Garante que o dia 02 venha antes do dia 10)
-        df_venc['Data_Ordenacao'] = pd.to_datetime(df_venc['Data de Vencimento'], format='%d/%m/%Y')
-        df_venc = df_venc.sort_values('Data_Ordenacao', ascending=True)
-        df_venc = df_venc.drop(columns=['Data_Ordenacao'])
-        
-        # 3. Formatação 100% Brasileira forçada no Pandas
-        df_venc['Valor Total (R$)'] = df_venc['Valor Total (R$)'].apply(
-            lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        )
-        
-        # 4. Exibição da tabela (agora sem o column_config, pois já formatamos no passo 3)
-        st.dataframe(
-            df_venc, 
-            use_container_width=True, 
-            hide_index=True
-        )
+        # Criamos sub-abas internas para organizar a bagunça
+        tab_relatorio, tab_pendencias, tab_vencimentos = st.tabs(["📝 Gerar Relatório Financeiro", "🚨 Pendências de Carga", "🗓️ Fluxo de Vencimentos"])
 
-        # --- SEÇÃO 3: AUDITORIA DE FALTANTES (O "PULO DO GATO") ---
-        st.markdown("### 🚨 Auditoria: O que falta carregar?")
-        
-        # Pegamos as UCs que estão nas faturas deste mês
-        ucs_carregadas = df_mes['UC'].unique()
-        
-        # Cruzamos com o cadastro de ATIVAS para ver quem não está lá
-        df_faltantes = df_cadastro[~df_cadastro['unidade_consumidora'].isin(ucs_carregadas)]
-        
-        qtd_ativas = len(df_cadastro)
-        qtd_faltantes = len(df_faltantes)
-        progresso = (len(ucs_carregadas) / qtd_ativas) if qtd_ativas > 0 else 0
-        
-        c1, c2 = st.columns([1, 3])
-        c1.metric("Unidades Faltantes", f"{qtd_faltantes} de {qtd_ativas}")
-        c2.write(f"📊 **Progresso da Carga de {mes_auditoria}**")
-        c2.progress(progresso)
+        # --- SUB-ABA 1: GERADOR DE RELATÓRIO (O QUE VOCÊ PEDIU) ---
+        with tab_relatorio:
+            st.markdown(f"### 💸 Relatório Semanal - {mes_auditoria}")
+            
+            # Busca o histórico de quem já foi enviado
+            df_enviados = pd.read_sql_query(f"SELECT unidade_consumidora, data_envio FROM historico_financeiro WHERE mes_referencia = '{mes_auditoria}'", conexao)
+            ucs_enviadas = df_enviados['unidade_consumidora'].tolist()
+            
+            # Filtra apenas o que AINDA NÃO foi enviado
+            df_pendente_envio = df_mes[~df_mes['UC'].isin(ucs_enviadas)]
+            
+            if not df_pendente_envio.empty:
+                st.info(f"Existem **{len(df_pendente_envio)}** faturas prontas para envio neste lote.")
+                
+                # Agrupamento por Atividade (Água, Esgoto, Admin)
+                for atividade in sorted(df_pendente_envio['Atividade'].unique()):
+                    with st.expander(f"🏢 Setor: {atividade.upper()}", expanded=True):
+                        df_ativ = df_pendente_envio[df_pendente_envio['Atividade'] == atividade]
+                        
+                        # Agrupamento por Vencimento dentro da Atividade
+                        for venc in sorted(df_ativ['Vencimento'].unique()):
+                            df_venc_final = df_ativ[df_ativ['Vencimento'] == venc]
+                            st.markdown(f"**📅 Vencimento: {venc}**")
+                            
+                            # Formata a tabela para exibição
+                            df_show = df_venc_final[['Nome da Unidade', 'UC', 'Valor Total Fatura']].copy()
+                            df_show['Valor Total Fatura'] = df_show['Valor Total Fatura'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                            
+                            st.table(df_show)
+                            
+                            subtotal = df_venc_final['Valor Total Fatura'].sum()
+                            st.markdown(f"**Subtotal do dia {venc}:** `R$ {subtotal:,.2f}`".replace(',', 'X').replace('.', ',').replace('X', '.'))
+                            st.write("")
 
-        if qtd_faltantes > 0:
-            st.warning(f"As {qtd_faltantes} unidades abaixo estão **ATIVAS** no cadastro, mas não possuem fatura em **{mes_auditoria}**:")
+                if st.button("🚀 Finalizar Lote e Marcar como Enviado", type="primary"):
+                    cursor = conexao.cursor()
+                    for _, row in df_pendente_envio.iterrows():
+                        cursor.execute(
+                            "INSERT INTO historico_financeiro (unidade_consumidora, mes_referencia, valor_fatura, vencimento) VALUES (%s, %s, %s, %s)",
+                            (row['UC'], row['Mês Referência'], row['Valor Total Fatura'], row['Vencimento'])
+                        )
+                    conexao.commit()
+                    st.success("✅ Lote registrado com sucesso!")
+                    st.rerun()
+            else:
+                st.success(f"Tudo em dia! Todas as faturas carregadas de {mes_auditoria} já foram enviadas ao financeiro.")
+
+            # Histórico de quem já foi contemplado
+            with st.expander("📜 Ver Unidades já Enviadas Anteriormente"):
+                if not df_enviados.empty:
+                    df_hist_full = pd.merge(df_enviados, df_faturas[['UC', 'Nome da Unidade']].drop_duplicates(), left_on='unidade_consumidora', right_on='UC')
+                    df_hist_full['data_envio'] = df_hist_full['data_envio'].dt.strftime('%d/%m/%Y %H:%M')
+                    st.dataframe(df_hist_full[['Nome da Unidade', 'UC', 'data_envio']], use_container_width=True, hide_index=True)
+                else:
+                    st.write("Nenhum registro de envio para este mês.")
+
+        # --- SUB-ABA 2: PENDÊNCIAS DE CARGA (AUDITORIA ANTERIOR) ---
+        with tab_pendencias:
+            ucs_carregadas = df_mes['UC'].unique()
+            df_faltantes = df_cadastro[~df_cadastro['unidade_consumidora'].isin(ucs_carregadas)]
             
-            # Renomear para exibição amigável
-            df_faltantes_show = df_faltantes.rename(columns={
-                'unidade_consumidora': 'UC Faltante',
-                'nome_unidade': 'Nome da Unidade'
-            })
-            
-            st.dataframe(df_faltantes_show[['UC Faltante', 'Nome da Unidade']], use_container_width=True, hide_index=True)
-            
-            # Botão para exportar a "lista negra"
-            csv = df_faltantes_show.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Baixar Lista de Pendências (CSV)",
-                data=csv,
-                file_name=f"pendencias_{mes_auditoria.replace('/', '_')}.csv",
-                mime='text/csv',
-            )
-        else:
-            st.success(f"✅ Excelente! Todas as {qtd_ativas} unidades ativas já possuem faturas carregadas para {mes_auditoria}.")
+            if not df_faltantes.empty:
+                st.warning(f"🚨 Faltam carregar {len(df_faltantes)} faturas de unidades ATIVAS.")
+                st.dataframe(df_faltantes[['unidade_consumidora', 'nome_unidade']], use_container_width=True, hide_index=True)
+            else:
+                st.success("✅ Todas as unidades ativas possuem faturas carregadas!")
+
+        # --- SUB-ABA 3: VENCIMENTOS (TABELA QUE FORMATAMOS ANTES) ---
+        with tab_vencimentos:
+            df_venc = df_mes.groupby('Vencimento')['Valor Total Fatura'].agg(['count', 'sum']).reset_index()
+            df_venc.columns = ['Data de Vencimento', 'Qtd Faturas', 'Valor Total']
+            df_venc['Data_Ord'] = pd.to_datetime(df_venc['Data de Vencimento'], format='%d/%m/%Y')
+            df_venc = df_venc.sort_values('Data_Ord').drop(columns=['Data_Ord'])
+            df_venc['Valor Total'] = df_venc['Valor Total'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+            st.dataframe(df_venc, use_container_width=True, hide_index=True)
+
+        conexao.close()
 
 # ==========================================
 # ABA DADOS

@@ -822,7 +822,7 @@ with aba_controle:
         # Criamos sub-abas internas para organizar a bagunça
         tab_relatorio, tab_pendencias, tab_vencimentos = st.tabs(["📝 Gerar Relatório Financeiro", "🚨 Pendências de Carga", "🗓️ Fluxo de Vencimentos"])
 
-        # --- SUB-ABA 1: GERADOR DE RELATÓRIO (O QUE VOCÊ PEDIU) ---
+        # --- SUB-ABA 1: GERADOR DE RELATÓRIO ---
         with tab_relatorio:
             st.markdown(f"### 💸 Relatório Semanal - {mes_auditoria}")
             
@@ -831,29 +831,63 @@ with aba_controle:
             ucs_enviadas = df_enviados['unidade_consumidora'].tolist()
             
             # Filtra apenas o que AINDA NÃO foi enviado
-            df_pendente_envio = df_mes[~df_mes['UC'].isin(ucs_enviadas)]
+            df_pendente_envio = df_mes[~df_mes['UC'].isin(ucs_enviadas)].copy()
             
             if not df_pendente_envio.empty:
+                # --- CÁLCULOS EXTRAS PARA O FINANCEIRO ---
+                # 1. Soma os dois tipos de IRRF
+                df_pendente_envio['Valor IRRF (-)'] = df_pendente_envio['Retenção Cons. IRRF'] + df_pendente_envio['Retenção Dem. IRRF']
+                
+                # 2. Calcula o Subtotal REAL (Soma de tudo que é custo de energia)
+                cols_energia = [
+                    'Valor Total Consumo', 'Valor Total Dem.', 'Valor Total Dem. Isenta', 
+                    'Valor Total Dem. Ultrap.', 'Valor Total Reativo', 'Adicional Bandeira'
+                ]
+                df_pendente_envio['Subtotal'] = df_pendente_envio[cols_energia].sum(axis=1)
+                
+                # 3. Calcula Lançamentos Diversos (Juros, Multas, etc) por diferença
+                # Se: Total = Subtotal + CIP - IRRF + Diversos
+                # Então: Diversos = Total - Subtotal - CIP + IRRF
+                df_pendente_envio['Lançamentos Diversos'] = (
+                    df_pendente_envio['Valor Total Fatura'] 
+                    - df_pendente_envio['Subtotal'] 
+                    - df_pendente_envio['CIP'] 
+                    + df_pendente_envio['Valor IRRF (-)']
+                ).round(2)
+                
+                # Evita que erros de 1 ou 2 centavos de arredondamento da CPFL apareçam como Lançamento
+                df_pendente_envio['Lançamentos Diversos'] = df_pendente_envio['Lançamentos Diversos'].apply(lambda x: 0.0 if abs(x) <= 0.05 else x)
+
                 st.info(f"Existem **{len(df_pendente_envio)}** faturas prontas para envio neste lote.")
                 
-                # Agrupamento por Atividade (Água, Esgoto, Admin)
+                # Agrupamento por Atividade
                 for atividade in sorted(df_pendente_envio['Atividade'].unique()):
                     with st.expander(f"🏢 Setor: {atividade.upper()}", expanded=True):
                         df_ativ = df_pendente_envio[df_pendente_envio['Atividade'] == atividade]
                         
-                        # Agrupamento por Vencimento dentro da Atividade
+                        # Agrupamento por Vencimento
                         for venc in sorted(df_ativ['Vencimento'].unique()):
-                            df_venc_final = df_ativ[df_ativ['Vencimento'] == venc]
+                            df_venc_final = df_ativ[df_ativ['Vencimento'] == venc].copy()
                             st.markdown(f"**📅 Vencimento: {venc}**")
                             
-                            # Formata a tabela para exibição
-                            df_show = df_venc_final[['Nome da Unidade', 'UC', 'Valor Total Fatura']].copy()
-                            df_show['Valor Total Fatura'] = df_show['Valor Total Fatura'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                            # Seleção e Nova Sequência de Colunas
+                            colunas_financeiro = [
+                                'UC', 'Nome da Unidade', 'Mês Referência', 'Vencimento', 
+                                'CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura'
+                            ]
                             
+                            df_show = df_venc_final[colunas_financeiro].copy()
+                            
+                            # Formatação Brasileira para todas as colunas financeiras
+                            colunas_moeda = ['CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura']
+                            for col in colunas_moeda:
+                                df_show[col] = df_show[col].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                            
+                            # Exibe a tabela estática e limpa
                             st.table(df_show)
                             
-                            subtotal = df_venc_final['Valor Total Fatura'].sum()
-                            st.markdown(f"**Subtotal do dia {venc}:** `R$ {subtotal:,.2f}`".replace(',', 'X').replace('.', ',').replace('X', '.'))
+                            total_dia = df_venc_final['Valor Total Fatura'].sum()
+                            st.markdown(f"**Total a pagar em {venc}:** `R$ {total_dia:,.2f}`".replace(',', 'X').replace('.', ',').replace('X', '.'))
                             st.write("")
 
                 if st.button("🚀 Finalizar Lote e Marcar como Enviado", type="primary"):

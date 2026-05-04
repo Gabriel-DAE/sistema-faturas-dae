@@ -897,16 +897,65 @@ with aba_controle:
                             st.markdown(f"**Total a pagar em {venc}:** `R$ {total_dia:,.2f}`".replace(',', 'X').replace('.', ',').replace('X', '.'))
                             st.write("")
 
-                if st.button("🚀 Finalizar Lote e Marcar como Enviado", type="primary"):
-                    cursor = conexao.cursor()
-                    for _, row in df_pendente_envio.iterrows():
-                        cursor.execute(
-                            "INSERT INTO historico_financeiro (unidade_consumidora, mes_referencia, valor_fatura, vencimento) VALUES (%s, %s, %s, %s)",
-                            (row['UC'], row['Mês Referência'], row['Valor Total Fatura'], row['Vencimento'])
-                        )
-                    conexao.commit()
-                    st.success("✅ Lote registrado com sucesso!")
-                    st.rerun()
+                # --- LÓGICA DE FINALIZAÇÃO E GERAÇÃO DE EXCEL ---
+                if st.button("🚀 Finalizar Lote e Preparar Excel", type="primary"):
+                    try:
+                        # 1. Salva no Banco de Dados
+                        cursor = conexao.cursor()
+                        for _, row in df_pendente_envio.iterrows():
+                            cursor.execute(
+                                "INSERT INTO historico_financeiro (unidade_consumidora, mes_referencia, valor_fatura, vencimento) VALUES (%s, %s, %s, %s)",
+                                (row['UC'], row['Mês Referência'], row['Valor Total Fatura'], row['Vencimento'])
+                            )
+                        conexao.commit()
+
+                        # 2. Prepara os dados para o Excel (exatamente como na tela)
+                        # Criamos uma lista para armazenar os dados com "linhas de cabeçalho" para simular o visual
+                        dados_excel = []
+                        for atividade in sorted(df_pendente_envio['Atividade'].unique()):
+                            df_ativ = df_pendente_envio[df_pendente_envio['Atividade'] == atividade]
+                            for venc in sorted(df_ativ['Vencimento'].unique()):
+                                df_venc = df_ativ[df_ativ['Vencimento'] == venc].copy()
+                                
+                                # Adiciona uma linha de título no Excel para separar os grupos
+                                total_venc = df_venc['Valor Total Fatura'].sum()
+                                dados_excel.append({'UC': f'--- SETOR: {atividade.upper()} ---', 'Nome da Unidade': f'Vencimento: {venc}', 'Valor Total Fatura': total_venc})
+                                
+                                # Seleciona as colunas na ordem solicitada
+                                colunas_fin = ['UC', 'Nome da Unidade', 'Mês Referência', 'Vencimento', 'CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura']
+                                for _, r in df_venc[colunas_fin].iterrows():
+                                    dados_excel.append(r.to_dict())
+                                
+                                # Linha vazia para separar
+                                dados_excel.append({})
+
+                        df_to_export = pd.DataFrame(dados_excel)
+
+                        # 3. Gera o arquivo Excel em memória
+                        buffer = io.BytesIO()
+                        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                            df_to_export.to_excel(writer, index=False, sheet_name='Relatorio_Pagamento')
+                        
+                        # Salva o arquivo pronto no session_state para o botão de download aparecer
+                        st.session_state['arquivo_excel_pronto'] = buffer.getvalue()
+                        st.session_state['lote_finalizado'] = True
+                        
+                        st.success("✅ Lote registrado no banco de dados!")
+                        
+                    except Exception as e:
+                        st.error(f"Erro ao finalizar: {e}")
+
+                # 4. Se o lote foi finalizado, mostra o botão de Download
+                if st.session_state.get('lote_finalizado'):
+                    st.download_button(
+                        label="📥 Baixar Relatório para o Financeiro (.xlsx)",
+                        data=st.session_state['arquivo_excel_pronto'],
+                        file_name=f"Relatorio_Energia_{mes_auditoria.replace('/', '_')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        type="primary",
+                        on_click=lambda: st.session_state.update({'lote_finalizado': False}) # Limpa após baixar
+                    )
+                    st.info("Clique no botão acima para baixar o arquivo. Após o download, a página será atualizada.")
             else:
                 st.success(f"Tudo em dia! Todas as faturas carregadas de {mes_auditoria} já foram enviadas ao financeiro.")
 

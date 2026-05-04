@@ -986,7 +986,33 @@ with aba_pdf:
     
     with tab_pdf:
         st.markdown("Faça o upload dos arquivos PDF originais da CPFL para extração automática.")
-        arquivos_upload = st.file_uploader("Selecione as faturas em PDF", type=["pdf"], accept_multiple_files=True)
+        
+        # 1. Cria a chave dinâmica do uploader na memória
+        if "pdf_uploader_key" not in st.session_state:
+            st.session_state["pdf_uploader_key"] = 0
+
+        # 2. Exibe o relatório ANTES do uploader (após o recarregamento da página)
+        if "relatorio_pdf" in st.session_state:
+            st.markdown("### 📊 Relatório de Processamento")
+            rel = st.session_state["relatorio_pdf"]
+            if rel["sucessos"] > 0:
+                st.success(f"✅ **{rel['sucessos']}** faturas extraídas e salvas com sucesso!")
+                st.balloons()
+            if rel["duplicadas"] > 0:
+                st.warning(f"⚠️ **{rel['duplicadas']}** faturas foram ignoradas pois já existiam no banco de dados.")
+            if rel["erros"] > 0:
+                st.error(f"❌ **{rel['erros']}** faturas apresentaram erro durante a leitura.")
+            
+            # Limpa o relatório da memória para não ficar aparecendo para sempre
+            del st.session_state["relatorio_pdf"]
+
+        # 3. Adiciona a "key" com a variável dinâmica no componente de upload
+        arquivos_upload = st.file_uploader(
+            "Selecione as faturas em PDF", 
+            type=["pdf"], 
+            accept_multiple_files=True,
+            key=f"uploader_{st.session_state['pdf_uploader_key']}" # <--- O PULO DO GATO AQUI
+        )
         
         if arquivos_upload:
             if st.button("🚀 Extrair e Salvar Dados", type="primary"):
@@ -1009,7 +1035,6 @@ with aba_pdf:
                             duplicadas += 1
                         else:
                             colunas = ', '.join(d.keys())
-                            # Postgres usa %s
                             placeholders = ', '.join(['%s'] * len(d))
                             valores = tuple(d.values())
                             c.execute(f"INSERT INTO faturas_cpfl ({colunas}) VALUES ({placeholders})", valores)
@@ -1020,20 +1045,16 @@ with aba_pdf:
                         st.error(f"Erro ao processar o arquivo '{arquivo.name}': {e}")
                     
                     barra_progresso.progress((i + 1) / total_arquivos)
-                    gc.collect()
+                    gc.collect() # Limpeza de RAM que adicionamos anteriormente
 
                 conexao.commit()
                 carregar_dados.clear()
                 conexao.close()
                 
-                st.markdown("### 📊 Relatório de Processamento")
-                if sucessos > 0:
-                    st.success(f"✅ **{sucessos}** faturas extraídas e salvas com sucesso!")
-                    st.balloons()
-                if duplicadas > 0:
-                    st.warning(f"⚠️ **{duplicadas}** faturas foram ignoradas pois já existiam no banco de dados.")
-                if erros > 0:
-                    st.error(f"❌ **{erros}** faturas apresentaram erro durante a leitura.")
+                # 4. Salva os resultados na memória, altera a chave do uploader e recarrega a tela!
+                st.session_state["relatorio_pdf"] = {"sucessos": sucessos, "duplicadas": duplicadas, "erros": erros}
+                st.session_state["pdf_uploader_key"] += 1
+                st.rerun()
 
     with tab_excel:
         st.markdown("Faça o upload de uma planilha contendo o histórico de faturas antigas.")

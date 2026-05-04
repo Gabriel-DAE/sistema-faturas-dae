@@ -824,9 +824,7 @@ with aba_controle:
                 "Qtd Faturas": st.column_config.NumberColumn("Qtd Faturas"),
                 "Valor Total (R$)": st.column_config.NumberColumn(
                     "Valor Total (R$)",
-                    # O "%,.2f" ativa o separador de milhar e 2 casas decimais
-                    # O Streamlit ajusta ponto/vírgula conforme o idioma do navegador
-                    format="R$ %,.2f" 
+                    format="R$ %.,2f" 
                 )
             }
         )

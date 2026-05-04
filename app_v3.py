@@ -820,7 +820,14 @@ with aba_controle:
             use_container_width=True, 
             hide_index=True,
             column_config={
-                "Valor Total (R$)": st.column_config.NumberColumn(format="R$ %.2f")
+                "Data de Vencimento": st.column_config.TextColumn("Data de Vencimento"),
+                "Qtd Faturas": st.column_config.NumberColumn("Qtd Faturas"),
+                "Valor Total (R$)": st.column_config.NumberColumn(
+                    "Valor Total (R$)",
+                    # O "%,.2f" ativa o separador de milhar e 2 casas decimais
+                    # O Streamlit ajusta ponto/vírgula conforme o idioma do navegador
+                    format="R$ %,.2f" 
+                )
             }
         )
 

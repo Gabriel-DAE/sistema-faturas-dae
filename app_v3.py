@@ -9,6 +9,7 @@ from datetime import datetime
 import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
+import gc
 
 st.set_page_config(page_title="Gestão de Energia - DAE", layout="wide", page_icon="⚡")
 
@@ -193,7 +194,7 @@ def inicializar_banco():
 inicializar_banco()
 
 # --- 2. FUNÇÕES DE EXTRAÇÃO DE PDF ---
-@st.cache_data(show_spinner="Carregando e processando banco de dados...")
+@st.cache_data(show_spinner="Carregando e processando banco de dados...", ttl=600, max_entries=2)
 def carregar_dados():
     # Usando SQLAlchemy para facilitar a vida do Pandas ao ler do Postgres
     url_sqlalchemy = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://")
@@ -289,6 +290,14 @@ def carregar_dados():
         'Valor Total Desv. Dem.', 'Total Cons. Reat.', 'Valor Total Cons. Reat.', 'Valor Total Dem. Reat.', 'Valor Total Reativo',
         'Valor Total Fatura', 'Data Cadastro'
     ]
+    
+    colunas_categoria = ['UC', 'Nome da Unidade', 'Atividade', 'Classificação', 'Mês Referência', 'Bandeira']
+    for col in colunas_categoria:
+        if col in df.columns:
+            df[col] = df[col].astype('category')
+
+    colunas_float = df.select_dtypes(include=['float64']).columns
+    df[colunas_float] = df[colunas_float].astype('float32')
     
     colunas_finais = [c for c in ordem_colunas if c in df.columns]
     return df[colunas_finais]
@@ -669,7 +678,7 @@ with aba_dash:
                 st.rerun()
 
         # 3. Lógica de Filtragem (Ajustada para Múltiplas Classes)
-        df_filtrado_dash = df_dash.copy()
+        df_filtrado_dash = df_dash
         
         # Se a lista de filtro não estiver vazia, aplica o filtro usando .isin()
         if filtro_classe_fixo:
@@ -877,7 +886,7 @@ with aba_dados:
         filtro_busca = col_f4.text_input("🔍 Busca Livre", placeholder="Nome da unidade...")
 
         # Aplica a "peneira" sequencial nos dados
-        df_filtrado = df.copy()
+        df_filtrado = df
         
         if filtro_mes:
             df_filtrado = df_filtrado[df_filtrado['Mês Referência'].isin(filtro_mes)]
@@ -948,7 +957,7 @@ with aba_dados:
                         st.rerun()
 
         st.divider()
-        @st.cache_data(show_spinner=False)
+        @st.cache_data(show_spinner=False, ttl=120, max_entries=1)
         def gerar_excel_cache(df_para_excel):
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
@@ -1011,6 +1020,7 @@ with aba_pdf:
                         st.error(f"Erro ao processar o arquivo '{arquivo.name}': {e}")
                     
                     barra_progresso.progress((i + 1) / total_arquivos)
+                    gc.collect()
 
                 conexao.commit()
                 carregar_dados.clear()

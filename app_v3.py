@@ -809,24 +809,27 @@ with aba_controle:
         st.divider()
 
         # --- SEÇÃO 2: FATURAS POR VENCIMENTO ---
-        st.markdown(f"🗓️ **Compromissos Financeiros (Vencimentos em {mes_auditoria})**")
+        st.markdown(f"🗓️ **Compromissos Financeiros (Referência {mes_auditoria})**")
+        
+        # 1. Agrupamento dos dados
         df_venc = df_mes.groupby('Vencimento')['Valor Total Fatura'].agg(['count', 'sum']).reset_index()
         df_venc.columns = ['Data de Vencimento', 'Qtd Faturas', 'Valor Total (R$)']
+        
+        # 2. Ordenação Cronológica (Garante que o dia 02 venha antes do dia 10)
         df_venc['Data_Ordenacao'] = pd.to_datetime(df_venc['Data de Vencimento'], format='%d/%m/%Y')
         df_venc = df_venc.sort_values('Data_Ordenacao', ascending=True)
         df_venc = df_venc.drop(columns=['Data_Ordenacao'])
+        
+        # 3. Formatação 100% Brasileira forçada no Pandas
+        df_venc['Valor Total (R$)'] = df_venc['Valor Total (R$)'].apply(
+            lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        )
+        
+        # 4. Exibição da tabela (agora sem o column_config, pois já formatamos no passo 3)
         st.dataframe(
             df_venc, 
             use_container_width=True, 
-            hide_index=True,
-            column_config={
-                "Data de Vencimento": st.column_config.TextColumn("Data de Vencimento"),
-                "Qtd Faturas": st.column_config.NumberColumn("Qtd Faturas"),
-                "Valor Total (R$)": st.column_config.NumberColumn(
-                    "Valor Total (R$)",
-                    format="R$ %.,2f" 
-                )
-            }
+            hide_index=True
         )
 
         # --- SEÇÃO 3: AUDITORIA DE FALTANTES (O "PULO DO GATO") ---

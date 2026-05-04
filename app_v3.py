@@ -868,9 +868,15 @@ with aba_controle:
                         # Agrupamento por Vencimento
                         for venc in sorted(df_ativ['Vencimento'].unique()):
                             df_venc_final = df_ativ[df_ativ['Vencimento'] == venc].copy()
-                            st.markdown(f"**📅 Vencimento: {venc}**")
                             
-                            # Seleção e Nova Sequência de Colunas
+                            # 1. Calcula o total do dia ANTES para colocar no título
+                            total_dia = df_venc_final['Valor Total Fatura'].sum()
+                            
+                            # 2. Mostra apenas a data e o valor total na linha de agrupamento
+                            cabecalho_data = f"**📅 Vencimento: {venc} — Total: R$ {total_dia:,.2f}**".replace(',', 'X').replace('.', ',').replace('X', '.')
+                            st.markdown(cabecalho_data)
+                            
+                            # Seleção e Sequência de Colunas
                             colunas_financeiro = [
                                 'UC', 'Nome da Unidade', 'Mês Referência', 'Vencimento', 
                                 'CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura'
@@ -878,13 +884,14 @@ with aba_controle:
                             
                             df_show = df_venc_final[colunas_financeiro].copy()
                             
-                            # Formatação Brasileira para todas as colunas financeiras
+                            # Formatação para todas as colunas financeiras
                             colunas_moeda = ['CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura']
                             for col in colunas_moeda:
                                 df_show[col] = df_show[col].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
                             
-                            # Exibe a tabela estática e limpa
+                            # Exibe a tabela
                             st.table(df_show)
+                            st.write("") # Espaço em branco para separar do próximo vencimento
                             
                             total_dia = df_venc_final['Valor Total Fatura'].sum()
                             st.markdown(f"**Total a pagar em {venc}:** `R$ {total_dia:,.2f}`".replace(',', 'X').replace('.', ',').replace('X', '.'))

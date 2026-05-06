@@ -350,8 +350,8 @@ def processar_pdf(arquivo_pdf):
     res_uc = c_pdf.fetchone()
     conexao_pdf.close()
     
-    dados['nome_unidade'] = res_uc[0] if res_uc else ""
-    dados['atividade'] = res_uc[1] if res_uc else "" 
+    dados['nome_unidade'] = res_uc[0] if res_uc else "Não Cadastrada"
+    dados['atividade'] = res_uc[1] if res_uc else "Administrativa" 
     dados['demanda_contratada_ponta'] = res_uc[2] if res_uc else 0.0
     dados['demanda_contratada_fponta'] = res_uc[3] if res_uc else 0.0
     
@@ -1162,7 +1162,7 @@ with aba_config:
         if dados_uc:
             v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = dados_uc
         else:
-            v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = ("", "Administrativa", "Tarifa Azul-A4", 0.0, 0.0, "ATIVA")
+            v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = ("", "", "", 0.0, 0.0, "")
             
         with st.form("form_uc"):
             nome_input = st.text_input("Nome da Instalação/Unidade", value=v_nome, placeholder="Ex: Poço 15 - Geisel")

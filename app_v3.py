@@ -350,8 +350,8 @@ def processar_pdf(arquivo_pdf):
     res_uc = c_pdf.fetchone()
     conexao_pdf.close()
     
-    dados['nome_unidade'] = res_uc[0] if res_uc else "Não Cadastrada"
-    dados['atividade'] = res_uc[1] if res_uc else "Administrativa" 
+    dados['nome_unidade'] = res_uc[0] if res_uc else ""
+    dados['atividade'] = res_uc[1] if res_uc else "" 
     dados['demanda_contratada_ponta'] = res_uc[2] if res_uc else 0.0
     dados['demanda_contratada_fponta'] = res_uc[3] if res_uc else 0.0
     

@@ -886,59 +886,107 @@ with aba_controle:
                         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                             pd.DataFrame(columns=colunas_fin).to_excel(writer, index=False, sheet_name='Relatorio_Financeiro')
                             ws = writer.sheets['Relatorio_Financeiro']
+                            
+                            # Definição de Cores e Estilos
                             header_fill = PatternFill(start_color="002060", fill_type="solid")
                             sector_fill = PatternFill(start_color="D9E1F2", fill_type="solid")
                             font_white = Font(bold=True, color="FFFFFF")
                             font_bold = Font(bold=True)
                             center_align = Alignment(horizontal="center")
+                            
+                            # Formata o cabeçalho principal
                             for cell in ws[1]:
                                 cell.fill = header_fill; cell.font = font_white; cell.alignment = center_align
                             
                             row_idx = 2
+                            
+                            # 1. LOOP POR SETOR
                             for atividade in sorted(df_pendente_envio['Atividade'].unique()):
                                 df_ativ = df_pendente_envio[df_pendente_envio['Atividade'] == atividade].copy()
+                                
+                                # Título do Setor
                                 ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=9)
-                                ws.cell(row=row_idx, column=1, value=f"SETOR: {atividade.upper()}").fill = sector_fill
-                                ws.cell(row=row_idx, column=1).font = font_bold; ws.cell(row=row_idx, column=1).alignment = center_align
+                                cell_setor = ws.cell(row=row_idx, column=1, value=f"SETOR: {atividade.upper()}")
+                                cell_setor.fill = sector_fill
+                                cell_setor.font = font_bold
+                                cell_setor.alignment = center_align
                                 row_idx += 1
+                                
+                                # Faturas Detalhadas do Setor
                                 for _, r in df_ativ.iterrows():
                                     ws.cell(row=row_idx, column=1, value=int(r['UC']))
                                     ws.cell(row=row_idx, column=2, value=r['Nome da Unidade'])
                                     ws.cell(row=row_idx, column=3, value=r['Mês Referência'])
+                                    
                                     c_v = ws.cell(row=row_idx, column=4, value=pd.to_datetime(r['Vencimento'], format='%d/%m/%Y'))
                                     c_v.number_format = 'DD/MM/YYYY'
+                                    
                                     for i, col_name in enumerate(['CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura'], 5):
                                         c = ws.cell(row=row_idx, column=i, value=float(r[col_name]))
                                         c.number_format = 'R$ #,##0.00'
                                     row_idx += 1
-                                row_idx += 1 # Espaço
+                                
+                                # --- O RESUMO POR SETOR QUE HAVIA SUMIDO ---
+                                row_idx += 1
+                                ws.cell(row=row_idx, column=1, value=f"RESUMO: {atividade.upper()}").font = font_bold
+                                row_idx += 1
+                                
+                                df_res = df_ativ.groupby('Vencimento')['Valor Total Fatura'].sum().reset_index()
+                                df_res['D_Ord'] = pd.to_datetime(df_res['Vencimento'], format='%d/%m/%Y')
+                                
+                                for _, res in df_res.sort_values('D_Ord').iterrows():
+                                    c_d = ws.cell(row=row_idx, column=1, value=pd.to_datetime(res['Vencimento'], format='%d/%m/%Y'))
+                                    c_d.number_format = 'DD/MM/YYYY'
+                                    
+                                    c_val = ws.cell(row=row_idx, column=2, value=float(res['Valor Total Fatura']))
+                                    c_val.number_format = 'R$ #,##0.00'
+                                    row_idx += 1
+                                
+                                row_idx += 1 # Pula uma linha em branco antes do próximo setor
                             
-                            # Resumo Geral Final
-                            ws.cell(row=row_idx, column=1, value="RESUMO GERAL POR VENCIMENTO").font = font_bold
+                            # 2. RESUMO GERAL (FINAL DA PLANILHA)
+                            ws.cell(row=row_idx, column=1, value="RESUMO GERAL (TODOS OS SETORES)").font = font_bold
+                            ws.cell(row=row_idx, column=1).fill = sector_fill
                             row_idx += 1
+                            
                             df_g = df_pendente_envio.groupby('Vencimento')['Valor Total Fatura'].sum().reset_index()
                             df_g['D'] = pd.to_datetime(df_g['Vencimento'], format='%d/%m/%Y')
-                            for _, res in df_g.sort_values('D').iterrows():
-                                c_d = ws.cell(row=row_idx, column=1, value=pd.to_datetime(res['Vencimento'], format='%d/%m/%Y'))
-                                c_d.number_format = 'DD/MM/YYYY'
-                                c_v = ws.cell(row=row_idx, column=2, value=float(res['Valor Total Fatura']))
-                                c_v.number_format = 'R$ #,##0.00'
+                            
+                            for _, res_g in df_g.sort_values('D').iterrows():
+                                c_dg = ws.cell(row=row_idx, column=1, value=pd.to_datetime(res_g['Vencimento'], format='%d/%m/%Y'))
+                                c_dg.number_format = 'DD/MM/YYYY'
+                                
+                                c_vg = ws.cell(row=row_idx, column=2, value=float(res_g['Valor Total Fatura']))
+                                c_vg.number_format = 'R$ #,##0.00'
                                 row_idx += 1
 
+                            # Ajuste de largura das colunas
                             for col in ws.columns:
-                                max_l = 0; column = col[0].column_letter
-                                for cell in col: max_l = max(max_l, len(str(cell.value)))
+                                max_l = 0
+                                column = col[0].column_letter
+                                for cell in col: 
+                                    try:
+                                        max_l = max(max_l, len(str(cell.value)))
+                                    except:
+                                        pass
                                 ws.column_dimensions[column].width = max_l + 4
 
                         st.session_state['arquivo_excel_pronto'] = buffer.getvalue()
                         st.session_state['lote_finalizado'] = True
                         st.rerun()
-                    except Exception as e: st.error(f"Erro: {e}")
+                        
+                    except Exception as e:
+                        st.error(f"Erro: {e}")
 
+                # Botão de Download do Excel (Fora do bloco de geração)
                 if st.session_state.get('lote_finalizado'):
-                    st.download_button("📥 Baixar Planilha Modelo DAE (.xlsx)", data=st.session_state['arquivo_excel_pronto'],
-                        file_name=f"Financeiro_{mes_auditoria.replace('/', '_')}.xlsx", type="primary", 
-                        on_click=lambda: st.session_state.update({'lote_finalizado': False}))
+                    st.download_button(
+                        label="📥 Baixar Planilha Modelo DAE (.xlsx)", 
+                        data=st.session_state['arquivo_excel_pronto'],
+                        file_name=f"Financeiro_{mes_auditoria.replace('/', '_')}.xlsx", 
+                        type="primary", 
+                        on_click=lambda: st.session_state.update({'lote_finalizado': False})
+                    )
             else:
                 st.success(f"✅ Todas as faturas de {mes_auditoria} já foram enviadas.")
             

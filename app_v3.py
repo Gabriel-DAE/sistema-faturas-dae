@@ -828,38 +828,36 @@ with aba_controle:
         with tab_relatorio:
             st.markdown(f"### 💸 Relatório Semanal - {mes_auditoria}")
             
-            df_enviados = pd.read_sql_query(f"SELECT unidade_consumidora, data_envio FROM historico_financeiro WHERE mes_referencia = '{mes_auditoria}'", conexao)
+            # 1. Busca histórico de envios
+            df_enviados = pd.read_sql_query(f"SELECT id, unidade_consumidora, data_envio, valor_fatura FROM historico_financeiro WHERE mes_referencia = '{mes_auditoria}'", conexao)
             ucs_enviadas = df_enviados['unidade_consumidora'].tolist()
             
+            # 2. Filtra pendentes
             df_pendente_envio = df_mes[~df_mes['UC'].isin(ucs_enviadas)].copy()
             
             if not df_pendente_envio.empty:
-                # 1. Cálculos de Impostos e Subtotal
+                # Cálculos financeiros
                 df_pendente_envio['Valor IRRF (-)'] = df_pendente_envio['Retenção Cons. IRRF'] + df_pendente_envio['Retenção Dem. IRRF']
                 cols_energia = ['Valor Total Consumo', 'Valor Total Dem.', 'Valor Total Dem. Isenta', 'Valor Total Dem. Ultrap.', 'Valor Total Reativo', 'Adicional Bandeira']
                 
                 if 'Subtotal PDF' in df_pendente_envio.columns:
-                    df_pendente_envio['Subtotal'] = df_pendente_envio.apply(
-                        lambda r: r['Subtotal PDF'] if r['Subtotal PDF'] > 0 else r[cols_energia].sum(), axis=1
-                    )
+                    df_pendente_envio['Subtotal'] = df_pendente_envio.apply(lambda r: r['Subtotal PDF'] if r['Subtotal PDF'] > 0 else r[cols_energia].sum(), axis=1)
                 else:
                     df_pendente_envio['Subtotal'] = df_pendente_envio[cols_energia].sum(axis=1)
                 
                 df_pendente_envio['Lançamentos Diversos'] = (df_pendente_envio['Valor Total Fatura'] - df_pendente_envio['Subtotal'] - df_pendente_envio['CIP'] + df_pendente_envio['Valor IRRF (-)']).round(2)
                 df_pendente_envio['Lançamentos Diversos'] = df_pendente_envio['Lançamentos Diversos'].apply(lambda x: 0.0 if abs(x) <= 0.05 else x)
-
-                # Preparação de Datas para Ordenação na Tela
+                
                 df_pendente_envio['Data_Ord'] = pd.to_datetime(df_pendente_envio['Vencimento'], format='%d/%m/%Y')
                 df_pendente_envio = df_pendente_envio.sort_values('Data_Ord')
 
-                st.info(f"Existem **{len(df_pendente_envio)}** faturas prontas para envio neste lote.")
+                st.info(f"Existem **{len(df_pendente_envio)}** faturas prontas para envio.")
                 colunas_fin = ['UC', 'Nome da Unidade', 'Mês Referência', 'Vencimento', 'CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura']
 
-                # --- EXIBIÇÃO NA TELA ---
+                # Exibição analítica e sintética
                 for atividade in sorted(df_pendente_envio['Atividade'].unique()):
                     with st.expander(f"🏢 SETOR: {atividade.upper()}", expanded=True):
                         df_ativ = df_pendente_envio[df_pendente_envio['Atividade'] == atividade].copy()
-                        
                         st.markdown("##### 📝 Detalhamento de faturas")
                         df_detalhe = df_ativ[colunas_fin].copy()
                         for col in ['CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura']:
@@ -870,121 +868,99 @@ with aba_controle:
                         df_resumo = df_ativ.groupby('Vencimento')['Valor Total Fatura'].sum().reset_index()
                         df_resumo['D_Ord'] = pd.to_datetime(df_resumo['Vencimento'], format='%d/%m/%Y')
                         df_resumo = df_resumo.sort_values('D_Ord').drop(columns=['D_Ord'])
-                        
                         df_res_show = df_resumo.copy()
                         df_res_show.columns = ['Data de Vencimento', 'Valor Total']
                         df_res_show['Valor Total'] = df_res_show['Valor Total'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
                         st.table(df_res_show)
-                        st.write("")
 
-                # --- BOTÃO FINALIZAR E EXCEL MODELO DAE ---
-                if st.button("🚀 Finalizar Lote e Gerar Planilha Modelo", type="primary"):
+                if st.button("🚀 Finalizar Lote e Gerar Planilha", type="primary"):
                     try:
-                        # Registro no Banco
                         cursor = conexao.cursor()
                         for _, row in df_pendente_envio.iterrows():
                             cursor.execute("INSERT INTO historico_financeiro (unidade_consumidora, mes_referencia, valor_fatura, vencimento) VALUES (%s, %s, %s, %s)",
                                 (row['UC'], row['Mês Referência'], row['Valor Total Fatura'], row['Vencimento']))
                         conexao.commit()
 
+                        # --- GERAÇÃO EXCEL MODELO DAE ---
                         buffer = io.BytesIO()
                         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                            # Criamos um DataFrame vazio para inicializar a aba
                             pd.DataFrame(columns=colunas_fin).to_excel(writer, index=False, sheet_name='Relatorio_Financeiro')
                             ws = writer.sheets['Relatorio_Financeiro']
-                            
-                            # Estilos
                             header_fill = PatternFill(start_color="002060", fill_type="solid")
                             sector_fill = PatternFill(start_color="D9E1F2", fill_type="solid")
                             font_white = Font(bold=True, color="FFFFFF")
                             font_bold = Font(bold=True)
                             center_align = Alignment(horizontal="center")
-                            
-                            row_idx = 2 # Começa após o cabeçalho (que o pandas já criou na linha 1)
-                            
-                            # Formatação das colunas de cabeçalho
                             for cell in ws[1]:
                                 cell.fill = header_fill; cell.font = font_white; cell.alignment = center_align
-
-                            # 1. LOOP POR SETOR
+                            
+                            row_idx = 2
                             for atividade in sorted(df_pendente_envio['Atividade'].unique()):
                                 df_ativ = df_pendente_envio[df_pendente_envio['Atividade'] == atividade].copy()
-                                
-                                # Título do Setor
                                 ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=9)
-                                cell_setor = ws.cell(row=row_idx, column=1, value=f"SETOR: {atividade.upper()}")
-                                cell_setor.fill = sector_fill; cell_setor.font = font_bold; cell_setor.alignment = center_align
+                                ws.cell(row=row_idx, column=1, value=f"SETOR: {atividade.upper()}").fill = sector_fill
+                                ws.cell(row=row_idx, column=1).font = font_bold; ws.cell(row=row_idx, column=1).alignment = center_align
                                 row_idx += 1
-
-                                # Dados do Detalhe
                                 for _, r in df_ativ.iterrows():
-                                    ws.cell(row=row_idx, column=1, value=int(r['UC'])) # UC como Número
+                                    ws.cell(row=row_idx, column=1, value=int(r['UC']))
                                     ws.cell(row=row_idx, column=2, value=r['Nome da Unidade'])
                                     ws.cell(row=row_idx, column=3, value=r['Mês Referência'])
-                                    # Vencimento como DATA
-                                    cell_venc = ws.cell(row=row_idx, column=4, value=pd.to_datetime(r['Vencimento'], format='%d/%m/%Y'))
-                                    cell_venc.number_format = 'DD/MM/YYYY'
-                                    
-                                    # Valores como MOEDA
+                                    c_v = ws.cell(row=row_idx, column=4, value=pd.to_datetime(r['Vencimento'], format='%d/%m/%Y'))
+                                    c_v.number_format = 'DD/MM/YYYY'
                                     for i, col_name in enumerate(['CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura'], 5):
                                         c = ws.cell(row=row_idx, column=i, value=float(r[col_name]))
                                         c.number_format = 'R$ #,##0.00'
                                     row_idx += 1
-                                
-                                # Resumo do Setor
-                                row_idx += 1
-                                ws.cell(row=row_idx, column=1, value="RESUMO POR VENCIMENTO").font = font_bold
-                                row_idx += 1
-                                df_res = df_ativ.groupby('Vencimento')['Valor Total Fatura'].sum().reset_index()
-                                df_res['D_Ord'] = pd.to_datetime(df_res['Vencimento'], format='%d/%m/%Y')
-                                for _, res in df_res.sort_values('D_Ord').iterrows():
-                                    c_d = ws.cell(row=row_idx, column=1, value=pd.to_datetime(res['Vencimento'], format='%d/%m/%Y'))
-                                    c_d.number_format = 'DD/MM/YYYY'
-                                    c_v = ws.cell(row=row_idx, column=2, value=float(res['Valor Total Fatura']))
-                                    c_v.number_format = 'R$ #,##0.00'
-                                    row_idx += 1
-                                row_idx += 1 # Espaço entre setores
-
-                            # 2. TABELA FINAL: RESUMO GERAL DAE
-                            ws.cell(row=row_idx, column=1, value="RESUMO GERAL POR VENCIMENTO (TODOS OS SETORES)").font = font_bold
-                            ws.cell(row=row_idx, column=1).fill = sector_fill
-                            row_idx += 1
+                                row_idx += 1 # Espaço
                             
-                            df_geral = df_pendente_envio.groupby('Vencimento')['Valor Total Fatura'].sum().reset_index()
-                            df_geral['D_Ord'] = pd.to_datetime(df_geral['Vencimento'], format='%d/%m/%Y')
-                            for _, res_g in df_geral.sort_values('D_Ord').iterrows():
-                                c_dg = ws.cell(row=row_idx, column=1, value=pd.to_datetime(res_g['Vencimento'], format='%d/%m/%Y'))
-                                c_dg.number_format = 'DD/MM/YYYY'
-                                c_vg = ws.cell(row=row_idx, column=2, value=float(res_g['Valor Total Fatura']))
-                                c_vg.number_format = 'R$ #,##0.00'
+                            # Resumo Geral Final
+                            ws.cell(row=row_idx, column=1, value="RESUMO GERAL POR VENCIMENTO").font = font_bold
+                            row_idx += 1
+                            df_g = df_pendente_envio.groupby('Vencimento')['Valor Total Fatura'].sum().reset_index()
+                            df_g['D'] = pd.to_datetime(df_g['Vencimento'], format='%d/%m/%Y')
+                            for _, res in df_g.sort_values('D').iterrows():
+                                c_d = ws.cell(row=row_idx, column=1, value=pd.to_datetime(res['Vencimento'], format='%d/%m/%Y'))
+                                c_d.number_format = 'DD/MM/YYYY'
+                                c_v = ws.cell(row=row_idx, column=2, value=float(res['Valor Total Fatura']))
+                                c_v.number_format = 'R$ #,##0.00'
                                 row_idx += 1
 
-                            # Ajuste de largura automático
                             for col in ws.columns:
-                                max_length = 0; column = col[0].column_letter
-                                for cell in col:
-                                    try: max_length = max(max_length, len(str(cell.value)))
-                                    except: pass
-                                ws.column_dimensions[column].width = max_length + 4
+                                max_l = 0; column = col[0].column_letter
+                                for cell in col: max_l = max(max_l, len(str(cell.value)))
+                                ws.column_dimensions[column].width = max_l + 4
 
                         st.session_state['arquivo_excel_pronto'] = buffer.getvalue()
                         st.session_state['lote_finalizado'] = True
-                        st.success("✅ Lote processado e Excel gerado com sucesso!")
-                        
-                    except Exception as e:
-                        st.error(f"Erro ao finalizar: {e}")
+                        st.rerun()
+                    except Exception as e: st.error(f"Erro: {e}")
 
                 if st.session_state.get('lote_finalizado'):
-                    st.download_button(
-                        label="📥 Baixar Relatório Financeiro Modelo DAE (.xlsx)",
-                        data=st.session_state['arquivo_excel_pronto'],
-                        file_name=f"Financeiro_Energia_{mes_auditoria.replace('/', '_')}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        type="primary",
-                        on_click=lambda: st.session_state.update({'lote_finalizado': False})
-                    )
+                    st.download_button("📥 Baixar Planilha Modelo DAE (.xlsx)", data=st.session_state['arquivo_excel_pronto'],
+                        file_name=f"Financeiro_{mes_auditoria.replace('/', '_')}.xlsx", type="primary", 
+                        on_click=lambda: st.session_state.update({'lote_finalizado': False}))
             else:
-                st.success(f"Excelente! Todas as faturas carregadas de {mes_auditoria} já foram enviadas.")
+                st.success(f"✅ Todas as faturas de {mes_auditoria} já foram enviadas.")
+
+            # --- GESTÃO DE ENVIOS (REVERSÃO) ---
+            st.divider()
+            with st.expander("📜 Gestão de Envios (Visualizar ou Reverter)"):
+                if not df_enviados.empty:
+                    df_hist_nomes = pd.merge(df_enviados, df_faturas[['UC', 'Nome da Unidade']].drop_duplicates(), left_on='unidade_consumidora', right_on='UC', how='left')
+                    df_hist_nomes['data_envio'] = pd.to_datetime(df_hist_nomes['data_envio']).dt.strftime('%d/%m/%Y %H:%M')
+                    st.write("Selecione para **REVERTER** (faturas voltam para a lista acima):")
+                    evento_hist = st.dataframe(df_hist_nomes[['id', 'Nome da Unidade', 'unidade_consumidora', 'data_envio', 'valor_fatura']],
+                        use_container_width=True, hide_index=True, on_select="rerun", selection_mode="multi-row",
+                        column_config={"id": None, "valor_fatura": st.column_config.NumberColumn("Valor (R$)", format="%.2f")})
+                    
+                    if len(evento_hist.selection.rows) > 0:
+                        ids_reverter = [int(df_hist_nomes.iloc[i]['id']) for i in evento_hist.selection.rows]
+                        if st.button(f"🔄 Reverter {len(ids_reverter)} selecionada(s)", type="secondary"):
+                            cursor = conexao.cursor()
+                            cursor.execute(f"DELETE FROM historico_financeiro WHERE id IN ({','.join(['%s']*len(ids_reverter))})", tuple(ids_reverter))
+                            conexao.commit(); st.success("✅ Faturas revertidas!"); st.rerun()
+                else:
+                    st.info("Nenhum envio registrado para este mês.")
                 
         # --- SUB-ABA 2: PENDÊNCIAS DE CARGA (AUDITORIA ANTERIOR) ---
         with tab_pendencias:

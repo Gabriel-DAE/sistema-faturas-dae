@@ -862,7 +862,7 @@ with aba_controle:
                         df_detalhe = df_ativ[colunas_fin].copy()
                         for col in ['CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura']:
                             df_detalhe[col] = df_detalhe[col].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                        st.table(df_detalhe)
+                        st.dataframe(df_detalhe, hide_index=True, use_container_width=True)
                         
                         st.markdown("##### 📊 Resumo de pagamentos por data")
                         df_resumo = df_ativ.groupby('Vencimento')['Valor Total Fatura'].sum().reset_index()
@@ -871,7 +871,7 @@ with aba_controle:
                         df_res_show = df_resumo.copy()
                         df_res_show.columns = ['Data de Vencimento', 'Valor Total']
                         df_res_show['Valor Total'] = df_res_show['Valor Total'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                        st.table(df_res_show)
+                        st.dataframe(df_res_show, hide_index=True, use_container_width=True)
 
                 if st.button("🚀 Finalizar Lote e Gerar Planilha", type="primary"):
                     try:

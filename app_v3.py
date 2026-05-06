@@ -961,16 +961,18 @@ with aba_controle:
                         ws.column_dimensions[column].width = max_l + 4
 
                 # BOTÃO ÚNICO QUE FAZ TUDO
-                st.download_button(
-                    label="🚀 Gerar Relatório Financeiro",
-                    data=buffer.getvalue(),
-                    file_name=f"Financeiro_{mes_auditoria.replace('/', '_')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    type="primary",
-                    on_click=finalizar_lote_db,
-                    args=(df_pendente_envio, mes_auditoria),
-                    use_container_width=True
-                )
+                col_btn_gerar, col_vazia1, col_vazia2 = st.columns([1.2, 1, 1])
+                with col_btn_gerar:
+                    st.download_button(
+                        label="🚀 Gerar Relatório Financeiro",
+                        data=buffer.getvalue(),
+                        file_name=f"Financeiro_{mes_auditoria.replace('/', '_')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        type="primary",
+                        on_click=finalizar_lote_db,
+                        args=(df_pendente_envio, mes_auditoria),
+                        use_container_width=True # Agora ele usa a largura total APENAS da coluna 1
+                    )
             else:
                 st.success(f"✅ Todas as faturas de {mes_auditoria} já foram enviadas.")
 

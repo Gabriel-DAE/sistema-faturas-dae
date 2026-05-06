@@ -941,7 +941,7 @@ with aba_controle:
                         on_click=lambda: st.session_state.update({'lote_finalizado': False}))
             else:
                 st.success(f"✅ Todas as faturas de {mes_auditoria} já foram enviadas.")
-
+            
             # --- GESTÃO DE ENVIOS (REVERSÃO) ---
             st.divider()
             with st.expander("📜 Gestão de Envios (Visualizar ou Reverter)"):

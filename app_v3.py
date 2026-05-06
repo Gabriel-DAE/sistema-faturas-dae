@@ -961,7 +961,7 @@ with aba_controle:
                         ws.column_dimensions[column].width = max_l + 4
 
                 # BOTÃO ÚNICO QUE FAZ TUDO
-                col_btn_gerar, col_vazia1, col_vazia2 = st.columns([1.2, 1, 1])
+                col_btn_gerar, col_vazia1, col_vazia2 = st.columns([1, 2, 2])
                 with col_btn_gerar:
                     st.download_button(
                         label="🚀 Gerar Relatório Financeiro",

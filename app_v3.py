@@ -995,8 +995,71 @@ with aba_controle:
                 st.warning(f"🚨 Faltam carregar {len(df_faltantes)} faturas de unidades ATIVAS.")
                 st.dataframe(df_faltantes[['unidade_consumidora', 'nome_unidade']], use_container_width=True, hide_index=True)
             else:
-                st.success("✅ Todas as unidades ativas possuem faturas carregadas!")
+                st.success(f"Excelente! Todas as faturas carregadas de {mes_auditoria} já foram enviadas.")
 
+            # --- GESTÃO DE HISTÓRICO E REVERSÃO ---
+            st.divider()
+            with st.expander("📜 Gestão de Envios (Ver e Reverter faturas já enviadas)"):
+                # Busca o histórico detalhado
+                df_hist_ver = pd.read_sql_query(
+                    f"SELECT id, unidade_consumidora, mes_referencia, data_envio, valor_fatura FROM historico_financeiro WHERE mes_referencia = '{mes_auditoria}'", 
+                    conexao
+                )
+                
+                if not df_hist_ver.empty:
+                    # Cruza com os nomes das unidades para facilitar a leitura
+                    df_hist_nomes = pd.merge(
+                        df_hist_ver, 
+                        df_faturas[['UC', 'Nome da Unidade']].drop_duplicates(), 
+                        left_on='unidade_consumidora', 
+                        right_on='UC', 
+                        how='left'
+                    )
+                    
+                    df_hist_nomes['data_envio'] = pd.to_datetime(df_hist_nomes['data_envio']).dt.strftime('%d/%m/%Y %H:%M')
+                    
+                    st.write("Selecione as faturas que deseja **REVERTER** (elas voltarão para a lista de pendentes acima):")
+                    
+                    # Tabela com seleção para exclusão
+                    evento_hist = st.dataframe(
+                        df_hist_nomes[['id', 'Nome da Unidade', 'unidade_consumidora', 'data_envio', 'valor_fatura']],
+                        use_container_width=True,
+                        hide_index=True,
+                        on_select="rerun",
+                        selection_mode="multi-row",
+                        column_config={
+                            "id": None, # Esconde o ID técnico
+                            "valor_fatura": st.column_config.NumberColumn("Valor (R$)", format="%.2f")
+                        }
+                    )
+                    
+                    linhas_hist_sel = evento_hist.selection.rows
+                    
+                    if len(linhas_hist_sel) > 0:
+                        ids_reverter = [int(df_hist_nomes.iloc[i]['id']) for i in linhas_hist_sel]
+                        
+                        if st.button(f"🔄 Reverter {len(ids_reverter)} fatura(s) selecionada(s)", type="secondary"):
+                            try:
+                                cursor = conexao.cursor()
+                                placeholders = ','.join(['%s'] * len(ids_reverter))
+                                cursor.execute(f"DELETE FROM historico_financeiro WHERE id IN ({placeholders})", tuple(ids_reverter))
+                                conexao.commit()
+                                st.success("✅ Faturas devolvidas para a lista de pendentes!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Erro ao reverter: {e}")
+                    
+                    # Opção de "Limpar Tudo" para testes rápidos
+                    st.write("---")
+                    if st.button(f"🗑️ Limpar TODO o histórico de {mes_auditoria} (Uso para Testes)", help="Apaga todos os registos de envio deste mês para poder gerar o relatório novamente"):
+                        cursor = conexao.cursor()
+                        cursor.execute("DELETE FROM historico_financeiro WHERE mes_referencia = %s", (mes_auditoria,))
+                        conexao.commit()
+                        st.success(f"Histórico de {mes_auditoria} limpo com sucesso!")
+                        st.rerun()
+                else:
+                    st.info(f"Nenhum envio registado para o mês de {mes_auditoria}.")
+                    
         # --- SUB-ABA 3: VENCIMENTOS (TABELA QUE FORMATAMOS ANTES) ---
         with tab_vencimentos:
             df_venc = df_mes.groupby('Vencimento')['Valor Total Fatura'].agg(['count', 'sum']).reset_index()

@@ -1162,7 +1162,7 @@ with aba_config:
         if dados_uc:
             v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = dados_uc
         else:
-            v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = ("", "", "", 0.0, 0.0, "")
+            v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = ("", "Administrativa", "Tarifa Azul-A4", 0.0, 0.0, "ATIVA")
             
         with st.form("form_uc"):
             nome_input = st.text_input("Nome da Instalação/Unidade", value=v_nome, placeholder="Ex: Poço 15 - Geisel")

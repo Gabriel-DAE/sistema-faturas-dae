@@ -10,6 +10,7 @@ import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
 import gc
+from openpyxl.styles import Font, PatternFill, Alignment
 
 st.set_page_config(page_title="Gestão de Energia - DAE", layout="wide", page_icon="⚡")
 
@@ -157,14 +158,14 @@ def inicializar_banco():
             status TEXT DEFAULT 'ATIVA'
         )
     ''')
-
     # Comando de segurança para adicionar a coluna em bancos que já existem
     try:
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'ATIVA';''')
+        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS subtotal_fatura REAL DEFAULT 0.0;''')
     except:
-        pass 
-
-# 3. Cria a tabela de Tarifas
+        pass
+        
+    # 3. Cria a tabela de Tarifas
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS parametros_faturamento (
             mes_referencia TEXT,
@@ -477,6 +478,7 @@ def processar_pdf(arquivo_pdf):
     if m_dem_reat_fp: dados['demanda_reativa_fora_ponta'], dados['tarifa_aneel_dem_reativa_fponta'], tarifa_trib_dem_reativa_fponta, dados['valor_dem_reativa_fponta'] = [limpar_numero(x) for x in m_dem_reat_fp.groups()]
 
     dados['cip'] = extrair_valor_regex(r"Contribuição Custeio IP-CIP.*?([\d\.]+,\d+)", texto)
+    dados['subtotal_fatura'] = extrair_valor_regex(r"Subtotal.*?([\d\.]+,\d{2})", texto)
     dados['retencao_consumo_irrf'] = extrair_valor_regex(r"Retencao Consumo IRRF-.*?([\d\.]+,[\d]{2})-", texto)
     dados['retencao_demanda_irrf'] = extrair_valor_regex(r"Retencao Demanda IRRF-.*?([\d\.]+,[\d]{2})-", texto)
     dados['valor_total_pis'] = extrair_valor_regex(r"PIS/PASEP.*?\s([\d\.]+,\d+)$", texto)
@@ -826,116 +828,120 @@ with aba_controle:
         with tab_relatorio:
             st.markdown(f"### 💸 Relatório Semanal - {mes_auditoria}")
             
-            # Busca o histórico de quem já foi enviado
             df_enviados = pd.read_sql_query(f"SELECT unidade_consumidora, data_envio FROM historico_financeiro WHERE mes_referencia = '{mes_auditoria}'", conexao)
             ucs_enviadas = df_enviados['unidade_consumidora'].tolist()
             
-            # Filtra apenas o que AINDA NÃO foi enviado
             df_pendente_envio = df_mes[~df_mes['UC'].isin(ucs_enviadas)].copy()
             
             if not df_pendente_envio.empty:
-                # --- CÁLCULOS EXTRAS PARA O FINANCEIRO ---
-                # 1. Soma os dois tipos de IRRF
                 df_pendente_envio['Valor IRRF (-)'] = df_pendente_envio['Retenção Cons. IRRF'] + df_pendente_envio['Retenção Dem. IRRF']
                 
-                # 2. Calcula o Subtotal REAL (Soma de tudo que é custo de energia)
-                cols_energia = [
-                    'Valor Total Consumo', 'Valor Total Dem.', 'Valor Total Dem. Isenta', 
-                    'Valor Total Dem. Ultrap.', 'Valor Total Reativo', 'Adicional Bandeira'
-                ]
-                df_pendente_envio['Subtotal'] = df_pendente_envio[cols_energia].sum(axis=1)
+                # --- NOVO CÁLCULO DE SUBTOTAL MISTO ---
+                # Se for uma fatura antiga (Subtotal PDF == 0), calcula pela soma. Se for nova, usa o PDF exato!
+                cols_energia = ['Valor Total Consumo', 'Valor Total Dem.', 'Valor Total Dem. Isenta', 'Valor Total Dem. Ultrap.', 'Valor Total Reativo', 'Adicional Bandeira']
+                if 'Subtotal PDF' in df_pendente_envio.columns:
+                    df_pendente_envio['Subtotal'] = df_pendente_envio.apply(
+                        lambda r: r['Subtotal PDF'] if r['Subtotal PDF'] > 0 else r[cols_energia].sum(), axis=1
+                    )
+                else:
+                    df_pendente_envio['Subtotal'] = df_pendente_envio[cols_energia].sum(axis=1)
                 
-                # 3. Calcula Lançamentos Diversos por diferença
-                df_pendente_envio['Lançamentos Diversos'] = (
-                    df_pendente_envio['Valor Total Fatura'] 
-                    - df_pendente_envio['Subtotal'] 
-                    - df_pendente_envio['CIP'] 
-                    + df_pendente_envio['Valor IRRF (-)']
-                ).round(2)
-                
-                # Ajuste de arredondamento
+                df_pendente_envio['Lançamentos Diversos'] = (df_pendente_envio['Valor Total Fatura'] - df_pendente_envio['Subtotal'] - df_pendente_envio['CIP'] + df_pendente_envio['Valor IRRF (-)']).round(2)
                 df_pendente_envio['Lançamentos Diversos'] = df_pendente_envio['Lançamentos Diversos'].apply(lambda x: 0.0 if abs(x) <= 0.05 else x)
 
                 st.info(f"Existem **{len(df_pendente_envio)}** faturas prontas para envio neste lote.")
                 
-                # Definimos as colunas para o detalhamento
-                colunas_fin = [
-                    'UC', 'Nome da Unidade', 'Mês Referência', 'Vencimento', 
-                    'CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura'
-                ]
+                colunas_fin = ['UC', 'Nome da Unidade', 'Mês Referência', 'Vencimento', 'CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura']
 
-                # --- INÍCIO DO AGRUPAMENTO POR SETOR ---
                 for atividade in sorted(df_pendente_envio['Atividade'].unique()):
                     with st.expander(f"🏢 SETOR: {atividade.upper()}", expanded=True):
                         df_ativ = df_pendente_envio[df_pendente_envio['Atividade'] == atividade].copy()
                         
-                        # PARTE 1: TABELA DETALHADA (Todas as faturas do setor)
                         st.markdown("##### 📝 Detalhamento de Faturas")
                         df_detalhe = df_ativ[colunas_fin].copy()
-                        
-                        # Formatação monetária para exibição
                         colunas_moeda = ['CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura']
                         for col in colunas_moeda:
                             df_detalhe[col] = df_detalhe[col].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                        
                         st.table(df_detalhe)
                         
-                        # PARTE 2: RESUMO POR VENCIMENTO (Apenas duas colunas)
                         st.markdown("##### 📊 Resumo de Pagamentos por Data")
-                        
-                        # Agrupamos e ordenamos cronologicamente
                         df_resumo = df_ativ.groupby('Vencimento')['Valor Total Fatura'].sum().reset_index()
                         df_resumo['Data_Ord'] = pd.to_datetime(df_resumo['Vencimento'], format='%d/%m/%Y')
                         df_resumo = df_resumo.sort_values('Data_Ord').drop(columns=['Data_Ord'])
                         
-                        # Formata o valor do resumo
                         df_resumo_show = df_resumo.copy()
                         df_resumo_show.columns = ['Data de Vencimento', 'Valor Total']
                         df_resumo_show['Valor Total'] = df_resumo_show['Valor Total'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
                         
-                        # Exibe a tabela de resumo (usando colunas para centralizar se quiser)
                         c_res1, _ = st.columns([0.6, 0.4])
                         c_res1.table(df_resumo_show)
                         
-                        # Total Geral do Setor
-                        total_setor = df_ativ['Valor Total Fatura'].sum()
-                        st.markdown(f"**💰 TOTAL ACUMULADO ({atividade.upper()}): R$ {total_setor:,.2f}**".replace(',', 'X').replace('.', ',').replace('X', '.'))
+                        st.markdown(f"**💰 TOTAL ACUMULADO ({atividade.upper()}): R$ {df_ativ['Valor Total Fatura'].sum():,.2f}**".replace(',', 'X').replace('.', ',').replace('X', '.'))
                         st.write("")
 
-                # --- BOTÃO FINALIZAR E EXCEL ---
+                # --- BOTÃO FINALIZAR E EXCEL FORMATADO PROFISSIONALMENTE ---
                 if st.button("🚀 Finalizar Lote e Preparar Excel", type="primary"):
                     try:
                         cursor = conexao.cursor()
                         for _, row in df_pendente_envio.iterrows():
-                            cursor.execute(
-                                "INSERT INTO historico_financeiro (unidade_consumidora, mes_referencia, valor_fatura, vencimento) VALUES (%s, %s, %s, %s)",
-                                (row['UC'], row['Mês Referência'], row['Valor Total Fatura'], row['Vencimento'])
-                            )
+                            cursor.execute("INSERT INTO historico_financeiro (unidade_consumidora, mes_referencia, valor_fatura, vencimento) VALUES (%s, %s, %s, %s)",
+                                (row['UC'], row['Mês Referência'], row['Valor Total Fatura'], row['Vencimento']))
                         conexao.commit()
 
-                        # Geração do Excel no novo formato
+                        # Prepara os dados numéricos (sem R$ no texto para o Excel poder somar)
                         dados_excel = []
                         for atividade in sorted(df_pendente_envio['Atividade'].unique()):
                             df_ativ = df_pendente_envio[df_pendente_envio['Atividade'] == atividade]
-                            
-                            # Cabeçalho do Setor no Excel
                             dados_excel.append({'UC': f'--- SETOR: {atividade.upper()} ---'})
                             
-                            # Detalhes
                             for _, r in df_ativ[colunas_fin].iterrows():
                                 dados_excel.append(r.to_dict())
                             
-                            # Resumo do Setor no Excel
                             dados_excel.append({'UC': '--- RESUMO POR VENCIMENTO ---'})
                             res_ativ = df_ativ.groupby('Vencimento')['Valor Total Fatura'].sum().reset_index()
                             for _, rs in res_ativ.iterrows():
-                                dados_excel.append({'UC': rs['Vencimento'], 'Nome da Unidade': f"R$ {rs['Valor Total Fatura']:,.2f}"})
-                            
-                            dados_excel.append({}) # Linha vazia
+                                dados_excel.append({'UC': rs['Vencimento'], 'Valor Total Fatura': rs['Valor Total Fatura']})
+                            dados_excel.append({})
 
+                        # Criação e Formatação do Excel
                         buffer = io.BytesIO()
                         with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                             pd.DataFrame(dados_excel).to_excel(writer, index=False, sheet_name='Relatorio_Financeiro')
+                            
+                            worksheet = writer.sheets['Relatorio_Financeiro']
+                            
+                            # Estilo do Cabeçalho Padrão
+                            for cell in worksheet[1]:
+                                cell.fill = PatternFill(start_color="002060", fill_type="solid")
+                                cell.font = Font(bold=True, color="FFFFFF")
+                                cell.alignment = Alignment(horizontal="center")
+                                
+                            # Pinta linhas de setor e formata moedas
+                            formato_moeda = 'R$ #,##0.00'
+                            for row in range(2, worksheet.max_row + 1):
+                                val_uc = str(worksheet[f"A{row}"].value)
+                                if "---" in val_uc:
+                                    # Linha de divisão (Azul Claro)
+                                    for col_idx in range(1, 10):
+                                        worksheet.cell(row=row, column=col_idx).fill = PatternFill(start_color="D9E1F2", fill_type="solid")
+                                        worksheet.cell(row=row, column=col_idx).font = Font(bold=True)
+                                else:
+                                    # Linha de dados: aplica moeda nativa do Excel nas colunas E até I
+                                    for col_idx in range(5, 10):
+                                        cell = worksheet.cell(row=row, column=col_idx)
+                                        if isinstance(cell.value, (int, float)):
+                                            cell.number_format = formato_moeda
+                            
+                            # Ajuste Automático de Largura das Colunas
+                            for col in worksheet.columns:
+                                max_length = 0
+                                column = col[0].column_letter
+                                for cell in col:
+                                    try:
+                                        if len(str(cell.value)) > max_length:
+                                            max_length = len(str(cell.value))
+                                    except: pass
+                                worksheet.column_dimensions[column].width = max_length + 3
                         
                         st.session_state['arquivo_excel_pronto'] = buffer.getvalue()
                         st.session_state['lote_finalizado'] = True

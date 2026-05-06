@@ -97,7 +97,10 @@ def obter_conexao():
 col_logo, col_titulo, _ = st.columns([0.6, 5, 1])
 
 with col_logo:
-    st.image("logo_DAE.png", use_container_width=True)
+    try:
+        st.image("logo_DAE.png", use_container_width=True)
+    except:
+        pass
 
 with col_titulo:
     st.subheader("⚡ Sistema de Faturas de Energia - DAE Bauru")
@@ -158,36 +161,14 @@ def inicializar_banco():
             status TEXT DEFAULT 'ATIVA'
         )
     ''')
-    # Comando de segurança para adicionar a coluna em bancos que já existem
+    # Comando de segurança para adicionar colunas em bancos que já existem
     try:
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'ATIVA';''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS subtotal_fatura REAL DEFAULT 0.0;''')
     except:
         pass
         
-    # 3. Cria a tabela de Tarifas
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS parametros_faturamento (
-            mes_referencia TEXT,
-            classificacao TEXT,
-            aliq_pis REAL, aliq_cofins REAL, aliq_icms REAL,
-            tar_aneel_cons_p_tusd REAL, tar_aneel_cons_fp_tusd REAL,
-            tar_aneel_cons_p_te REAL, tar_aneel_cons_fp_te REAL,
-            tar_aneel_dem_p REAL, tar_aneel_dem_fp REAL, tar_aneel_reativo REAL,
-            tar_bandeira_vigente REAL, cip_padrao REAL, tipo_bandeira TEXT,
-            PRIMARY KEY (mes_referencia, classificacao)
-        )
-    ''')
-    
-    # 4. Insere Tarifa Padrão inicial (Adaptado para sintaxe Postgres ON CONFLICT DO NOTHING)
-    cursor.execute('''
-        INSERT INTO parametros_faturamento VALUES (
-            'DEZ/2025', 'Tarifa Azul-A4', 0.0107, 0.0492, 0.1800,
-            0.11447000, 0.11447000, 0.44454000, 0.27119000, 48.61000000, 15.93000000, 0.28738000, 0.00000, 0.00, 'VERDE'
-        ) ON CONFLICT (mes_referencia, classificacao) DO NOTHING;
-    ''')
-    
-    # 5. Cria a tabela de Histórico de Envios para o Financeiro
+    # 3. Cria a tabela de Histórico de Envios para o Financeiro
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS historico_financeiro (
             id SERIAL PRIMARY KEY,
@@ -206,7 +187,7 @@ def inicializar_banco():
 
 inicializar_banco()
 
-# --- 2. FUNÇÕES DE EXTRAÇÃO DE PDF ---
+# --- 2. FUNÇÕES DE EXTRAÇÃO DE PDF E MANIPULAÇÃO DE DADOS ---
 @st.cache_data(show_spinner="Carregando e processando banco de dados...", ttl=600, max_entries=2)
 def carregar_dados():
     # Usando SQLAlchemy para facilitar a vida do Pandas ao ler do Postgres
@@ -491,155 +472,9 @@ def processar_pdf(arquivo_pdf):
         
     return dados
 
-# --- 3. CÁLCULO INTELIGENTE ---
-def calcular_faturamento(uc, mes, q_c_p, q_c_fp, q_d_reg_p, q_d_reg_fp, q_r_p, q_r_fp, q_dr_p, q_dr_fp, ret_cons_irrf, ret_dem_irrf):
-    conexao = obter_conexao()
-    cursor = conexao.cursor()
-    
-    cursor.execute("SELECT nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta FROM cadastro_uc WHERE unidade_consumidora = %s", (uc,))
-    cadastro = cursor.fetchone()
-    if not cadastro:
-        return {"erro": f"Unidade Consumidora {uc} não encontrada. Vá na aba 'Configurações' e cadastre a UC e suas demandas."}
-    
-    nome_unidade, atividade, classificacao, dem_cont_p, dem_cont_fp = cadastro
-    
-    if "Verde" in classificacao:
-        q_d_reg_p = 0.0 
-        dem_cont_p = 0.0 
-        
-    if "B3" in classificacao:
-        q_c_p = 0.0
-        q_d_reg_p = 0.0
-        q_d_reg_fp = 0.0
-        dem_cont_p = 0.0
-        dem_cont_fp = 0.0
-        q_r_p = 0.0
-        q_r_fp = 0.0
-        q_dr_p = 0.0
-        q_dr_fp = 0.0
-    
-    cursor.execute("SELECT * FROM parametros_faturamento WHERE mes_referencia = %s AND classificacao = %s", (mes, classificacao))
-    params = cursor.fetchone()
-    
-    if not params:
-        cursor.execute("SELECT * FROM parametros_faturamento WHERE classificacao = %s", (classificacao,))
-        todos_params = cursor.fetchall()
-        if todos_params:
-            params = todos_params[-1]
-            
-    conexao.close()
-    
-    if not params:
-        return {"erro": f"Nenhuma tarifa cadastrada para {classificacao} no sistema. Vá na aba de Configurações."}
-    
-    (_, _, pis, cofins, icms, t_c_p_tusd, t_c_fp_tusd, t_c_p_te, t_c_fp_te, t_d_p, t_d_fp, t_reat, t_bandeira, cip_padrao, tipo_bandeira) = params
-    
-    fator_pis_cofins = 1 - (pis + cofins)
-    fator_icms = 1 - icms
-    
-    tot_icms = 0.0
-    tot_pis = 0.0
-    tot_cofins = 0.0
-    subtotal_fatura = 0.0
-
-    def calc_item(qtd, tarifa_aneel, tem_icms=True, multiplicador=1.0):
-        nonlocal tot_icms, tot_pis, tot_cofins, subtotal_fatura
-        if qtd <= 0: return tarifa_aneel, 0.0, 0.0
-        
-        tarifa_sem_icms = tarifa_aneel / fator_pis_cofins
-        
-        if tem_icms:
-            tarifa_final = (tarifa_sem_icms / fator_icms) * multiplicador
-            valor_total = qtd * tarifa_final
-            v_icms = valor_total * icms
-            v_p = (valor_total - v_icms) * pis
-            v_c = (valor_total - v_icms) * cofins
-        else:
-            tarifa_final = tarifa_sem_icms * multiplicador
-            valor_total = qtd * tarifa_final
-            v_icms = 0.0
-            v_p = valor_total * pis
-            v_c = valor_total * cofins
-            
-        subtotal_fatura += valor_total
-        tot_icms += v_icms
-        tot_pis += v_p
-        tot_cofins += v_c
-        return tarifa_aneel, tarifa_final, valor_total
-
-    ta_c_p_tusd, tt_c_p_tusd, v_c_p_tusd = calc_item(q_c_p, t_c_p_tusd, tem_icms=True)
-    ta_c_fp_tusd, tt_c_fp_tusd, v_c_fp_tusd = calc_item(q_c_fp, t_c_fp_tusd, tem_icms=True)
-    ta_c_p_te, tt_c_p_te, v_c_p_te = calc_item(q_c_p, t_c_p_te, tem_icms=True)
-    ta_c_fp_te, tt_c_fp_te, v_c_fp_te = calc_item(q_c_fp, t_c_fp_te, tem_icms=True)
-    
-    adicional_bandeira = 0.0
-    if t_bandeira > 0:
-        _, _, adicional_bandeira = calc_item(q_c_p + q_c_fp, t_bandeira, tem_icms=True)
-
-    ta_d_p, tt_d_p, v_d_reg_p = calc_item(q_d_reg_p, t_d_p, tem_icms=True)
-    
-    if q_d_reg_p < dem_cont_p:
-        q_d_ise_p = dem_cont_p - q_d_reg_p
-        _, tt_d_ise_p, v_d_ise_p = calc_item(q_d_ise_p, t_d_p, tem_icms=False)
-    else:
-        q_d_ise_p, tt_d_ise_p, v_d_ise_p = 0.0, 0.0, 0.0
-        
-    diferenca_p = q_d_reg_p - dem_cont_p
-    if diferenca_p > (dem_cont_p * 0.05):
-        q_up_p = diferenca_p
-        _, tt_up_p, v_up_p = calc_item(q_up_p, t_d_p, tem_icms=True, multiplicador=2.0)
-    else:
-        q_up_p, tt_up_p, v_up_p = 0.0, 0.0, 0.0
-
-    ta_d_fp, tt_d_fp, v_d_reg_fp = calc_item(q_d_reg_fp, t_d_fp, tem_icms=True)
-    
-    if q_d_reg_fp < dem_cont_fp:
-        q_d_ise_fp = dem_cont_fp - q_d_reg_fp
-        _, tt_d_ise_fp, v_d_ise_fp = calc_item(q_d_ise_fp, t_d_fp, tem_icms=False)
-    else:
-        q_d_ise_fp, tt_d_ise_fp, v_d_ise_fp = 0.0, 0.0, 0.0
-        
-    diferenca_fp = q_d_reg_fp - dem_cont_fp
-    if diferenca_fp > (dem_cont_fp * 0.05):
-        q_up_fp = diferenca_fp
-        _, tt_up_fp, v_up_fp = calc_item(q_up_fp, t_d_fp, tem_icms=True, multiplicador=2.0)
-    else:
-        q_up_fp, tt_up_fp, v_up_fp = 0.0, 0.0, 0.0
-
-    ta_r_p, tt_r_p, v_r_p = calc_item(q_r_p, t_reat, tem_icms=True)
-    ta_r_fp, tt_r_fp, v_r_fp = calc_item(q_r_fp, t_reat, tem_icms=True)
-    ta_dr_p, tt_dr_p, v_dr_p = calc_item(q_dr_p, t_d_fp, tem_icms=True) 
-    ta_dr_fp, tt_dr_fp, v_dr_fp = calc_item(q_dr_fp, t_d_fp, tem_icms=True) 
-    
-    valor_total_fatura = subtotal_fatura + cip_padrao - ret_cons_irrf - ret_dem_irrf
-    
-    return {
-        "nome_unidade": nome_unidade, "atividade": atividade, "demanda_contratada_ponta": dem_cont_p, "demanda_contratada_fponta": dem_cont_fp,
-        "classificacao": classificacao,
-        "ta_c_p_tusd": ta_c_p_tusd, "tt_c_p_tusd": tt_c_p_tusd, "v_c_p_tusd": v_c_p_tusd,
-        "ta_c_fp_tusd": ta_c_fp_tusd, "tt_c_fp_tusd": tt_c_fp_tusd, "v_c_fp_tusd": v_c_fp_tusd,
-        "ta_c_p_te": ta_c_p_te, "tt_c_p_te": tt_c_p_te, "v_c_p_te": v_c_p_te,
-        "ta_c_fp_te": ta_c_fp_te, "tt_c_fp_te": tt_c_fp_te, "v_c_fp_te": v_c_fp_te,
-        
-        "q_d_ise_p": q_d_ise_p, "tt_d_ise_p": tt_d_ise_p, "v_d_ise_p": v_d_ise_p,
-        "q_d_reg_p": q_d_reg_p, "ta_d_p": ta_d_p, "tt_d_p": tt_d_p, "v_d_reg_p": v_d_reg_p,
-        "q_d_ise_fp": q_d_ise_fp, "tt_d_ise_fp": tt_d_ise_fp, "v_d_ise_fp": v_d_ise_fp,
-        "q_d_reg_fp": q_d_reg_fp, "ta_d_fp": ta_d_fp, "tt_d_fp": tt_d_fp, "v_d_reg_fp": v_d_reg_fp,
-        
-        "q_up_p": q_up_p, "ta_up_p": ta_d_p, "tt_up_p": tt_up_p, "v_up_p": v_up_p,
-        "q_up_fp": q_up_fp, "ta_up_fp": ta_d_fp, "tt_up_fp": tt_up_fp, "v_up_fp": v_up_fp,
-        
-        "ta_r_p": ta_r_p, "tt_r_p": tt_r_p, "v_r_p": v_r_p,
-        "ta_r_fp": ta_r_fp, "tt_r_fp": tt_r_fp, "v_r_fp": v_r_fp,
-        "ta_dr_p": ta_dr_p, "tt_dr_p": tt_dr_p, "v_dr_p": v_dr_p,
-        "ta_dr_fp": ta_dr_fp, "tt_dr_fp": tt_dr_fp, "v_dr_fp": v_dr_fp,
-        
-        "tipo_bandeira": tipo_bandeira, "adicional_bandeira": adicional_bandeira, "cip_padrao": cip_padrao,
-        "v_pis": tot_pis, "v_cofins": tot_cofins, "v_icms": tot_icms, "valor_total_fatura": valor_total_fatura
-    }
 
 # --- 4. INTERFACE ---
-aba_dash, aba_controle, aba_dados, aba_pdf, aba_manual, aba_config = st.tabs(["📈 Dashboard", "💰 Controle Financeiro", "📊 Banco de Dados", "📄 Upload PDF", "✍️ Cadastro Manual", "⚙️ Configurações"])
+aba_dash, aba_controle, aba_dados, aba_pdf, aba_config = st.tabs(["📈 Dashboard", "💰 Controle Financeiro", "📊 Banco de Dados", "📄 Upload PDF", "⚙️ Configurações"])
 
 # ==========================================
 # ABA DASHBOARD
@@ -1073,7 +908,7 @@ with aba_dados:
             column_config={
                 "id": None, 
                 "Data Referência Oculta": None,
-                "Valor Total Cons. Reat.": None,
+                "Valor Total Cons. Reat": None,
                 "Valor Total Dem. Reat.": None
             },
             selection_mode="multi-row",
@@ -1284,7 +1119,7 @@ with aba_pdf:
                                         dados_inserir[col] = float(valor)
                                     except:
                                         dados_inserir[col] = 0.0
-                            
+                        
                         col_str = ', '.join(dados_inserir.keys())
                         placeholders = ', '.join(['%s'] * len(dados_inserir))
                         valores = tuple(dados_inserir.values())
@@ -1304,463 +1139,192 @@ with aba_pdf:
                     st.error(f"Erro ao processar a planilha. Verifique se os nomes das colunas estão corretos. Erro detalhado: {e}")
 
 # ==========================================
-# ABA INSERÇÃO MANUAL INTELIGENTE
-# ==========================================
-with aba_manual:
-    st.markdown("##### 📝 Cadastro Manual de Fatura")
-    st.markdown("Cadastre manualmente apenas as faturas que não possuírem arquivo PDF.")
-    
-    uc_input = st.text_input("🔍 1º Passo: Digite a Unidade Consumidora e aperte Enter", placeholder="Ex: 40190245").strip()
-    
-    classificacao_uc = "Tarifa Azul-A4"
-    nome_uc = "Não Cadastrada"
-    ativ_uc = "Administrativa"
-    is_verde = False
-    is_b3 = False
-    
-    if uc_input:
-        conexao = obter_conexao()
-        c = conexao.cursor()
-        c.execute("SELECT nome_unidade, atividade, classificacao FROM cadastro_uc WHERE unidade_consumidora = %s", (uc_input,))
-        res = c.fetchone()
-        conexao.close()
-        
-        if res:
-            nome_uc, ativ_uc, classificacao_uc = res
-            st.success(f"📍 UC Localizada! Unidade: **{nome_uc}** | Atividade: **{ativ_uc}** | Classificação: **{classificacao_uc}**")
-        else:
-            st.warning("⚠️ UC não cadastrada nas configurações. O sistema usará o layout padrão (Azul-A4).")
-            
-    is_verde = ("Verde" in classificacao_uc)
-    is_b3 = ("B3" in classificacao_uc)
-    
-    if 'form_key' not in st.session_state:
-        st.session_state.form_key = 0
-        
-    with st.form(f"form_smart_{st.session_state.form_key}"):
-        st.markdown("###### 2º Passo: Preencha os dados da fatura")
-        c1, c2, c3 = st.columns(3)
-        uc = c1.text_input("Unidade Consumidora", value=uc_input, disabled=True)
-        mes = c2.text_input("Mês Referência", value="", placeholder="Ex: DEZ/2025", help="Obrigatório: 3 letras, barra, 4 números (Ex: JAN/2026)").strip().upper()
-        vencimento_val = c3.date_input("Data Vencimento", value=None, format="DD/MM/YYYY")
-        
-        c4, c5, c6 = st.columns(3)
-        p_fim_val = c4.date_input("Leitura Atual", value=None, format="DD/MM/YYYY")
-        p_inicio_val = c5.date_input("Leitura Anterior", value=None, format="DD/MM/YYYY")
-        prox_leit_val = c6.date_input("Próxima Leitura", value=None, format="DD/MM/YYYY")
-        
-        st.divider()
-        st.markdown("##### ⚡ 1. Energia Ativa (kWh) e Demanda Registrada (kW)")
-        col1, col2, col3, col4 = st.columns(4)
-        
-        label_help_ponta_c = "Bloqueado automaticamente pois a Tarifa B3 possui consumo único." if is_b3 else ""
-        q_c_p = col1.number_input("Consumo Ponta (TUSD/TE)", min_value=0.0, format="%.4f", disabled=is_b3, help=label_help_ponta_c)
-        
-        label_cons_fp = "Consumo Único (kWh)" if is_b3 else "Consumo F. Ponta (TUSD/TE)"
-        q_c_fp = col2.number_input(label_cons_fp, min_value=0.0, format="%.4f")
-        
-        label_help_d_p = "Bloqueado para B3 e Verde." if (is_verde or is_b3) else ""
-        q_d_reg_p = col3.number_input("Demanda Registrada Ponta", min_value=0.0, format="%.4f", disabled=(is_verde or is_b3), help=label_help_d_p)
-        
-        label_dem_fp = "Demanda Registrada ÚNICA (kW)" if is_verde else ("Demanda Registrada F. Ponta" if not is_b3 else "Não se aplica (B3)")
-        q_d_reg_fp = col4.number_input(label_dem_fp, min_value=0.0, format="%.4f", disabled=is_b3)
-        
-        st.divider()
-        st.markdown("##### 🔌 2. Energia e Demanda Reativa")
-        col5, col6, col7, col8 = st.columns(4)
-        q_r_p = col5.number_input("Consumo Reat. Ponta (kvarh)", min_value=0.0, format="%.4f", disabled=is_b3)
-        q_r_fp = col6.number_input("Consumo Reat. F. Ponta", min_value=0.0, format="%.4f", disabled=is_b3)
-        q_dr_p = col7.number_input("Demanda Reat. Ponta (kW)", min_value=0.0, format="%.4f", disabled=(is_verde or is_b3))
-        q_dr_fp = col8.number_input("Demanda Reat. ÚNICA / F. Ponta", min_value=0.0, format="%.4f", disabled=is_b3)
-        
-        st.divider()
-        st.markdown("##### 💸 3. Retenções de Impostos (R$)")
-        c7, c8 = st.columns(2) 
-        ret_cons_irrf = c7.number_input("Retenção Consumo IRRF (-)", min_value=0.0, format="%.2f")
-        ret_dem_irrf = c8.number_input("Retenção Demanda IRRF (-)", min_value=0.0, format="%.2f")
-        
-        st.write("")
-        if 'mensagem_sucesso' in st.session_state:
-            st.success(st.session_state['mensagem_sucesso'])
-            del st.session_state['mensagem_sucesso']
-        
-        submit = st.form_submit_button("Registrar Fatura", type="primary")
-        
-        if submit:
-            if not uc_input or not mes or not vencimento_val or not p_inicio_val or not p_fim_val or not prox_leit_val:
-                st.warning("⚠️ Atenção: Por favor, preencha a UC (no campo externo), o Mês de Referência e TODAS as Datas antes de gerar a fatura.")
-            
-            elif not re.match(r"^[A-Z]{3}/\d{4}$", mes):
-                st.error("⚠️ Erro de Formatação: O Mês de Referência deve ter 3 letras, uma barra e 4 números. Exemplo: DEZ/2025 ou JAN/2026.")
-            
-            else:
-                conexao = obter_conexao()
-                c_dup = conexao.cursor()
-                c_dup.execute("SELECT id FROM faturas_cpfl WHERE unidade_consumidora = %s AND mes_referencia = %s", (uc_input, mes))
-                
-                if c_dup.fetchone():
-                    st.warning(f"⚠️ A fatura da UC {uc_input} referente a {mes} já existe no banco de dados! Inserção cancelada.")
-                    conexao.close()
-                else:
-                    conexao.close() 
-                    
-                    vencimento = vencimento_val.strftime("%d/%m/%Y")
-                    p_inicio = p_inicio_val.strftime("%d/%m/%Y")
-                    p_fim = p_fim_val.strftime("%d/%m/%Y")
-                    prox_leit = prox_leit_val.strftime("%d/%m/%Y")
-
-                    calc = calcular_faturamento(uc_input, mes, q_c_p, q_c_fp, q_d_reg_p, q_d_reg_fp, q_r_p, q_r_fp, q_dr_p, q_dr_fp, ret_cons_irrf, ret_dem_irrf)
-                    
-                    if "erro" in calc:
-                        st.error(calc["erro"])
-                    else:
-                        conexao = obter_conexao()
-                        c = conexao.cursor()
-                        
-                        interrogacoes = ', '.join(['%s'] * 74)
-                        
-                        c.execute(f'''
-                            INSERT INTO faturas_cpfl (
-                                unidade_consumidora, nome_unidade, atividade, mes_referencia, data_vencimento, periodo_leitura_inicio, periodo_leitura_fim, data_proxima_leitura,
-                                classificacao, demanda_contratada_ponta, demanda_contratada_fponta,
-                                
-                                consumo_ponta, tarifa_aneel_cons_ponta_tusd, tarifa_trib_cons_ponta_tusd, valor_cons_ponta_tusd,
-                                consumo_fora_ponta, tarifa_aneel_cons_fponta_tusd, tarifa_trib_cons_fponta_tusd, valor_cons_fponta_tusd,
-                                tarifa_aneel_cons_ponta_te, tarifa_trib_cons_ponta_te, valor_cons_ponta_te,
-                                tarifa_aneel_cons_fponta_te, tarifa_trib_cons_fponta_te, valor_cons_fponta_te,
-                                
-                                tipo_bandeira, adicional_bandeira,
-                                
-                                demanda_isenta_ponta, tarifa_aneel_dem_isenta_ponta, tarifa_trib_dem_isenta_ponta, valor_dem_isenta_ponta,
-                                demanda_registrada_ponta, tarifa_aneel_dem_ponta, tarifa_trib_dem_ponta, valor_dem_ponta,
-                                demanda_isenta_fora_ponta, tarifa_aneel_dem_isenta_fponta, tarifa_trib_dem_isenta_fponta, valor_dem_isenta_fponta,
-                                demanda_registrada_fora_ponta, tarifa_aneel_dem_fponta, tarifa_trib_dem_fponta, valor_dem_fponta,
-                                
-                                demanda_ultrapassagem_ponta, tarifa_aneel_dem_ultrap_ponta, tarifa_trib_dem_ultrap_ponta, valor_dem_ultrap_ponta,
-                                demanda_ultrapassagem_fora_ponta, tarifa_aneel_dem_ultrap_fponta, tarifa_trib_dem_ultrap_fponta, valor_dem_ultrap_fponta,
-                                
-                                consumo_reativo_ponta, tarifa_aneel_cons_reativo_ponta, tarifa_trib_cons_reativo_ponta, valor_cons_reativo_ponta,
-                                consumo_reativo_fora_ponta, tarifa_aneel_cons_reativo_fponta, tarifa_trib_cons_reativo_fponta, valor_cons_reativo_fponta,
-                                demanda_reativa_ponta, tarifa_aneel_dem_reativa_ponta, tarifa_trib_dem_reativa_ponta, valor_dem_reativa_ponta,
-                                demanda_reativa_fora_ponta, tarifa_aneel_dem_reativa_fponta, tarifa_trib_dem_reativa_fponta, valor_dem_reativa_fponta,
-                                
-                                cip, retencao_consumo_irrf, retencao_demanda_irrf, valor_total_pis, valor_total_cofins, valor_total_icms, valor_total_fatura
-                            ) VALUES ({interrogacoes})
-                        ''', (
-                            uc_input, calc["nome_unidade"], calc["atividade"], mes, vencimento, p_inicio, p_fim, prox_leit,
-                            calc["classificacao"], calc["demanda_contratada_ponta"], calc["demanda_contratada_fponta"],
-                            
-                            q_c_p, calc["ta_c_p_tusd"], calc["tt_c_p_tusd"], calc["v_c_p_tusd"],
-                            q_c_fp, calc["ta_c_fp_tusd"], calc["tt_c_fp_tusd"], calc["v_c_fp_tusd"],
-                            calc["ta_c_p_te"], calc["tt_c_p_te"], calc["v_c_p_te"],
-                            calc["ta_c_fp_te"], calc["tt_c_fp_te"], calc["v_c_fp_te"],
-                            
-                            calc["tipo_bandeira"], calc["adicional_bandeira"],
-                            
-                            calc["q_d_ise_p"], calc["ta_d_p"], calc["tt_d_ise_p"], calc["v_d_ise_p"],
-                            calc["q_d_reg_p"], calc["ta_d_p"], calc["tt_d_p"], calc["v_d_reg_p"],
-                            calc["q_d_ise_fp"], calc["ta_d_fp"], calc["tt_d_ise_fp"], calc["v_d_ise_fp"],
-                            calc["q_d_reg_fp"], calc["ta_d_fp"], calc["tt_d_fp"], calc["v_d_reg_fp"],
-                            
-                            calc["q_up_p"], calc["ta_up_p"], calc["tt_up_p"], calc["v_up_p"],
-                            calc["q_up_fp"], calc["ta_up_fp"], calc["tt_up_fp"], calc["v_up_fp"],
-                            
-                            q_r_p, calc["ta_r_p"], calc["tt_r_p"], calc["v_r_p"],
-                            q_r_fp, calc["ta_r_fp"], calc["tt_r_fp"], calc["v_r_fp"],
-                            q_dr_p, calc["ta_dr_p"], calc["tt_dr_p"], calc["v_dr_p"],
-                            q_dr_fp, calc["ta_dr_fp"], calc["tt_dr_fp"], calc["v_dr_fp"],
-                            
-                            calc["cip_padrao"], ret_cons_irrf, ret_dem_irrf, calc["v_pis"], calc["v_cofins"], calc["v_icms"], calc["valor_total_fatura"]
-                        ))
-                        conexao.commit()
-                        carregar_dados.clear()
-                        conexao.close()
-                        
-                        st.session_state['mensagem_sucesso'] = f"✅ Fatura calculada e salva com sucesso! Valor Estimado: R$ {calc['valor_total_fatura']:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
-                        st.session_state.form_key += 1
-                        st.rerun()
-
-# ==========================================
 # ABA CONFIGURAÇÕES DE CADASTRO E TARIFAS
 # ==========================================
 with aba_config:
     st.markdown("##### ⚙️ Configurações Gerais do Sistema")
+    st.markdown("###### 🏢 Cadastro da Unidade Consumidora")
     
-    col_cad, col_tar = st.columns(2)
+    tab_cad_manual, tab_cad_lote = st.tabs(["✍️ Cadastro Manual", "📊 Upload em Lote (Excel)"])
     
-    with col_cad:
-        st.markdown("###### 🏢 Cadastro da Unidade Consumidora")
+    with tab_cad_manual:
+        uc_busca = st.text_input("Buscar UC (Ex: 40190245)", value="").strip()
         
-        tab_cad_manual, tab_cad_lote = st.tabs(["✍️ Cadastro Manual", "📊 Upload em Lote (Excel)"])
-        
-        with tab_cad_manual:
-            uc_busca = st.text_input("Buscar UC (Ex: 40190245)", value="").strip()
-            
-            if uc_busca:
-                conexao = obter_conexao()
-                c = conexao.cursor()
-                c.execute("SELECT nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status FROM cadastro_uc WHERE unidade_consumidora = %s", (uc_busca,))
-                dados_uc = c.fetchone()
-                conexao.close()
-            else:
-                dados_uc = None
-            
-            if dados_uc:
-                v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = dados_uc
-            else:
-                v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = ("", "Administrativa", "Tarifa Azul-A4", 0.0, 0.0, "ATIVA")
-                
-            with st.form("form_uc"):
-                nome_input = st.text_input("Nome da Instalação/Unidade", value=v_nome, placeholder="Ex: Poço 15 - Geisel")
-                
-                lista_atividades = ["Administrativa", "Água", "Esgoto"]
-                idx_ativ = lista_atividades.index(v_ativ) if v_ativ in lista_atividades else 0
-                ativ_input = st.selectbox("Atividade", lista_atividades, index=idx_ativ)
-                
-                lista_classes = ["Tarifa Azul-A4", "Tarifa Verde-A4", "Convencional B3"]
-                idx_class = lista_classes.index(v_class) if v_class in lista_classes else 0
-                classif_input = st.selectbox("Classificação", lista_classes, index=idx_class)
-
-                lista_status = ["ATIVA", "INATIVA"]
-                idx_status = lista_status.index(v_status) if v_status in lista_status else 0
-                status_input = st.selectbox("Status de Operação", lista_status, index=idx_status)
-                
-                if "Verde" in classif_input:
-                    st.info("💡 Na **Tarifa Verde-A4**, informe a Demanda Única no campo 'Fora Ponta'. O campo Ponta será desconsiderado no cálculo.")
-                elif "B3" in classif_input:
-                    st.info("💡 Na **Convencional B3**, não existe demanda contratada. Pode deixar os campos zerados.")
-                
-                dc_p = st.number_input("Demanda Contratada Ponta (kW)", value=float(v_dc_p), format="%.2f", disabled=("B3" in classif_input))
-                dc_fp = st.number_input("Demanda Contratada Fora Ponta (kW)", value=float(v_dc_fp), format="%.2f", disabled=("B3" in classif_input))
-                
-                st.write("")
-                if 'msg_uc' in st.session_state:
-                    st.success(st.session_state['msg_uc'])
-                    del st.session_state['msg_uc']
-                
-                if st.form_submit_button("Salvar Cadastro da UC", type="primary"):
-                    if classif_input == "Tarifa Verde-A4":
-                        dc_p = 0.0 
-                    elif classif_input == "Convencional B3":
-                        dc_p = 0.0
-                        dc_fp = 0.0
-                    
-                    conexao = obter_conexao()
-                    c = conexao.cursor()
-                    c.execute('''
-                        INSERT INTO cadastro_uc (unidade_consumidora, nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (unidade_consumidora) DO UPDATE SET 
-                        nome_unidade = EXCLUDED.nome_unidade,
-                        atividade = EXCLUDED.atividade,
-                        classificacao = EXCLUDED.classificacao,
-                        demanda_contratada_ponta = EXCLUDED.demanda_contratada_ponta,
-                        demanda_contratada_fponta = EXCLUDED.demanda_contratada_fponta,
-                        status = EXCLUDED.status;
-                    ''', (uc_busca, nome_input, ativ_input, classif_input, dc_p, dc_fp, status_input))
-                    c.execute('''
-                        UPDATE faturas_cpfl 
-                        SET nome_unidade = %s 
-                        WHERE unidade_consumidora = %s;
-                    ''', (nome_input, uc_busca))
-                    
-                    conexao.commit()
-                    conexao.close()
-                    
-                    st.session_state['msg_uc'] = "✅ Cadastro da UC realizado com sucesso!"
-                    st.rerun()
-
-        with tab_cad_lote:
-            st.info("💡 Crie uma planilha no Excel com o cabeçalho idêntico à tabela abaixo e faça o upload.")
-            
-            df_exemplo = pd.DataFrame({
-                "unidade_consumidora": ["40190245", "4065530"],
-                "nome_unidade": ["ETA Bauru", "Promocao Social"],
-                "atividade": ["Água", "Administrativa"],
-                "classificacao": ["Tarifa Azul-A4", "Convencional B3"],
-                "demanda_contratada_ponta": [275.0, 0.0],
-                "demanda_contratada_fponta": [275.0, 0.0],
-                "status": ["ATIVA", "INATIVA"]
-            })
-            
-            st.dataframe(df_exemplo, hide_index=True, use_container_width=True)
-            
-            arquivo_ucs_excel = st.file_uploader("Selecione a planilha de UCs (.xlsx)", type=["xlsx"], key="upload_uc")
-            
-            if arquivo_ucs_excel is not None:
-                if st.button("🚀 Processar e Cadastrar Unidades", type="primary"):
-                    try:
-                        df_ucs = pd.read_excel(arquivo_ucs_excel)
-                        conexao = obter_conexao()
-                        c = conexao.cursor()
-                        
-                        inseridas = 0
-                        
-                        for index, row in df_ucs.iterrows():
-                            uc = str(row.get('unidade_consumidora', '')).strip()
-                            
-                            if not uc or uc == 'nan':
-                                continue
-                            
-                            nome = str(row.get('nome_unidade', '')).strip()
-                            ativ = str(row.get('atividade', 'Administrativa')).strip()
-                            classif = str(row.get('classificacao', 'Tarifa Azul-A4')).strip()
-                            status_uc = str(row.get('status', 'ATIVA')).strip().upper()
-                            
-                            try:
-                                dc_p = float(row.get('demanda_contratada_ponta', 0.0))
-                            except:
-                                dc_p = 0.0
-                                
-                            try:
-                                dc_fp = float(row.get('demanda_contratada_fponta', 0.0))
-                            except:
-                                dc_fp = 0.0
-
-                            if "Verde" in classif:
-                                dc_p = 0.0
-                            elif "B3" in classif:
-                                dc_p = 0.0
-                                dc_fp = 0.0
-                                
-                            c.execute('''
-                                INSERT INTO cadastro_uc (unidade_consumidora, nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                                ON CONFLICT (unidade_consumidora) DO UPDATE SET 
-                                nome_unidade = EXCLUDED.nome_unidade,
-                                atividade = EXCLUDED.atividade,
-                                classificacao = EXCLUDED.classificacao,
-                                demanda_contratada_ponta = EXCLUDED.demanda_contratada_ponta,
-                                demanda_contratada_fponta = EXCLUDED.demanda_contratada_fponta,
-                                status = EXCLUDED.status;
-                            ''', (uc, nome, ativ, classif, dc_p, dc_fp, status_uc))
-                            c.execute('''
-                                UPDATE faturas_cpfl 
-                                SET nome_unidade = %s 
-                                WHERE unidade_consumidora = %s;
-                            ''', (nome, uc))
-
-                            inseridas += 1
-                            
-                        conexao.commit()
-                        conexao.close()
-                        
-                        st.success(f"✅ Lote processado! **{inseridas}** UCs cadastradas ou atualizadas no sistema.")
-                        st.balloons()
-                        
-                    except Exception as e:
-                        st.error(f"Erro ao processar a planilha. Verifique se o nome das colunas está correto. Detalhe: {e}")
-
-            st.divider()
-            st.markdown("###### 🔄 Sincronização de Histórico")
-            st.info("Use este botão para corrigir o nome, atividade e classe de TODAS as faturas antigas de uma só vez.")
-            
-            if st.button("🔄 Sincronizar Faturas Antigas", type="primary"):
-                try:
-                    conexao = obter_conexao()
-                    c = conexao.cursor()
-                    c.execute('''
-                        UPDATE faturas_cpfl
-                        SET nome_unidade = cadastro_uc.nome_unidade,
-                            atividade = cadastro_uc.atividade,
-                            classificacao = cadastro_uc.classificacao
-                        FROM cadastro_uc
-                        WHERE faturas_cpfl.unidade_consumidora = cadastro_uc.unidade_consumidora;
-                    ''')
-                    linhas_afetadas = c.rowcount
-                    conexao.commit()
-                    conexao.close()
-                    carregar_dados.clear()
-                    st.success(f"✅ Sincronização concluída! {linhas_afetadas} faturas foram atualizadas.")
-                except Exception as e:
-                    st.error(f"Erro ao sincronizar: {e}")
-
-    with col_tar:
-        st.markdown("###### 📈 Tarifas e Impostos")
-        
-        c_mes, c_class = st.columns(2)
-        mes_edicao = c_mes.text_input("Mês Referência", value="DEZ/2025").strip().upper()
-        class_edicao = c_class.selectbox("Classe Tarifária", ["Tarifa Azul-A4", "Tarifa Verde-A4", "Convencional B3"])
-
-        conexao = obter_conexao()
-        c = conexao.cursor()
-        c.execute("SELECT * FROM parametros_faturamento WHERE mes_referencia = %s AND classificacao = %s", (mes_edicao, class_edicao))
-        params_atuais = c.fetchone()
-
-        if params_atuais:
-            _, _, p_pis, p_cofins, p_icms, p_t_c_p_tusd, p_t_c_fp_tusd, p_t_c_p_te, p_t_c_fp_te, p_t_d_p, p_t_d_fp, p_t_reat, p_t_band, p_cip, p_band_tipo = params_atuais
-            st.info(f"Mostrando os parâmetros já cadastrados para **{mes_edicao} ({class_edicao})**.")
+        if uc_busca:
+            conexao = obter_conexao()
+            c = conexao.cursor()
+            c.execute("SELECT nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status FROM cadastro_uc WHERE unidade_consumidora = %s", (uc_busca,))
+            dados_uc = c.fetchone()
+            conexao.close()
         else:
-            c.execute("SELECT * FROM parametros_faturamento WHERE classificacao = %s", (class_edicao,))
-            todos_params = c.fetchall()
-            if todos_params:
-                ultimo = todos_params[-1]
-                _, _, p_pis, p_cofins, p_icms, p_t_c_p_tusd, p_t_c_fp_tusd, p_t_c_p_te, p_t_c_fp_te, p_t_d_p, p_t_d_fp, p_t_reat, p_t_band, p_cip, p_band_tipo = ultimo
-                st.warning(f"Mês novo detectado! Herdando automaticamente as tarifas de **{ultimo[0]} ({class_edicao})**.")
-            else:
-                p_pis, p_cofins, p_icms, p_t_c_p_tusd, p_t_c_fp_tusd, p_t_c_p_te, p_t_c_fp_te, p_t_d_p, p_t_d_fp, p_t_reat, p_t_band, p_cip = (0.0,)*12
-                p_band_tipo = "VERDE"
-                
-        conexao.close()
+            dados_uc = None
+        
+        if dados_uc:
+            v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = dados_uc
+        else:
+            v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = ("", "Administrativa", "Tarifa Azul-A4", 0.0, 0.0, "ATIVA")
+            
+        with st.form("form_uc"):
+            nome_input = st.text_input("Nome da Instalação/Unidade", value=v_nome, placeholder="Ex: Poço 15 - Geisel")
+            
+            lista_atividades = ["Administrativa", "Água", "Esgoto"]
+            idx_ativ = lista_atividades.index(v_ativ) if v_ativ in lista_atividades else 0
+            ativ_input = st.selectbox("Atividade", lista_atividades, index=idx_ativ)
+            
+            lista_classes = ["Tarifa Azul-A4", "Tarifa Verde-A4", "Convencional B3"]
+            idx_class = lista_classes.index(v_class) if v_class in lista_classes else 0
+            classif_input = st.selectbox("Classificação", lista_classes, index=idx_class)
 
-        with st.form(f"form_config_{mes_edicao}_{class_edicao}"):
-            st.markdown("**Alíquotas de Impostos (em decimal)**")
-            c1, c2, c3 = st.columns(3)
-            novo_pis = c1.number_input("PIS", value=float(p_pis), format="%.4f")
-            novo_cofins = c2.number_input("COFINS", value=float(p_cofins), format="%.4f")
-            novo_icms = c3.number_input("ICMS", value=float(p_icms), format="%.4f")
-
-            st.markdown("**Tarifas ANEEL, Bandeira e CIP (R$)**")
+            lista_status = ["ATIVA", "INATIVA"]
+            idx_status = lista_status.index(v_status) if v_status in lista_status else 0
+            status_input = st.selectbox("Status de Operação", lista_status, index=idx_status)
             
-            if class_edicao == "Convencional B3":
-                st.caption("ℹ️ Para Convencional B3, cadastre a Tarifa Única nos campos *Consumo F. Ponta*. Campos de Demanda e Reativo podem ficar zerados.")
+            if "Verde" in classif_input:
+                st.info("💡 Na **Tarifa Verde-A4**, informe a Demanda Única no campo 'Fora Ponta'. O campo Ponta será desconsiderado no cálculo.")
+            elif "B3" in classif_input:
+                st.info("💡 Na **Convencional B3**, não existe demanda contratada. Pode deixar os campos zerados.")
             
-            c4, c5 = st.columns(2)
-            novo_t_c_p_tusd = c4.number_input("Consumo Ponta TUSD", value=float(p_t_c_p_tusd), format="%.8f")
-            novo_t_c_fp_tusd = c5.number_input("Consumo F. Ponta TUSD", value=float(p_t_c_fp_tusd), format="%.8f")
-            novo_t_c_p_te = c4.number_input("Consumo Ponta TE", value=float(p_t_c_p_te), format="%.8f")
-            novo_t_c_fp_te = c5.number_input("Consumo F. Ponta TE", value=float(p_t_c_fp_te), format="%.8f")
+            dc_p = st.number_input("Demanda Contratada Ponta (kW)", value=float(v_dc_p), format="%.2f", disabled=("B3" in classif_input))
+            dc_fp = st.number_input("Demanda Contratada Fora Ponta (kW)", value=float(v_dc_fp), format="%.2f", disabled=("B3" in classif_input))
             
-            c6, c7, c8 = st.columns(3)
-            if class_edicao == "Tarifa Verde-A4":
-                st.caption("ℹ️ Para a Tarifa Verde, cadastre a Demanda Única no campo de *Demanda F. Ponta*.")
-            
-            novo_t_d_p = c6.number_input("Demanda Ponta", value=float(p_t_d_p), format="%.8f")
-            novo_t_d_fp = c7.number_input("Demanda F. Ponta", value=float(p_t_d_fp), format="%.8f")
-            novo_t_reat = c8.number_input("Energia Reativa", value=float(p_t_reat), format="%.8f")
-            
-            c9, c10, c11 = st.columns(3)
-            lista_bandeiras = ["VERDE", "AMARELA", "VERMELHA I", "VERMELHA II", "ESCASSEZ HÍDRICA"]
-            idx_band = lista_bandeiras.index(p_band_tipo) if p_band_tipo in lista_bandeiras else 0
-            novo_tipo_bandeira = c9.selectbox("Bandeira Vigente do Mês", lista_bandeiras, index=idx_band)
-            
-            novo_t_band = c10.number_input("Tarifa Band. (R$/kWh)", value=float(p_t_band), format="%.5f")
-            novo_cip = c11.number_input("CIP Padronizada (R$)", value=float(p_cip), format="%.2f")
-
             st.write("")
-            if 'msg_tarifa' in st.session_state:
-                st.success(st.session_state['msg_tarifa'])
-                del st.session_state['msg_tarifa']
-
-            if st.form_submit_button("Salvar Parâmetros", type="primary"):
+            if 'msg_uc' in st.session_state:
+                st.success(st.session_state['msg_uc'])
+                del st.session_state['msg_uc']
+            
+            if st.form_submit_button("Salvar Cadastro da UC", type="primary"):
+                if classif_input == "Tarifa Verde-A4":
+                    dc_p = 0.0 
+                elif classif_input == "Convencional B3":
+                    dc_p = 0.0
+                    dc_fp = 0.0
+                
                 conexao = obter_conexao()
                 c = conexao.cursor()
                 c.execute('''
-                    INSERT INTO parametros_faturamento VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (mes_referencia, classificacao) DO UPDATE SET
-                    aliq_pis = EXCLUDED.aliq_pis, aliq_cofins = EXCLUDED.aliq_cofins, aliq_icms = EXCLUDED.aliq_icms,
-                    tar_aneel_cons_p_tusd = EXCLUDED.tar_aneel_cons_p_tusd, tar_aneel_cons_fp_tusd = EXCLUDED.tar_aneel_cons_fp_tusd,
-                    tar_aneel_cons_p_te = EXCLUDED.tar_aneel_cons_p_te, tar_aneel_cons_fp_te = EXCLUDED.tar_aneel_cons_fp_te,
-                    tar_aneel_dem_p = EXCLUDED.tar_aneel_dem_p, tar_aneel_dem_fp = EXCLUDED.tar_aneel_dem_fp,
-                    tar_aneel_reativo = EXCLUDED.tar_aneel_reativo, tar_bandeira_vigente = EXCLUDED.tar_bandeira_vigente,
-                    cip_padrao = EXCLUDED.cip_padrao, tipo_bandeira = EXCLUDED.tipo_bandeira;
-                ''', (
-                    mes_edicao, class_edicao, novo_pis, novo_cofins, novo_icms,
-                    novo_t_c_p_tusd, novo_t_c_fp_tusd, novo_t_c_p_te, novo_t_c_fp_te,
-                    novo_t_d_p, novo_t_d_fp, novo_t_reat, novo_t_band, novo_cip, novo_tipo_bandeira
-                ))
+                    INSERT INTO cadastro_uc (unidade_consumidora, nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (unidade_consumidora) DO UPDATE SET 
+                    nome_unidade = EXCLUDED.nome_unidade,
+                    atividade = EXCLUDED.atividade,
+                    classificacao = EXCLUDED.classificacao,
+                    demanda_contratada_ponta = EXCLUDED.demanda_contratada_ponta,
+                    demanda_contratada_fponta = EXCLUDED.demanda_contratada_fponta,
+                    status = EXCLUDED.status;
+                ''', (uc_busca, nome_input, ativ_input, classif_input, dc_p, dc_fp, status_input))
+                c.execute('''
+                    UPDATE faturas_cpfl 
+                    SET nome_unidade = %s 
+                    WHERE unidade_consumidora = %s;
+                ''', (nome_input, uc_busca))
+                
                 conexao.commit()
                 conexao.close()
                 
-                st.session_state['msg_tarifa'] = f"✅ Parâmetros de **{class_edicao}** atualizados para {mes_edicao}!"
+                st.session_state['msg_uc'] = "✅ Cadastro da UC realizado com sucesso!"
                 st.rerun()
+
+    with tab_cad_lote:
+        st.info("💡 Crie uma planilha no Excel com o cabeçalho idêntico à tabela abaixo e faça o upload.")
+        
+        df_exemplo = pd.DataFrame({
+            "unidade_consumidora": ["40190245", "4065530"],
+            "nome_unidade": ["ETA Bauru", "Promocao Social"],
+            "atividade": ["Água", "Administrativa"],
+            "classificacao": ["Tarifa Azul-A4", "Convencional B3"],
+            "demanda_contratada_ponta": [275.0, 0.0],
+            "demanda_contratada_fponta": [275.0, 0.0],
+            "status": ["ATIVA", "INATIVA"]
+        })
+        
+        st.dataframe(df_exemplo, hide_index=True, use_container_width=True)
+        
+        arquivo_ucs_excel = st.file_uploader("Selecione a planilha de UCs (.xlsx)", type=["xlsx"], key="upload_uc")
+        
+        if arquivo_ucs_excel is not None:
+            if st.button("🚀 Processar e Cadastrar Unidades", type="primary"):
+                try:
+                    df_ucs = pd.read_excel(arquivo_ucs_excel)
+                    conexao = obter_conexao()
+                    c = conexao.cursor()
+                    
+                    inseridas = 0
+                    
+                    for index, row in df_ucs.iterrows():
+                        uc = str(row.get('unidade_consumidora', '')).strip()
+                        
+                        if not uc or uc == 'nan':
+                            continue
+                        
+                        nome = str(row.get('nome_unidade', '')).strip()
+                        ativ = str(row.get('atividade', 'Administrativa')).strip()
+                        classif = str(row.get('classificacao', 'Tarifa Azul-A4')).strip()
+                        status_uc = str(row.get('status', 'ATIVA')).strip().upper()
+                        
+                        try:
+                            dc_p = float(row.get('demanda_contratada_ponta', 0.0))
+                        except:
+                            dc_p = 0.0
+                            
+                        try:
+                            dc_fp = float(row.get('demanda_contratada_fponta', 0.0))
+                        except:
+                            dc_fp = 0.0
+
+                        if "Verde" in classif:
+                            dc_p = 0.0
+                        elif "B3" in classif:
+                            dc_p = 0.0
+                            dc_fp = 0.0
+                            
+                        c.execute('''
+                            INSERT INTO cadastro_uc (unidade_consumidora, nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            ON CONFLICT (unidade_consumidora) DO UPDATE SET 
+                            nome_unidade = EXCLUDED.nome_unidade,
+                            atividade = EXCLUDED.atividade,
+                            classificacao = EXCLUDED.classificacao,
+                            demanda_contratada_ponta = EXCLUDED.demanda_contratada_ponta,
+                            demanda_contratada_fponta = EXCLUDED.demanda_contratada_fponta,
+                            status = EXCLUDED.status;
+                        ''', (uc, nome, ativ, classif, dc_p, dc_fp, status_uc))
+                        c.execute('''
+                            UPDATE faturas_cpfl 
+                            SET nome_unidade = %s 
+                            WHERE unidade_consumidora = %s;
+                        ''', (nome, uc))
+
+                        inseridas += 1
+                        
+                    conexao.commit()
+                    conexao.close()
+                    
+                    st.success(f"✅ Lote processado! **{inseridas}** UCs cadastradas ou atualizadas no sistema.")
+                    st.balloons()
+                    
+                except Exception as e:
+                    st.error(f"Erro ao processar a planilha. Verifique se o nome das colunas está correto. Detalhe: {e}")
+
+        st.divider()
+        st.markdown("###### 🔄 Sincronização de Histórico")
+        st.info("Use este botão para corrigir o nome, atividade e classe de TODAS as faturas antigas de uma só vez.")
+        
+        if st.button("🔄 Sincronizar Faturas Antigas", type="primary"):
+            try:
+                conexao = obter_conexao()
+                c = conexao.cursor()
+                c.execute('''
+                    UPDATE faturas_cpfl
+                    SET nome_unidade = cadastro_uc.nome_unidade,
+                        atividade = cadastro_uc.atividade,
+                        classificacao = cadastro_uc.classificacao
+                    FROM cadastro_uc
+                    WHERE faturas_cpfl.unidade_consumidora = cadastro_uc.unidade_consumidora;
+                ''')
+                linhas_afetadas = c.rowcount
+                conexao.commit()
+                conexao.close()
+                carregar_dados.clear()
+                st.success(f"✅ Sincronização concluída! {linhas_afetadas} faturas foram atualizadas.")
+            except Exception as e:
+                st.error(f"Erro ao sincronizar: {e}")

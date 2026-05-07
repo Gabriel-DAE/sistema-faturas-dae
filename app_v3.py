@@ -1103,6 +1103,85 @@ with aba_espelho:
                             ed_v_reat_p = st.number_input("Valor Reativo P.", value=float(f['Valor Dem. Reat. Ponta']), format="%.2f")
                             ed_reat_fp = st.number_input("Reativo F.Ponta", value=float(f['Dem. Reat. F.Ponta']), format="%.2f")
                             ed_v_reat_fp = st.number_input("Valor Reativo F.P.", value=float(f['Valor Dem. Reat. F.Ponta']), format="%.2f")
+                            
+                # --- LÓGICA CONVENCIONAL B3 ---
+                elif "B3" in str(classe) or "Convencional" in str(classe):
+                    st.subheader("🏠 Detalhamento e Ajuste - Convencional B3")
+                    st.info("💡 Unidade do Grupo B: Sem cobrança de demanda ou reativo.")
+                    
+                    t1, t2 = st.tabs(["📊 Consumo", "💰 Impostos e Totais"])
+                    
+                    with t1:
+                        c1, _ = st.columns([2, 2])
+                        with c1:
+                            st.markdown("**⚡ Consumo Ativo (kWh)**")
+                            ed_cons_fp = st.number_input("Quantidade Total", value=float(f['Consumo F.Ponta']), format="%.2f", key="c_b3")
+                            val_cons_b3 = float(f['Valor Cons. F.Ponta TUSD'] + f['Valor Cons. F.Ponta TE'])
+                            ed_val_fp = st.number_input("Valor Total do Consumo (R$)", value=val_cons_b3, format="%.2f", key="vc_b3")
+                    
+                    # Zeramos TODAS as variáveis técnicas que a B3 não utiliza
+                    ed_cons_p, ed_val_p = 0.0, 0.0
+                    ed_dc_p, ed_dc_fp, ed_dr_p, ed_dr_fp, ed_val_dr_p, ed_val_dr_fp = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+                    ed_di_p, ed_v_di_p, ed_di_fp, ed_v_di_fp = 0.0, 0.0, 0.0, 0.0
+                    ed_ult_p, ed_v_ult_p, ed_ult_fp, ed_v_ult_fp = 0.0, 0.0, 0.0, 0.0
+                    ed_reat_p, ed_v_reat_p, ed_reat_fp, ed_v_reat_fp = 0.0, 0.0, 0.0, 0.0
+
+                    with t2:
+                        # Reutilizamos a lógica de impostos (t3 da Azul/Verde)
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.markdown("**🏛️ Encargos e Tributos**")
+                            ed_cip = st.number_input("CIP (R$)", value=float(f['CIP']), format="%.2f", key="cip_b3")
+                            ed_pis = st.number_input("PIS (R$)", value=float(f['Valor PIS']), format="%.2f", key="pis_b3")
+                            ed_cofins = st.number_input("COFINS (R$)", value=float(f['Valor COFINS']), format="%.2f", key="cofins_b3")
+                            ed_icms = st.number_input("ICMS (R$)", value=float(f['Valor ICMS']), format="%.2f", key="icms_b3")
+                        with c2:
+                            st.markdown("**🏁 Resumo Financeiro**")
+                            ed_bandeira = st.selectbox("Bandeira", ["VERDE", "AMARELA", "VERMELHA I", "VERMELHA II"], index=0, key="band_b3")
+                            ed_val_band = st.number_input("Valor Bandeira (R$)", value=float(f['Adicional Bandeira']), format="%.2f", key="vband_b3")
+                            ed_total = st.number_input("TOTAL DA FATURA", value=float(f['Valor Total Fatura']), format="%.2f", key="total_b3")
+
+                # --- BOTÃO SALVAR CENTRALIZADO (Para todos os tipos) ---
+                st.write("")
+                _, col_btn, _ = st.columns([1, 1.5, 1])
+                with col_btn:
+                    if st.form_submit_button("💾 Salvar Alterações no Banco", type="primary", use_container_width=True):
+                        try:
+                            conexao = obter_conexao()
+                            cursor = conexao.cursor()
+                            sql_update = """
+                                UPDATE faturas_cpfl SET 
+                                    consumo_ponta=%s, valor_cons_ponta_tusd=%s, consumo_fora_ponta=%s, valor_cons_fponta_tusd=%s,
+                                    demanda_contratada_ponta=%s, demanda_contratada_fponta=%s,
+                                    demanda_registrada_ponta=%s, valor_dem_ponta=%s,
+                                    demanda_registrada_fora_ponta=%s, valor_dem_fponta=%s,
+                                    demanda_isenta_ponta=%s, valor_dem_isenta_ponta=%s,
+                                    demanda_isenta_fora_ponta=%s, valor_dem_isenta_fponta=%s,
+                                    demanda_ultrapassagem_ponta=%s, valor_dem_ultrap_ponta=%s,
+                                    demanda_ultrapassagem_fora_ponta=%s, valor_dem_ultrap_fponta=%s,
+                                    demanda_reativa_ponta=%s, valor_dem_reativa_ponta=%s,
+                                    demanda_reativa_fora_ponta=%s, valor_dem_reativa_fponta=%s,
+                                    cip=%s, valor_total_pis=%s, valor_total_cofins=%s, valor_total_icms=%s,
+                                    tipo_bandeira=%s, adicional_bandeira=%s, valor_total_fatura=%s
+                                WHERE id = %s
+                            """
+                            valores = (ed_cons_p, ed_val_p, ed_cons_fp, ed_val_fp, ed_dc_p, ed_dc_fp,
+                                       ed_dr_p, ed_val_dr_p, ed_dr_fp, ed_val_dr_fp,
+                                       ed_di_p, ed_v_di_p, ed_di_fp, ed_v_di_fp,
+                                       ed_ult_p, ed_v_ult_p, ed_ult_fp, ed_v_ult_fp,
+                                       ed_reat_p, ed_v_reat_p, ed_reat_fp, ed_v_reat_fp,
+                                       ed_cip, ed_pis, ed_cofins, ed_icms,
+                                       ed_bandeira, ed_val_band, ed_total, id_fatura)
+                            
+                            cursor.execute(sql_update, valores)
+                            conexao.commit()
+                            conexao.close()
+                            
+                            st.success("✅ Banco de dados atualizado com sucesso!")
+                            carregar_dados.clear()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro ao salvar: {e}")
 
                 # --- BLOCO COMUM: IMPOSTOS (TAB 3) ---
                 with t3:

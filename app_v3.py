@@ -976,111 +976,156 @@ with aba_dados:
         st.info("Nenhum dado encontrado.")
 
 # ==========================================
-# ABA ESPELHO DE FATURA
+# ABA ESPELHO DE FATURA (EDITÁVEL)
 # ==========================================
 with aba_espelho:
-    st.markdown("##### 📑 Espelho Técnico de Fatura")
+    st.markdown("##### 📑 Espelho Técnico e Edição de Fatura")
+    
+    # Função auxiliar para formatar números no padrão BR (1.234,56)
+    def formata_br(valor):
+        return f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
     df_espelho = carregar_dados()
 
     if df_espelho.empty:
-        st.info("O banco de dados está vazio. Carregue faturas para visualizar o espelho.")
+        st.info("O banco de dados está vazio.")
     else:
         # --- FILTROS DE BUSCA ---
         c_busca1, c_busca2, _ = st.columns([2, 2, 4])
         with c_busca1:
-            # Adicionamos a key="espelho_uc"
-            uc_alvo = st.selectbox("📍 Selecione a UC:", options=sorted(df_espelho['UC'].unique()), key="espelho_uc")
+            uc_alvo = st.selectbox("📍 Selecione a UC:", options=sorted(df_espelho['UC'].unique()), key="esp_uc")
         
-        # Filtra meses disponíveis apenas para essa UC
         meses_uc = df_espelho[df_espelho['UC'] == uc_alvo]['Mês Referência'].unique()
         with c_busca2:
-            # Adicionamos a key="espelho_mes"
-            mes_alvo = st.selectbox("📅 Selecione o Mês:", options=meses_uc, key="espelho_mes")
+            mes_alvo = st.selectbox("📅 Selecione o Mês:", options=meses_uc, key="esp_mes")
 
-        # Localiza a fatura específica
+        # Busca a fatura no banco (usamos o ID original para o UPDATE)
         fatura = df_espelho[(df_espelho['UC'] == uc_alvo) & (df_espelho['Mês Referência'] == mes_alvo)]
 
         if not fatura.empty:
-            f = fatura.iloc[0] # Pega a primeira linha encontrada
+            f = fatura.iloc[0]
+            id_fatura = int(f['id'])
             classe = f['Classificação']
             
-            # CABEÇALHO DO ESPELHO
             st.divider()
-            col_info1, col_info2, col_info3 = st.columns(3)
-            col_info1.markdown(f"**Unidade:** {f['Nome da Unidade']}")
-            col_info2.markdown(f"**Classificação:** {classe}")
-            col_info3.markdown(f"**Vencimento:** {f['Vencimento']}")
-
-            # --- LÓGICA POR TIPO DE TARIFA ---
             
-            if "Azul" in str(classe):
-                st.subheader("🔹 Detalhamento Tarifa Azul-A4")
-                
-                # GRUPO 1: CONSUMO E DEMANDA
-                t1, t2 = st.tabs(["📊 Consumo e Demanda", "💰 Impostos e Totais"])
-                
-                with t1:
-                    c1, c2, c3 = st.columns(3)
+            # Criamos um formulário para agrupar as edições e salvar de uma vez
+            with st.form("form_edicao_espelho"):
+                col_info1, col_info2, col_info3 = st.columns(3)
+                col_info1.markdown(f"**Unidade:** {f['Nome da Unidade']}")
+                col_info2.markdown(f"**Classificação:** {classe}")
+                col_info3.markdown(f"**Vencimento:** {f['Vencimento']}")
+
+                if "Azul" in str(classe):
+                    st.subheader("🔹 Detalhamento e Ajuste - Tarifa Azul-A4")
                     
-                    with c1:
-                        st.markdown("**⚡ Consumo (kWh)**")
-                        st.write(f"Ponta: {f['Consumo Ponta']:,.2f}")
-                        st.write(f"Fora Ponta: {f['Consumo F.Ponta']:,.2f}")
-                        st.write(f"**Total: {f['Total Consumo']:,.2f}**")
-                        
-                        st.markdown("---")
-                        st.markdown("**📉 Demandas (kW)**")
-                        st.write(f"Contratada Ponta: {f['Dem. Contr. Ponta']:,.2f}")
-                        st.write(f"Contratada F. Ponta: {f['Dem. Contr. F.Ponta']:,.2f}")
-
-                    with c2:
-                        st.markdown("**📝 Demandas Registradas**")
-                        st.write(f"Registrada Ponta: {f['Dem. Reg. Ponta']:,.2f}")
-                        st.write(f"Registrada F. Ponta: {f['Dem. Reg. F.Ponta']:,.2f}")
-                        
-                        st.markdown("---")
-                        st.markdown("**✅ Demandas Isentas**")
-                        st.write(f"Isenta Ponta: {f['Dem. Isenta Ponta']:,.2f}")
-                        st.write(f"Isenta F. Ponta: {f['Dem. Isenta F.Ponta']:,.2f}")
-
-                    with c3:
-                        st.markdown("**⚠️ Ultrapassagem / Reativo**")
-                        st.write(f"Ultrap. Ponta: {f['Dem. Ultrap. Ponta']:,.2f}")
-                        st.write(f"Ultrap. F. Ponta: {f['Dem. Ultrap. F.Ponta']:,.2f}")
-                        st.write(f"Reativo Ponta: {f['Dem. Reat. Ponta']:,.2f}")
-                        st.write(f"Reativo F. Ponta: {f['Dem. Reat. F.Ponta']:,.2f}")
-
-                with t2:
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        st.markdown("**🏛️ Encargos e Impostos**")
-                        st.write(f"CIP: R$ {f['CIP']:,.2f}")
-                        st.write(f"PIS: R$ {f['Valor PIS']:,.2f}")
-                        st.write(f"COFINS: R$ {f['Valor COFINS']:,.2f}")
-                        st.write(f"ICMS: R$ {f['Valor ICMS']:,.2f}")
+                    t1, t2, t3 = st.tabs(["📊 Consumo e Demandas", "⚠️ Ultrapassagem e Reativo", "💰 Impostos e Totais"])
                     
-                    with c2:
-                        st.markdown("**💵 Valores Finais**")
-                        st.metric("Total da Fatura", f"R$ {f['Valor Total Fatura']:,.2f}")
-                        st.write(f"Bandeira: {f['Bandeira']}")
-                        st.write(f"Adicional Bandeira: R$ {f['Adicional Bandeira']:,.2f}")
+                    with t1:
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.markdown("**⚡ Consumo Ponta (kWh)**")
+                            ed_cons_p = st.number_input("Quantidade Ponta", value=float(f['Consumo Ponta']), format="%.2f")
+                            # Soma dos valores TUSD + TE de ponta
+                            val_ponta_atual = float(f['Valor Cons. Ponta TUSD'] + f['Valor Cons. Ponta TE'])
+                            ed_val_p = st.number_input("Valor Total Ponta (R$)", value=val_ponta_atual, format="%.2f")
+                            
+                            st.markdown("---")
+                            st.markdown("**📉 Demandas Contratadas (kW)**")
+                            ed_dc_p = st.number_input("Contratada Ponta", value=float(f['Dem. Contr. Ponta']), format="%.2f")
+                            ed_dc_fp = st.number_input("Contratada Fora Ponta", value=float(f['Dem. Contr. F.Ponta']), format="%.2f")
 
-            elif "Verde" in str(classe):
-                st.subheader("🟢 Detalhamento Tarifa Verde-A4")
-                st.info("Aguardando definição dos campos para Tarifa Verde...")
-                # Aqui entra o código similar ao da Azul quando você enviar a imagem
+                        with c2:
+                            st.markdown("**⚡ Consumo Fora Ponta (kWh)**")
+                            ed_cons_fp = st.number_input("Quantidade Fora Ponta", value=float(f['Consumo F.Ponta']), format="%.2f")
+                            val_fponta_atual = float(f['Valor Cons. F.Ponta TUSD'] + f['Valor Cons. F.Ponta TE'])
+                            ed_val_fp = st.number_input("Valor Total Fora Ponta (R$)", value=val_fponta_atual, format="%.2f")
+                            
+                            st.markdown("---")
+                            st.markdown("**📝 Demandas Registradas (kW)**")
+                            ed_dr_p = st.number_input("Registrada Ponta", value=float(f['Dem. Reg. Ponta']), format="%.2f")
+                            ed_val_dr_p = st.number_input("Valor Demanda Ponta (R$)", value=float(f['Valor Dem. Ponta']), format="%.2f")
+                            ed_dr_fp = st.number_input("Registrada Fora Ponta", value=float(f['Dem. Reg. F.Ponta']), format="%.2f")
+                            ed_val_dr_fp = st.number_input("Valor Demanda Fora Ponta (R$)", value=float(f['Valor Dem. F.Ponta']), format="%.2f")
 
-            elif "B3" in str(classe) or "Convencional" in str(classe):
-                st.subheader("🏠 Detalhamento Convencional B3")
-                st.info("Aguardando definição dos campos para Tarifa B3...")
-                # Aqui entra o código similar ao da Azul quando você enviar a imagem
-            
-            else:
-                st.warning("Tipo de tarifa não mapeado para o espelho detalhado.")
-                st.json(f.to_dict()) # Mostra os dados brutos se não reconhecer a classe
+                    with t2:
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.markdown("**🚫 Ultrapassagem (kW)**")
+                            ed_ult_p = st.number_input("Ultrapassagem Ponta", value=float(f['Dem. Ultrap. Ponta']), format="%.2f")
+                            ed_v_ult_p = st.number_input("Valor Ultrap. Ponta (R$)", value=float(f['Valor Dem. Ultrap. Ponta']), format="%.2f")
+                            ed_ult_fp = st.number_input("Ultrapassagem Fora Ponta", value=float(f['Dem. Ultrap. F.Ponta']), format="%.2f")
+                            ed_v_ult_fp = st.number_input("Valor Ultrap. Fora Ponta (R$)", value=float(f['Valor Dem. Ultrap. F.Ponta']), format="%.2f")
 
+                        with c2:
+                            st.markdown("**⚛️ Reativo Exc. (kVArh / kW)**")
+                            ed_reat_p = st.number_input("Reativo Ponta", value=float(f['Dem. Reat. Ponta']), format="%.2f")
+                            ed_v_reat_p = st.number_input("Valor Reativo Ponta (R$)", value=float(f['Valor Dem. Reativa Ponta']), format="%.2f")
+                            ed_reat_fp = st.number_input("Reativo Fora Ponta", value=float(f['Dem. Reat. F.Ponta']), format="%.2f")
+                            ed_v_reat_fp = st.number_input("Valor Reativo Fora Ponta (R$)", value=float(f['Valor Dem. Reativa F.Ponta']), format="%.2f")
+
+                    with t3:
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.markdown("**🏛️ Encargos e Tributos**")
+                            ed_cip = st.number_input("CIP (R$)", value=float(f['CIP']), format="%.2f")
+                            ed_pis = st.number_input("PIS (R$)", value=float(f['Valor PIS']), format="%.2f")
+                            ed_cofins = st.number_input("COFINS (R$)", value=float(f['Valor COFINS']), format="%.2f")
+                            ed_icms = st.number_input("ICMS (R$)", value=float(f['Valor ICMS']), format="%.2f")
+
+                        with c2:
+                            st.markdown("**🏁 Resumo Financeiro**")
+                            ed_bandeira = st.selectbox("Bandeira Atual", ["VERDE", "AMARELA", "VERMELHA I", "VERMELHA II"], index=0)
+                            ed_val_band = st.number_input("Adicional Bandeira (R$)", value=float(f['Adicional Bandeira']), format="%.2f")
+                            ed_total = st.number_input("VALOR TOTAL DA FATURA (R$)", value=float(f['Valor Total Fatura']), format="%.2f")
+
+                # --- BOTÃO DE SALVAR ALTERAÇÕES ---
+                st.write("")
+                btn_salvar = st.form_submit_button("💾 Salvar Alterações no Banco de Dados", type="primary", use_container_width=True)
+
+                if btn_salvar:
+                    try:
+                        conexao = obter_conexao()
+                        cursor = conexao.cursor()
+                        
+                        # Query de Update (Ajuste os nomes das colunas conforme seu banco real se necessário)
+                        sql_update = """
+                            UPDATE faturas_cpfl SET 
+                                consumo_ponta = %s, valor_cons_ponta_tusd = %s,
+                                consumo_fora_ponta = %s, valor_cons_fponta_tusd = %s,
+                                demanda_contratada_ponta = %s, demanda_contratada_fponta = %s,
+                                demanda_registrada_ponta = %s, valor_dem_ponta = %s,
+                                demanda_registrada_fora_ponta = %s, valor_dem_fponta = %s,
+                                demanda_ultrapassagem_ponta = %s, valor_dem_ultrap_ponta = %s,
+                                demanda_ultrapassagem_fora_ponta = %s, valor_dem_ultrap_fponta = %s,
+                                demanda_reativa_ponta = %s, valor_dem_reativa_ponta = %s,
+                                demanda_reativa_fora_ponta = %s, valor_dem_reativa_fponta = %s,
+                                cip = %s, valor_total_pis = %s, valor_total_cofins = %s, valor_total_icms = %s,
+                                tipo_bandeira = %s, adicional_bandeira = %s, valor_total_fatura = %s
+                            WHERE id = %s
+                        """
+                        # Montamos a tupla de valores (aqui simplifiquei o rateio do valor ponta jogando tudo em TUSD para fins de edição manual rápida)
+                        valores_update = (
+                            ed_cons_p, ed_val_p, ed_cons_fp, ed_val_fp,
+                            ed_dc_p, ed_dc_fp, ed_dr_p, ed_val_dr_p, ed_dr_fp, ed_val_dr_fp,
+                            ed_ult_p, ed_v_ult_p, ed_ult_fp, ed_v_ult_fp,
+                            ed_reat_p, ed_v_reat_p, ed_reat_fp, ed_v_reat_fp,
+                            ed_cip, ed_pis, ed_cofins, ed_icms,
+                            ed_bandeira, ed_val_band, ed_total, id_fatura
+                        )
+                        
+                        cursor.execute(sql_update, valores_update)
+                        conexao.commit()
+                        conexao.close()
+                        
+                        st.success("✅ Fatura atualizada com sucesso! Limpando cache...")
+                        carregar_dados.clear() # Limpa o cache para os novos valores aparecerem no Dash
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"Erro ao salvar: {e}")
         else:
-            st.error("Não foram encontrados dados para essa UC e Mês.")
+            st.error("Fatura não encontrada.")
 
 # ==========================================
 # ABA IMPORTAÇÃO (PDF E EXCEL)

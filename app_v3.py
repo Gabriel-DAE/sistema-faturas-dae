@@ -1160,56 +1160,56 @@ with aba_config:
             dados_uc = None
         
         if dados_uc:
-            v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = dados_uc
-        else:
-            # MUDANÇA 1: Trocamos os textos padrão por 'None' para nascer em branco
-            v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = ("", None, None, 0.0, 0.0, None)
-            
-        with st.form("form_uc"):
-            nome_input = st.text_input("Nome da Instalação/Unidade", value=v_nome, placeholder="Ex: Poço 15 - Geisel")
-            
-            lista_atividades = ["Administrativa", "Água", "Esgoto"]
-            # MUDANÇA 2: Se não achar a atividade na lista (ou for None), o index vira None
-            idx_ativ = lista_atividades.index(v_ativ) if v_ativ in lista_atividades else None
-            ativ_input = st.selectbox("Atividade", lista_atividades, index=idx_ativ, placeholder="Selecione...")
-            
-            lista_classes = ["Tarifa Azul-A4", "Tarifa Verde-A4", "Convencional B3"]
-            idx_class = lista_classes.index(v_class) if v_class in lista_classes else None
-            classif_input = st.selectbox("Classificação", lista_classes, index=idx_class, placeholder="Selecione...")
+            v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = dados_uc
+        else:
+            # MUDANÇA 1: Trocamos os textos padrão por 'None' para nascer em branco
+            v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = ("", None, None, 0.0, 0.0, None)
+            
+        with st.form("form_uc"):
+            nome_input = st.text_input("Nome da Instalação/Unidade", value=v_nome, placeholder="Ex: Poço 15 - Geisel")
+            
+            lista_atividades = ["Administrativa", "Água", "Esgoto"]
+            # MUDANÇA 2: Se não achar a atividade na lista (ou for None), o index vira None
+            idx_ativ = lista_atividades.index(v_ativ) if v_ativ in lista_atividades else None
+            ativ_input = st.selectbox("Atividade", lista_atividades, index=idx_ativ, placeholder="Selecione...")
+            
+            lista_classes = ["Tarifa Azul-A4", "Tarifa Verde-A4", "Convencional B3"]
+            idx_class = lista_classes.index(v_class) if v_class in lista_classes else None
+            classif_input = st.selectbox("Classificação", lista_classes, index=idx_class, placeholder="Selecione...")
 
-            lista_status = ["ATIVA", "INATIVA"]
-            idx_status = lista_status.index(v_status) if v_status in lista_status else None
-            status_input = st.selectbox("Status de Operação", lista_status, index=idx_status, placeholder="Selecione...")
-            
-            # MUDANÇA 3: Adicionamos "classif_input and" para não dar erro quando o campo estiver vazio
-            if classif_input and "Verde" in classif_input:
-                st.info("💡 Na **Tarifa Verde-A4**, informe a Demanda Única no campo 'Fora Ponta'. O campo Ponta será desconsiderado no cálculo.")
-            elif classif_input and "B3" in classif_input:
-                st.info("💡 Na **Convencional B3**, não existe demanda contratada. Pode deixar os campos zerados.")
-            
-            is_b3 = True if classif_input and "B3" in classif_input else False
-            dc_p = st.number_input("Demanda Contratada Ponta (kW)", value=float(v_dc_p), format="%.2f", disabled=is_b3)
-            dc_fp = st.number_input("Demanda Contratada Fora Ponta (kW)", value=float(v_dc_fp), format="%.2f", disabled=is_b3)
-            
-            st.write("")
-            if 'msg_uc' in st.session_state:
-                st.success(st.session_state['msg_uc'])
-                del st.session_state['msg_uc']
-            
-            if st.form_submit_button("Salvar Cadastro da UC", type="primary"):
-                # MUDANÇA 4: A trava de segurança! Impede salvar se tiver algo em branco
-                if ativ_input is None or classif_input is None or status_input is None or not nome_input:
-                    st.warning("⚠️ Por favor, preencha o Nome, Atividade, Classificação e Status antes de salvar.")
-                else:
-                    if classif_input == "Tarifa Verde-A4":
-                        dc_p = 0.0 
-                    elif classif_input == "Convencional B3":
-                        dc_p = 0.0
-                        dc_fp = 0.0
-                    
-                    conexao = obter_conexao()
+            lista_status = ["ATIVA", "INATIVA"]
+            idx_status = lista_status.index(v_status) if v_status in lista_status else None
+            status_input = st.selectbox("Status de Operação", lista_status, index=idx_status, placeholder="Selecione...")
+            
+            # MUDANÇA 3: Adicionamos "classif_input and" para não dar erro quando o campo estiver vazio
+            if classif_input and "Verde" in classif_input:
+                st.info("💡 Na **Tarifa Verde-A4**, informe a Demanda Única no campo 'Fora Ponta'. O campo Ponta será desconsiderado no cálculo.")
+            elif classif_input and "B3" in classif_input:
+                st.info("💡 Na **Convencional B3**, não existe demanda contratada. Pode deixar os campos zerados.")
+            
+            is_b3 = True if classif_input and "B3" in classif_input else False
+            dc_p = st.number_input("Demanda Contratada Ponta (kW)", value=float(v_dc_p), format="%.2f", disabled=is_b3)
+            dc_fp = st.number_input("Demanda Contratada Fora Ponta (kW)", value=float(v_dc_fp), format="%.2f", disabled=is_b3)
+            
+            st.write("")
+            if 'msg_uc' in st.session_state:
+                st.success(st.session_state['msg_uc'])
+                del st.session_state['msg_uc']
+            
+            if st.form_submit_button("Salvar Cadastro da UC", type="primary"):
+                # MUDANÇA 4: A trava de segurança! Impede salvar se tiver algo em branco
+                if ativ_input is None or classif_input is None or status_input is None or not nome_input:
+                    st.warning("⚠️ Por favor, preencha o Nome, Atividade, Classificação e Status antes de salvar.")
+                else:
+                    if classif_input == "Tarifa Verde-A4":
+                        dc_p = 0.0 
+                    elif classif_input == "Convencional B3":
+                        dc_p = 0.0
+                        dc_fp = 0.0
+                    
+                    conexao = obter_conexao()
                     c = conexao.cursor()
-    
+                    
                 c.execute('''
                     INSERT INTO cadastro_uc (unidade_consumidora, nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)

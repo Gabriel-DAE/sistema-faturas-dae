@@ -1080,7 +1080,7 @@ with aba_espelho:
                             ed_val_band = st.number_input("Adicional Bandeira (R$)", value=float(f['Adicional Bandeira']), format="%.2f")
                             ed_total = st.number_input("VALOR TOTAL DA FATURA (R$)", value=float(f['Valor Total Fatura']), format="%.2f")
 
-        elif "Verde" in str(classe):
+                elif "Verde" in str(classe):
                     st.subheader("🟢 Detalhamento e Ajuste - Tarifa Verde-A4")
                     st.info("💡 Na Tarifa Verde, a Demanda é Única. Os valores de demanda foram alocados nos campos 'Fora Ponta'.")
                     

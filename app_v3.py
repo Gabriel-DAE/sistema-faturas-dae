@@ -988,12 +988,14 @@ with aba_espelho:
         # --- FILTROS DE BUSCA ---
         c_busca1, c_busca2, _ = st.columns([2, 2, 4])
         with c_busca1:
-            uc_alvo = st.selectbox("📍 Selecione a UC:", options=sorted(df_espelho['UC'].unique()))
+            # Adicionamos a key="espelho_uc"
+            uc_alvo = st.selectbox("📍 Selecione a UC:", options=sorted(df_espelho['UC'].unique()), key="espelho_uc")
         
         # Filtra meses disponíveis apenas para essa UC
         meses_uc = df_espelho[df_espelho['UC'] == uc_alvo]['Mês Referência'].unique()
         with c_busca2:
-            mes_alvo = st.selectbox("📅 Selecione o Mês:", options=meses_uc)
+            # Adicionamos a key="espelho_mes"
+            mes_alvo = st.selectbox("📅 Selecione o Mês:", options=meses_uc, key="espelho_mes")
 
         # Localiza a fatura específica
         fatura = df_espelho[(df_espelho['UC'] == uc_alvo) & (df_espelho['Mês Referência'] == mes_alvo)]

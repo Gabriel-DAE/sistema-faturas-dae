@@ -980,6 +980,10 @@ with aba_dados:
 # ==========================================
 with aba_espelho:
     st.markdown("##### 📑 Espelho Técnico e Edição de Fatura")
+    if 'msg_sucesso_espelho' in st.session_state:
+        st.success(st.session_state['msg_sucesso_espelho'])
+        st.balloons() # Adiciona um efeito visual de comemoração
+        del st.session_state['msg_sucesso_espelho']
     
     df_espelho = carregar_dados()
 
@@ -1175,11 +1179,12 @@ with aba_espelho:
                             conexao.commit()
                             conexao.close()
                             
-                            st.success("✅ Banco de dados atualizado com sucesso!")
-                            carregar_dados.clear()
-                            st.rerun()
+                            st.session_state['msg_sucesso_espelho'] = "✅ Alterações salvas com sucesso! Os dados foram atualizados no banco."
+                            carregar_dados.clear() # Limpa o cache para o Dash ler o novo valor
+                            st.rerun() # Recarrega a página
+                            
                         except Exception as e:
-                            st.error(f"Erro ao salvar: {e}")
+                            st.error(f"🚨 Erro ao salvar no banco de dados: {e}")
         else:
             st.error("Fatura não encontrada.")
 

@@ -1080,6 +1080,70 @@ with aba_espelho:
                             ed_val_band = st.number_input("Adicional Bandeira (R$)", value=float(f['Adicional Bandeira']), format="%.2f")
                             ed_total = st.number_input("VALOR TOTAL DA FATURA (R$)", value=float(f['Valor Total Fatura']), format="%.2f")
 
+        elif "Verde" in str(classe):
+                    st.subheader("🟢 Detalhamento e Ajuste - Tarifa Verde-A4")
+                    st.info("💡 Na Tarifa Verde, a Demanda é Única. Os valores de demanda foram alocados nos campos 'Fora Ponta'.")
+                    
+                    t1, t2, t3 = st.tabs(["📊 Consumo e Demanda", "⚠️ Ultrapassagem e Reativo", "💰 Impostos e Totais"])
+                    
+                    with t1:
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.markdown("**⚡ Consumo Ponta (kWh)**")
+                            ed_cons_p = st.number_input("Quantidade Ponta", value=float(f['Consumo Ponta']), format="%.2f", key="cp_v")
+                            val_ponta_atual = float(f['Valor Cons. Ponta TUSD'] + f['Valor Cons. Ponta TE'])
+                            ed_val_p = st.number_input("Valor Total Ponta (R$)", value=val_ponta_atual, format="%.2f", key="vp_v")
+                            
+                            # Na Tarifa Verde não existe Demanda Ponta, então zeramos as variáveis invisivelmente
+                            ed_dc_p = 0.0
+                            ed_dr_p = 0.0
+                            ed_val_dr_p = 0.0
+
+                        with c2:
+                            st.markdown("**⚡ Consumo Fora Ponta (kWh)**")
+                            ed_cons_fp = st.number_input("Quantidade Fora Ponta", value=float(f['Consumo F.Ponta']), format="%.2f", key="cfp_v")
+                            val_fponta_atual = float(f['Valor Cons. F.Ponta TUSD'] + f['Valor Cons. F.Ponta TE'])
+                            ed_val_fp = st.number_input("Valor Total Fora Ponta (R$)", value=val_fponta_atual, format="%.2f", key="vfp_v")
+                            
+                            st.markdown("---")
+                            st.markdown("**📉 Demanda Única (kW)**")
+                            ed_dc_fp = st.number_input("Contratada Única", value=float(f['Dem. Contr. F.Ponta']), format="%.2f", key="dcfp_v")
+                            ed_dr_fp = st.number_input("Registrada Única", value=float(f['Dem. Reg. F.Ponta']), format="%.2f", key="drfp_v")
+                            ed_val_dr_fp = st.number_input("Valor Demanda (R$)", value=float(f['Valor Dem. F.Ponta']), format="%.2f", key="vdrfp_v")
+
+                    with t2:
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.markdown("**🚫 Ultrapassagem (kW)**")
+                            ed_ult_fp = st.number_input("Ultrapassagem Única", value=float(f['Dem. Ultrap. F.Ponta']), format="%.2f", key="ulfp_v")
+                            ed_v_ult_fp = st.number_input("Valor Ultrap. Única (R$)", value=float(f['Valor Dem. Ultrap. F.Ponta']), format="%.2f", key="vulfp_v")
+                            
+                            # Ultrapassagem Ponta não existe na Verde, então zeramos a variável invisivelmente
+                            ed_ult_p = 0.0
+                            ed_v_ult_p = 0.0
+
+                        with c2:
+                            st.markdown("**⚛️ Reativo Exc. (kVArh / kW)**")
+                            ed_reat_p = st.number_input("Reativo Ponta", value=float(f['Dem. Reat. Ponta']), format="%.2f", key="rp_v")
+                            ed_v_reat_p = st.number_input("Valor Reativo Ponta (R$)", value=float(f['Valor Dem. Reat. Ponta']), format="%.2f", key="vrp_v")
+                            ed_reat_fp = st.number_input("Reativo Fora Ponta", value=float(f['Dem. Reat. F.Ponta']), format="%.2f", key="rfp_v")
+                            ed_v_reat_fp = st.number_input("Valor Reativo Fora Ponta (R$)", value=float(f['Valor Dem. Reat. F.Ponta']), format="%.2f", key="vrfp_v")
+
+                    with t3:
+                        c1, c2 = st.columns(2)
+                        with c1:
+                            st.markdown("**🏛️ Encargos e Tributos**")
+                            ed_cip = st.number_input("CIP (R$)", value=float(f['CIP']), format="%.2f", key="cip_v")
+                            ed_pis = st.number_input("PIS (R$)", value=float(f['Valor PIS']), format="%.2f", key="pis_v")
+                            ed_cofins = st.number_input("COFINS (R$)", value=float(f['Valor COFINS']), format="%.2f", key="cofins_v")
+                            ed_icms = st.number_input("ICMS (R$)", value=float(f['Valor ICMS']), format="%.2f", key="icms_v")
+
+                        with c2:
+                            st.markdown("**🏁 Resumo Financeiro**")
+                            ed_bandeira = st.selectbox("Bandeira Atual", ["VERDE", "AMARELA", "VERMELHA I", "VERMELHA II", "ESCASSEZ HÍDRICA"], index=0, key="band_v")
+                            ed_val_band = st.number_input("Adicional Bandeira (R$)", value=float(f['Adicional Bandeira']), format="%.2f", key="vband_v")
+                            ed_total = st.number_input("VALOR TOTAL DA FATURA (R$)", value=float(f['Valor Total Fatura']), format="%.2f", key="total_v")
+                
                 # --- BOTÃO DENTRO DO FORMULÁRIO (Corrigido) ---
                 st.write("")
                 col_vazia1, col_btn, col_vazia2 = st.columns([2, 1, 2]) 

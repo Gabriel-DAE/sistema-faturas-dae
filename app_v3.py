@@ -999,7 +999,7 @@ with aba_espelho:
         with c_busca2:
             mes_alvo = st.selectbox("📅 Selecione o Mês:", options=meses_uc, key="esp_mes")
 
-        # Busca a fatura no banco (usamos o ID original para o UPDATE)
+        # Busca a fatura no banco
         fatura = df_espelho[(df_espelho['UC'] == uc_alvo) & (df_espelho['Mês Referência'] == mes_alvo)]
 
         if not fatura.empty:
@@ -1009,7 +1009,7 @@ with aba_espelho:
             
             st.divider()
             
-            # Criamos um formulário para agrupar as edições e salvar de uma vez
+            # CRIAMOS O FORMULÁRIO AQUI (Tudo abaixo deve estar indentado para dentro dele)
             with st.form("form_edicao_espelho"):
                 col_info1, col_info2, col_info3 = st.columns(3)
                 col_info1.markdown(f"**Unidade:** {f['Nome da Unidade']}")
@@ -1026,7 +1026,6 @@ with aba_espelho:
                         with c1:
                             st.markdown("**⚡ Consumo Ponta (kWh)**")
                             ed_cons_p = st.number_input("Quantidade Ponta", value=float(f['Consumo Ponta']), format="%.2f")
-                            # Soma dos valores TUSD + TE de ponta
                             val_ponta_atual = float(f['Valor Cons. Ponta TUSD'] + f['Valor Cons. Ponta TE'])
                             ed_val_p = st.number_input("Valor Total Ponta (R$)", value=val_ponta_atual, format="%.2f")
                             
@@ -1060,9 +1059,11 @@ with aba_espelho:
                         with c2:
                             st.markdown("**⚛️ Reativo Exc. (kVArh / kW)**")
                             ed_reat_p = st.number_input("Reativo Ponta", value=float(f['Dem. Reat. Ponta']), format="%.2f")
-                            ed_v_reat_p = st.number_input("Valor Reativo Ponta (R$)", value=float(f['Valor Dem. Reativa Ponta']), format="%.2f")
+                            # CORREÇÃO APLICADA AQUI (Nome da coluna do banco corrigida)
+                            ed_v_reat_p = st.number_input("Valor Reativo Ponta (R$)", value=float(f['Valor Dem. Reat. Ponta']), format="%.2f")
                             ed_reat_fp = st.number_input("Reativo Fora Ponta", value=float(f['Dem. Reat. F.Ponta']), format="%.2f")
-                            ed_v_reat_fp = st.number_input("Valor Reativo Fora Ponta (R$)", value=float(f['Valor Dem. Reativa F.Ponta']), format="%.2f")
+                            # CORREÇÃO APLICADA AQUI
+                            ed_v_reat_fp = st.number_input("Valor Reativo Fora Ponta (R$)", value=float(f['Valor Dem. Reat. F.Ponta']), format="%.2f")
 
                     with t3:
                         c1, c2 = st.columns(2)
@@ -1079,16 +1080,18 @@ with aba_espelho:
                             ed_val_band = st.number_input("Adicional Bandeira (R$)", value=float(f['Adicional Bandeira']), format="%.2f")
                             ed_total = st.number_input("VALOR TOTAL DA FATURA (R$)", value=float(f['Valor Total Fatura']), format="%.2f")
 
-                # --- BOTÃO DE SALVAR ALTERAÇÕES ---
+                # --- BOTÃO DENTRO DO FORMULÁRIO (Corrigido) ---
                 st.write("")
-                btn_salvar = st.form_submit_button("💾 Salvar Alterações no Banco de Dados", type="primary", use_container_width=True)
+                col_vazia1, col_btn, col_vazia2 = st.columns([1, 1.5, 1]) 
+                
+                with col_btn:
+                    btn_salvar = st.form_submit_button("💾 Salvar Alterações no Banco de Dados", type="primary", use_container_width=True)
 
                 if btn_salvar:
                     try:
                         conexao = obter_conexao()
                         cursor = conexao.cursor()
                         
-                        # Query de Update (Ajuste os nomes das colunas conforme seu banco real se necessário)
                         sql_update = """
                             UPDATE faturas_cpfl SET 
                                 consumo_ponta = %s, valor_cons_ponta_tusd = %s,
@@ -1104,7 +1107,7 @@ with aba_espelho:
                                 tipo_bandeira = %s, adicional_bandeira = %s, valor_total_fatura = %s
                             WHERE id = %s
                         """
-                        # Montamos a tupla de valores (aqui simplifiquei o rateio do valor ponta jogando tudo em TUSD para fins de edição manual rápida)
+                        
                         valores_update = (
                             ed_cons_p, ed_val_p, ed_cons_fp, ed_val_fp,
                             ed_dc_p, ed_dc_fp, ed_dr_p, ed_val_dr_p, ed_dr_fp, ed_val_dr_fp,
@@ -1119,11 +1122,12 @@ with aba_espelho:
                         conexao.close()
                         
                         st.success("✅ Fatura atualizada com sucesso! Limpando cache...")
-                        carregar_dados.clear() # Limpa o cache para os novos valores aparecerem no Dash
+                        carregar_dados.clear()
                         st.rerun()
                         
                     except Exception as e:
                         st.error(f"Erro ao salvar: {e}")
+
         else:
             st.error("Fatura não encontrada.")
 

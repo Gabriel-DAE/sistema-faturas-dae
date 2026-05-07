@@ -1208,8 +1208,8 @@ with aba_config:
                         dc_fp = 0.0
                     
                     conexao = obter_conexao()
-
-                c = conexao.cursor()
+                    c = conexao.cursor()
+    
                 c.execute('''
                     INSERT INTO cadastro_uc (unidade_consumidora, nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status)
                     VALUES (%s, %s, %s, %s, %s, %s, %s)

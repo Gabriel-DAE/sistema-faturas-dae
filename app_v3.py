@@ -1082,7 +1082,7 @@ with aba_espelho:
 
                 # --- BOTÃO DENTRO DO FORMULÁRIO (Corrigido) ---
                 st.write("")
-                col_vazia1, col_btn, col_vazia2 = st.columns([1, 1.5, 1]) 
+                col_vazia1, col_btn, col_vazia2 = st.columns([2, 1, 2]) 
                 
                 with col_btn:
                     btn_salvar = st.form_submit_button("💾 Salvar Alterações no Banco de Dados", type="primary", use_container_width=True)

@@ -474,7 +474,7 @@ def processar_pdf(arquivo_pdf):
 
 
 # --- 4. INTERFACE ---
-aba_dash, aba_controle, aba_dados, aba_pdf, aba_config = st.tabs(["📈 Dashboard", "💰 Controle Financeiro", "📊 Banco de Dados", "📄 Upload PDF", "⚙️ Configurações"])
+aba_dash, aba_controle, aba_dados, aba_espelho, aba_pdf, aba_config = st.tabs(["📈 Dashboard", "💰 Controle Financeiro", "📊 Banco de Dados", "📑 Espelho de Fatura", "📄 Upload PDF", "⚙️ Configurações"])
 
 # ==========================================
 # ABA DASHBOARD
@@ -974,6 +974,111 @@ with aba_dados:
         )
     else:
         st.info("Nenhum dado encontrado.")
+
+# ==========================================
+# ABA ESPELHO DE FATURA
+# ==========================================
+with aba_espelho:
+    st.markdown("##### 📑 Espelho Técnico de Fatura")
+    df_espelho = carregar_dados()
+
+    if df_espelho.empty:
+        st.info("O banco de dados está vazio. Carregue faturas para visualizar o espelho.")
+    else:
+        # --- FILTROS DE BUSCA ---
+        c_busca1, c_busca2, _ = st.columns([2, 2, 4])
+        with c_busca1:
+            uc_alvo = st.selectbox("📍 Selecione a UC:", options=sorted(df_espelho['UC'].unique()))
+        
+        # Filtra meses disponíveis apenas para essa UC
+        meses_uc = df_espelho[df_espelho['UC'] == uc_alvo]['Mês Referência'].unique()
+        with c_busca2:
+            mes_alvo = st.selectbox("📅 Selecione o Mês:", options=meses_uc)
+
+        # Localiza a fatura específica
+        fatura = df_espelho[(df_espelho['UC'] == uc_alvo) & (df_espelho['Mês Referência'] == mes_alvo)]
+
+        if not fatura.empty:
+            f = fatura.iloc[0] # Pega a primeira linha encontrada
+            classe = f['Classificação']
+            
+            # CABEÇALHO DO ESPELHO
+            st.divider()
+            col_info1, col_info2, col_info3 = st.columns(3)
+            col_info1.markdown(f"**Unidade:** {f['Nome da Unidade']}")
+            col_info2.markdown(f"**Classificação:** {classe}")
+            col_info3.markdown(f"**Vencimento:** {f['Vencimento']}")
+
+            # --- LÓGICA POR TIPO DE TARIFA ---
+            
+            if "Azul" in str(classe):
+                st.subheader("🔹 Detalhamento Tarifa Azul-A4")
+                
+                # GRUPO 1: CONSUMO E DEMANDA
+                t1, t2 = st.tabs(["📊 Consumo e Demanda", "💰 Impostos e Totais"])
+                
+                with t1:
+                    c1, c2, c3 = st.columns(3)
+                    
+                    with c1:
+                        st.markdown("**⚡ Consumo (kWh)**")
+                        st.write(f"Ponta: {f['Consumo Ponta']:,.2f}")
+                        st.write(f"Fora Ponta: {f['Consumo F.Ponta']:,.2f}")
+                        st.write(f"**Total: {f['Total Consumo']:,.2f}**")
+                        
+                        st.markdown("---")
+                        st.markdown("**📉 Demandas (kW)**")
+                        st.write(f"Contratada Ponta: {f['Dem. Contr. Ponta']:,.2f}")
+                        st.write(f"Contratada F. Ponta: {f['Dem. Contr. F.Ponta']:,.2f}")
+
+                    with c2:
+                        st.markdown("**📝 Demandas Registradas**")
+                        st.write(f"Registrada Ponta: {f['Dem. Reg. Ponta']:,.2f}")
+                        st.write(f"Registrada F. Ponta: {f['Dem. Reg. F.Ponta']:,.2f}")
+                        
+                        st.markdown("---")
+                        st.markdown("**✅ Demandas Isentas**")
+                        st.write(f"Isenta Ponta: {f['Dem. Isenta Ponta']:,.2f}")
+                        st.write(f"Isenta F. Ponta: {f['Dem. Isenta F.Ponta']:,.2f}")
+
+                    with c3:
+                        st.markdown("**⚠️ Ultrapassagem / Reativo**")
+                        st.write(f"Ultrap. Ponta: {f['Dem. Ultrap. Ponta']:,.2f}")
+                        st.write(f"Ultrap. F. Ponta: {f['Dem. Ultrap. F.Ponta']:,.2f}")
+                        st.write(f"Reativo Ponta: {f['Dem. Reat. Ponta']:,.2f}")
+                        st.write(f"Reativo F. Ponta: {f['Dem. Reat. F.Ponta']:,.2f}")
+
+                with t2:
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.markdown("**🏛️ Encargos e Impostos**")
+                        st.write(f"CIP: R$ {f['CIP']:,.2f}")
+                        st.write(f"PIS: R$ {f['Valor PIS']:,.2f}")
+                        st.write(f"COFINS: R$ {f['Valor COFINS']:,.2f}")
+                        st.write(f"ICMS: R$ {f['Valor ICMS']:,.2f}")
+                    
+                    with c2:
+                        st.markdown("**💵 Valores Finais**")
+                        st.metric("Total da Fatura", f"R$ {f['Valor Total Fatura']:,.2f}")
+                        st.write(f"Bandeira: {f['Bandeira']}")
+                        st.write(f"Adicional Bandeira: R$ {f['Adicional Bandeira']:,.2f}")
+
+            elif "Verde" in str(classe):
+                st.subheader("🟢 Detalhamento Tarifa Verde-A4")
+                st.info("Aguardando definição dos campos para Tarifa Verde...")
+                # Aqui entra o código similar ao da Azul quando você enviar a imagem
+
+            elif "B3" in str(classe) or "Convencional" in str(classe):
+                st.subheader("🏠 Detalhamento Convencional B3")
+                st.info("Aguardando definição dos campos para Tarifa B3...")
+                # Aqui entra o código similar ao da Azul quando você enviar a imagem
+            
+            else:
+                st.warning("Tipo de tarifa não mapeado para o espelho detalhado.")
+                st.json(f.to_dict()) # Mostra os dados brutos se não reconhecer a classe
+
+        else:
+            st.error("Não foram encontrados dados para essa UC e Mês.")
 
 # ==========================================
 # ABA IMPORTAÇÃO (PDF E EXCEL)

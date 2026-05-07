@@ -976,15 +976,11 @@ with aba_dados:
         st.info("Nenhum dado encontrado.")
 
 # ==========================================
-# ABA ESPELHO DE FATURA (EDITÁVEL)
+# ABA ESPELHO DE FATURA
 # ==========================================
 with aba_espelho:
     st.markdown("##### 📑 Espelho Técnico e Edição de Fatura")
     
-    # Função auxiliar para formatar números no padrão BR (1.234,56)
-    def formata_br(valor):
-        return f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
     df_espelho = carregar_dados()
 
     if df_espelho.empty:
@@ -999,7 +995,6 @@ with aba_espelho:
         with c_busca2:
             mes_alvo = st.selectbox("📅 Selecione o Mês:", options=meses_uc, key="esp_mes")
 
-        # Busca a fatura no banco
         fatura = df_espelho[(df_espelho['UC'] == uc_alvo) & (df_espelho['Mês Referência'] == mes_alvo)]
 
         if not fatura.empty:
@@ -1009,189 +1004,160 @@ with aba_espelho:
             
             st.divider()
             
-            # CRIAMOS O FORMULÁRIO AQUI (Tudo abaixo deve estar indentado para dentro dele)
             with st.form("form_edicao_espelho"):
                 col_info1, col_info2, col_info3 = st.columns(3)
                 col_info1.markdown(f"**Unidade:** {f['Nome da Unidade']}")
                 col_info2.markdown(f"**Classificação:** {classe}")
                 col_info3.markdown(f"**Vencimento:** {f['Vencimento']}")
 
+                # --- LÓGICA TARIFA AZUL ---
                 if "Azul" in str(classe):
                     st.subheader("🔹 Detalhamento e Ajuste - Tarifa Azul-A4")
-                    
                     t1, t2, t3 = st.tabs(["📊 Consumo e Demandas", "⚠️ Ultrapassagem e Reativo", "💰 Impostos e Totais"])
                     
                     with t1:
                         c1, c2 = st.columns(2)
                         with c1:
                             st.markdown("**⚡ Consumo Ponta (kWh)**")
-                            ed_cons_p = st.number_input("Quantidade Ponta", value=float(f['Consumo Ponta']), format="%.2f")
+                            ed_cons_p = st.number_input("Qtd Ponta", value=float(f['Consumo Ponta']), format="%.2f", key="cp_a")
                             val_ponta_atual = float(f['Valor Cons. Ponta TUSD'] + f['Valor Cons. Ponta TE'])
-                            ed_val_p = st.number_input("Valor Total Ponta (R$)", value=val_ponta_atual, format="%.2f")
+                            ed_val_p = st.number_input("Valor Ponta (R$)", value=val_ponta_atual, format="%.2f", key="vp_a")
                             
                             st.markdown("---")
                             st.markdown("**📉 Demandas Contratadas (kW)**")
-                            ed_dc_p = st.number_input("Contratada Ponta", value=float(f['Dem. Contr. Ponta']), format="%.2f")
-                            ed_dc_fp = st.number_input("Contratada Fora Ponta", value=float(f['Dem. Contr. F.Ponta']), format="%.2f")
+                            ed_dc_p = st.number_input("Contratada Ponta", value=float(f['Dem. Contr. Ponta']), format="%.2f", key="dcp_a")
+                            ed_dc_fp = st.number_input("Contratada F. Ponta", value=float(f['Dem. Contr. F.Ponta']), format="%.2f", key="dcfp_a")
 
                         with c2:
                             st.markdown("**⚡ Consumo Fora Ponta (kWh)**")
-                            ed_cons_fp = st.number_input("Quantidade Fora Ponta", value=float(f['Consumo F.Ponta']), format="%.2f")
+                            ed_cons_fp = st.number_input("Qtd Fora Ponta", value=float(f['Consumo F.Ponta']), format="%.2f", key="cfp_a")
                             val_fponta_atual = float(f['Valor Cons. F.Ponta TUSD'] + f['Valor Cons. F.Ponta TE'])
-                            ed_val_fp = st.number_input("Valor Total Fora Ponta (R$)", value=val_fponta_atual, format="%.2f")
+                            ed_val_fp = st.number_input("Valor F. Ponta (R$)", value=val_fponta_atual, format="%.2f", key="vfp_a")
                             
                             st.markdown("---")
-                            st.markdown("**📝 Demandas Registradas (kW)**")
-                            ed_dr_p = st.number_input("Registrada Ponta", value=float(f['Dem. Reg. Ponta']), format="%.2f")
-                            ed_val_dr_p = st.number_input("Valor Demanda Ponta (R$)", value=float(f['Valor Dem. Ponta']), format="%.2f")
-                            ed_dr_fp = st.number_input("Registrada Fora Ponta", value=float(f['Dem. Reg. F.Ponta']), format="%.2f")
-                            ed_val_dr_fp = st.number_input("Valor Demanda Fora Ponta (R$)", value=float(f['Valor Dem. F.Ponta']), format="%.2f")
+                            st.markdown("**📝 Demandas Registradas e Isentas (kW)**")
+                            col_p, col_fp = st.columns(2)
+                            with col_p:
+                                ed_dr_p = st.number_input("Registrada Ponta", value=float(f['Dem. Reg. Ponta']), format="%.2f")
+                                ed_val_dr_p = st.number_input("Valor Reg. Ponta", value=float(f['Valor Dem. Ponta']), format="%.2f")
+                                ed_di_p = st.number_input("Isenta Ponta", value=float(f['Dem. Isenta Ponta']), format="%.2f")
+                                ed_v_di_p = st.number_input("Valor Isenta Ponta", value=float(f['Valor Dem. Isenta Ponta']), format="%.2f")
+                            with col_fp:
+                                ed_dr_fp = st.number_input("Registrada F.P", value=float(f['Dem. Reg. F.Ponta']), format="%.2f")
+                                ed_val_dr_fp = st.number_input("Valor Reg. F.P", value=float(f['Valor Dem. F.Ponta']), format="%.2f")
+                                ed_di_fp = st.number_input("Isenta F.P", value=float(f['Dem. Isenta F.Ponta']), format="%.2f")
+                                ed_v_di_fp = st.number_input("Valor Isenta F.P", value=float(f['Valor Dem. Isenta F.Ponta']), format="%.2f")
 
                     with t2:
                         c1, c2 = st.columns(2)
                         with c1:
                             st.markdown("**🚫 Ultrapassagem (kW)**")
                             ed_ult_p = st.number_input("Ultrapassagem Ponta", value=float(f['Dem. Ultrap. Ponta']), format="%.2f")
-                            ed_v_ult_p = st.number_input("Valor Ultrap. Ponta (R$)", value=float(f['Valor Dem. Ultrap. Ponta']), format="%.2f")
-                            ed_ult_fp = st.number_input("Ultrapassagem Fora Ponta", value=float(f['Dem. Ultrap. F.Ponta']), format="%.2f")
-                            ed_v_ult_fp = st.number_input("Valor Ultrap. Fora Ponta (R$)", value=float(f['Valor Dem. Ultrap. F.Ponta']), format="%.2f")
-
+                            ed_v_ult_p = st.number_input("Valor Ultrap. Ponta", value=float(f['Valor Dem. Ultrap. Ponta']), format="%.2f")
+                            ed_ult_fp = st.number_input("Ultrapassagem F.P", value=float(f['Dem. Ultrap. F.Ponta']), format="%.2f")
+                            ed_v_ult_fp = st.number_input("Valor Ultrap. F.P", value=float(f['Valor Dem. Ultrap. F.Ponta']), format="%.2f")
                         with c2:
-                            st.markdown("**⚛️ Reativo Exc. (kVArh / kW)**")
+                            st.markdown("**⚛️ Reativo Exc.**")
                             ed_reat_p = st.number_input("Reativo Ponta", value=float(f['Dem. Reat. Ponta']), format="%.2f")
-                            # CORREÇÃO APLICADA AQUI (Nome da coluna do banco corrigida)
-                            ed_v_reat_p = st.number_input("Valor Reativo Ponta (R$)", value=float(f['Valor Dem. Reat. Ponta']), format="%.2f")
-                            ed_reat_fp = st.number_input("Reativo Fora Ponta", value=float(f['Dem. Reat. F.Ponta']), format="%.2f")
-                            # CORREÇÃO APLICADA AQUI
-                            ed_v_reat_fp = st.number_input("Valor Reativo Fora Ponta (R$)", value=float(f['Valor Dem. Reat. F.Ponta']), format="%.2f")
+                            ed_v_reat_p = st.number_input("Valor Reativo Ponta", value=float(f['Valor Dem. Reat. Ponta']), format="%.2f")
+                            ed_reat_fp = st.number_input("Reativo F.P", value=float(f['Dem. Reat. F.Ponta']), format="%.2f")
+                            ed_v_reat_fp = st.number_input("Valor Reativo F.P", value=float(f['Valor Dem. Reat. F.Ponta']), format="%.2f")
 
-                    with t3:
-                        c1, c2 = st.columns(2)
-                        with c1:
-                            st.markdown("**🏛️ Encargos e Tributos**")
-                            ed_cip = st.number_input("CIP (R$)", value=float(f['CIP']), format="%.2f")
-                            ed_pis = st.number_input("PIS (R$)", value=float(f['Valor PIS']), format="%.2f")
-                            ed_cofins = st.number_input("COFINS (R$)", value=float(f['Valor COFINS']), format="%.2f")
-                            ed_icms = st.number_input("ICMS (R$)", value=float(f['Valor ICMS']), format="%.2f")
-
-                        with c2:
-                            st.markdown("**🏁 Resumo Financeiro**")
-                            ed_bandeira = st.selectbox("Bandeira Atual", ["VERDE", "AMARELA", "VERMELHA I", "VERMELHA II"], index=0)
-                            ed_val_band = st.number_input("Adicional Bandeira (R$)", value=float(f['Adicional Bandeira']), format="%.2f")
-                            ed_total = st.number_input("VALOR TOTAL DA FATURA (R$)", value=float(f['Valor Total Fatura']), format="%.2f")
-
+                # --- LÓGICA TARIFA VERDE ---
                 elif "Verde" in str(classe):
                     st.subheader("🟢 Detalhamento e Ajuste - Tarifa Verde-A4")
-                    st.info("💡 Na Tarifa Verde, a Demanda é Única. Os valores de demanda foram alocados nos campos 'Fora Ponta'.")
-                    
                     t1, t2, t3 = st.tabs(["📊 Consumo e Demanda", "⚠️ Ultrapassagem e Reativo", "💰 Impostos e Totais"])
                     
                     with t1:
                         c1, c2 = st.columns(2)
                         with c1:
                             st.markdown("**⚡ Consumo Ponta (kWh)**")
-                            ed_cons_p = st.number_input("Quantidade Ponta", value=float(f['Consumo Ponta']), format="%.2f", key="cp_v")
+                            ed_cons_p = st.number_input("Qtd Ponta", value=float(f['Consumo Ponta']), format="%.2f", key="cp_v")
                             val_ponta_atual = float(f['Valor Cons. Ponta TUSD'] + f['Valor Cons. Ponta TE'])
-                            ed_val_p = st.number_input("Valor Total Ponta (R$)", value=val_ponta_atual, format="%.2f", key="vp_v")
-                            
-                            # Na Tarifa Verde não existe Demanda Ponta, então zeramos as variáveis invisivelmente
-                            ed_dc_p = 0.0
-                            ed_dr_p = 0.0
-                            ed_val_dr_p = 0.0
+                            ed_val_p = st.number_input("Valor Ponta (R$)", value=val_ponta_atual, format="%.2f", key="vp_v")
+                            ed_dc_p, ed_dr_p, ed_val_dr_p, ed_di_p, ed_v_di_p = 0.0, 0.0, 0.0, 0.0, 0.0
 
                         with c2:
                             st.markdown("**⚡ Consumo Fora Ponta (kWh)**")
-                            ed_cons_fp = st.number_input("Quantidade Fora Ponta", value=float(f['Consumo F.Ponta']), format="%.2f", key="cfp_v")
+                            ed_cons_fp = st.number_input("Qtd F.Ponta", value=float(f['Consumo F.Ponta']), format="%.2f", key="cfp_v")
                             val_fponta_atual = float(f['Valor Cons. F.Ponta TUSD'] + f['Valor Cons. F.Ponta TE'])
-                            ed_val_fp = st.number_input("Valor Total Fora Ponta (R$)", value=val_fponta_atual, format="%.2f", key="vfp_v")
-                            
+                            ed_val_fp = st.number_input("Valor F.Ponta (R$)", value=val_fponta_atual, format="%.2f", key="vfp_v")
                             st.markdown("---")
                             st.markdown("**📉 Demanda Única (kW)**")
-                            ed_dc_fp = st.number_input("Contratada Única", value=float(f['Dem. Contr. F.Ponta']), format="%.2f", key="dcfp_v")
-                            ed_dr_fp = st.number_input("Registrada Única", value=float(f['Dem. Reg. F.Ponta']), format="%.2f", key="drfp_v")
-                            ed_val_dr_fp = st.number_input("Valor Demanda (R$)", value=float(f['Valor Dem. F.Ponta']), format="%.2f", key="vdrfp_v")
+                            ed_dc_fp = st.number_input("Contratada Única", value=float(f['Dem. Contr. F.Ponta']), format="%.2f")
+                            ed_dr_fp = st.number_input("Registrada Única", value=float(f['Dem. Reg. F.Ponta']), format="%.2f")
+                            ed_val_dr_fp = st.number_input("Valor Reg. Única", value=float(f['Valor Dem. F.Ponta']), format="%.2f")
+                            ed_di_fp = st.number_input("Isenta Única", value=float(f['Dem. Isenta F.Ponta']), format="%.2f")
+                            ed_v_di_fp = st.number_input("Valor Isenta Única", value=float(f['Valor Dem. Isenta F.Ponta']), format="%.2f")
+                            ed_ult_p, ed_v_ult_p = 0.0, 0.0 # Auxiliares
 
                     with t2:
                         c1, c2 = st.columns(2)
                         with c1:
-                            st.markdown("**🚫 Ultrapassagem (kW)**")
-                            ed_ult_fp = st.number_input("Ultrapassagem Única", value=float(f['Dem. Ultrap. F.Ponta']), format="%.2f", key="ulfp_v")
-                            ed_v_ult_fp = st.number_input("Valor Ultrap. Única (R$)", value=float(f['Valor Dem. Ultrap. F.Ponta']), format="%.2f", key="vulfp_v")
-                            
-                            # Ultrapassagem Ponta não existe na Verde, então zeramos a variável invisivelmente
-                            ed_ult_p = 0.0
-                            ed_v_ult_p = 0.0
-
+                            st.markdown("**🚫 Ultrapassagem Única (kW)**")
+                            ed_ult_fp = st.number_input("Ultrapassagem", value=float(f['Dem. Ultrap. F.Ponta']), format="%.2f")
+                            ed_v_ult_fp = st.number_input("Valor Ultrapassagem", value=float(f['Valor Dem. Ultrap. F.Ponta']), format="%.2f")
                         with c2:
-                            st.markdown("**⚛️ Reativo Exc. (kVArh / kW)**")
-                            ed_reat_p = st.number_input("Reativo Ponta", value=float(f['Dem. Reat. Ponta']), format="%.2f", key="rp_v")
-                            ed_v_reat_p = st.number_input("Valor Reativo Ponta (R$)", value=float(f['Valor Dem. Reat. Ponta']), format="%.2f", key="vrp_v")
-                            ed_reat_fp = st.number_input("Reativo Fora Ponta", value=float(f['Dem. Reat. F.Ponta']), format="%.2f", key="rfp_v")
-                            ed_v_reat_fp = st.number_input("Valor Reativo Fora Ponta (R$)", value=float(f['Valor Dem. Reat. F.Ponta']), format="%.2f", key="vrfp_v")
+                            st.markdown("**⚛️ Reativo Exc.**")
+                            ed_reat_p = st.number_input("Reativo Ponta", value=float(f['Dem. Reat. Ponta']), format="%.2f")
+                            ed_v_reat_p = st.number_input("Valor Reativo P.", value=float(f['Valor Dem. Reat. Ponta']), format="%.2f")
+                            ed_reat_fp = st.number_input("Reativo F.Ponta", value=float(f['Dem. Reat. F.Ponta']), format="%.2f")
+                            ed_v_reat_fp = st.number_input("Valor Reativo F.P.", value=float(f['Valor Dem. Reat. F.Ponta']), format="%.2f")
 
-                    with t3:
-                        c1, c2 = st.columns(2)
-                        with c1:
-                            st.markdown("**🏛️ Encargos e Tributos**")
-                            ed_cip = st.number_input("CIP (R$)", value=float(f['CIP']), format="%.2f", key="cip_v")
-                            ed_pis = st.number_input("PIS (R$)", value=float(f['Valor PIS']), format="%.2f", key="pis_v")
-                            ed_cofins = st.number_input("COFINS (R$)", value=float(f['Valor COFINS']), format="%.2f", key="cofins_v")
-                            ed_icms = st.number_input("ICMS (R$)", value=float(f['Valor ICMS']), format="%.2f", key="icms_v")
+                # --- BLOCO COMUM: IMPOSTOS (TAB 3) ---
+                with t3:
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.markdown("**🏛️ Encargos e Tributos**")
+                        ed_cip = st.number_input("CIP (R$)", value=float(f['CIP']), format="%.2f")
+                        ed_pis = st.number_input("PIS (R$)", value=float(f['Valor PIS']), format="%.2f")
+                        ed_cofins = st.number_input("COFINS (R$)", value=float(f['Valor COFINS']), format="%.2f")
+                        ed_icms = st.number_input("ICMS (R$)", value=float(f['Valor ICMS']), format="%.2f")
+                    with c2:
+                        st.markdown("**🏁 Resumo Financeiro**")
+                        ed_bandeira = st.selectbox("Bandeira", ["VERDE", "AMARELA", "VERMELHA I", "VERMELHA II"], index=0)
+                        ed_val_band = st.number_input("Valor Bandeira (R$)", value=float(f['Adicional Bandeira']), format="%.2f")
+                        ed_total = st.number_input("TOTAL DA FATURA", value=float(f['Valor Total Fatura']), format="%.2f")
 
-                        with c2:
-                            st.markdown("**🏁 Resumo Financeiro**")
-                            ed_bandeira = st.selectbox("Bandeira Atual", ["VERDE", "AMARELA", "VERMELHA I", "VERMELHA II", "ESCASSEZ HÍDRICA"], index=0, key="band_v")
-                            ed_val_band = st.number_input("Adicional Bandeira (R$)", value=float(f['Adicional Bandeira']), format="%.2f", key="vband_v")
-                            ed_total = st.number_input("VALOR TOTAL DA FATURA (R$)", value=float(f['Valor Total Fatura']), format="%.2f", key="total_v")
-                
-                # --- BOTÃO DENTRO DO FORMULÁRIO (Corrigido) ---
+                # --- BOTÃO SALVAR CENTRALIZADO ---
                 st.write("")
-                col_vazia1, col_btn, col_vazia2 = st.columns([2, 1, 2]) 
-                
+                _, col_btn, _ = st.columns([1, 1.5, 1])
                 with col_btn:
-                    btn_salvar = st.form_submit_button("💾 Salvar Alterações no Banco de Dados", type="primary", use_container_width=True)
-
-                if btn_salvar:
-                    try:
-                        conexao = obter_conexao()
-                        cursor = conexao.cursor()
-                        
-                        sql_update = """
-                            UPDATE faturas_cpfl SET 
-                                consumo_ponta = %s, valor_cons_ponta_tusd = %s,
-                                consumo_fora_ponta = %s, valor_cons_fponta_tusd = %s,
-                                demanda_contratada_ponta = %s, demanda_contratada_fponta = %s,
-                                demanda_registrada_ponta = %s, valor_dem_ponta = %s,
-                                demanda_registrada_fora_ponta = %s, valor_dem_fponta = %s,
-                                demanda_ultrapassagem_ponta = %s, valor_dem_ultrap_ponta = %s,
-                                demanda_ultrapassagem_fora_ponta = %s, valor_dem_ultrap_fponta = %s,
-                                demanda_reativa_ponta = %s, valor_dem_reativa_ponta = %s,
-                                demanda_reativa_fora_ponta = %s, valor_dem_reativa_fponta = %s,
-                                cip = %s, valor_total_pis = %s, valor_total_cofins = %s, valor_total_icms = %s,
-                                tipo_bandeira = %s, adicional_bandeira = %s, valor_total_fatura = %s
-                            WHERE id = %s
-                        """
-                        
-                        valores_update = (
-                            ed_cons_p, ed_val_p, ed_cons_fp, ed_val_fp,
-                            ed_dc_p, ed_dc_fp, ed_dr_p, ed_val_dr_p, ed_dr_fp, ed_val_dr_fp,
-                            ed_ult_p, ed_v_ult_p, ed_ult_fp, ed_v_ult_fp,
-                            ed_reat_p, ed_v_reat_p, ed_reat_fp, ed_v_reat_fp,
-                            ed_cip, ed_pis, ed_cofins, ed_icms,
-                            ed_bandeira, ed_val_band, ed_total, id_fatura
-                        )
-                        
-                        cursor.execute(sql_update, valores_update)
-                        conexao.commit()
-                        conexao.close()
-                        
-                        st.success("✅ Fatura atualizada com sucesso! Limpando cache...")
-                        carregar_dados.clear()
-                        st.rerun()
-                        
-                    except Exception as e:
-                        st.error(f"Erro ao salvar: {e}")
-
+                    if st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True):
+                        try:
+                            conexao = obter_conexao()
+                            cursor = conexao.cursor()
+                            sql_update = """
+                                UPDATE faturas_cpfl SET 
+                                    consumo_ponta=%s, valor_cons_ponta_tusd=%s, consumo_fora_ponta=%s, valor_cons_fponta_tusd=%s,
+                                    demanda_contratada_ponta=%s, demanda_contratada_fponta=%s,
+                                    demanda_registrada_ponta=%s, valor_dem_ponta=%s,
+                                    demanda_registrada_fora_ponta=%s, valor_dem_fponta=%s,
+                                    demanda_isenta_ponta=%s, valor_dem_isenta_ponta=%s,
+                                    demanda_isenta_fora_ponta=%s, valor_dem_isenta_fponta=%s,
+                                    demanda_ultrapassagem_ponta=%s, valor_dem_ultrap_ponta=%s,
+                                    demanda_ultrapassagem_fora_ponta=%s, valor_dem_ultrap_fponta=%s,
+                                    demanda_reativa_ponta=%s, valor_dem_reativa_ponta=%s,
+                                    demanda_reativa_fora_ponta=%s, valor_dem_reativa_fponta=%s,
+                                    cip=%s, valor_total_pis=%s, valor_total_cofins=%s, valor_total_icms=%s,
+                                    tipo_bandeira=%s, adicional_bandeira=%s, valor_total_fatura=%s
+                                WHERE id = %s
+                            """
+                            valores = (ed_cons_p, ed_val_p, ed_cons_fp, ed_val_fp, ed_dc_p, ed_dc_fp,
+                                       ed_dr_p, ed_val_dr_p, ed_dr_fp, ed_val_dr_fp,
+                                       ed_di_p, ed_v_di_p, ed_di_fp, ed_v_di_fp, # <--- Campos novos adicionados aqui
+                                       ed_ult_p, ed_v_ult_p, ed_ult_fp, ed_v_ult_fp,
+                                       ed_reat_p, ed_v_reat_p, ed_reat_fp, ed_v_reat_fp,
+                                       ed_cip, ed_pis, ed_cofins, ed_icms,
+                                       ed_bandeira, ed_val_band, ed_total, id_fatura)
+                            cursor.execute(sql_update, valores)
+                            conexao.commit()
+                            conexao.close()
+                            st.success("✅ Fatura atualizada!")
+                            carregar_dados.clear()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Erro: {e}")
         else:
             st.error("Fatura não encontrada.")
 

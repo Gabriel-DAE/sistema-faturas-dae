@@ -737,65 +737,116 @@ with aba_controle:
                 # Construção da planilha em memória antes de exibir o botão
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    pd.DataFrame(columns=colunas_fin).to_excel(writer, index=False, sheet_name='Relatorio_Financeiro')
+                    # Criamos uma aba vazia para preencher e formatar tudo manualmente
+                    pd.DataFrame().to_excel(writer, index=False, header=False, sheet_name='Relatorio_Financeiro')
                     ws = writer.sheets['Relatorio_Financeiro']
                     
-                    # Estilos Excel
+                    # Estilos Excel (Azul escuro para cabeçalhos, Azul claro para setores)
                     header_fill = PatternFill(start_color="002060", fill_type="solid")
                     sector_fill = PatternFill(start_color="D9E1F2", fill_type="solid")
                     font_white = Font(bold=True, color="FFFFFF")
                     font_bold = Font(bold=True)
-                    center_align = Alignment(horizontal="center")
+                    center_align = Alignment(horizontal="center", vertical="center")
                     
-                    for cell in ws[1]:
-                        cell.fill = header_fill; cell.font = font_white; cell.alignment = center_align
+                    row_idx = 1
                     
-                    row_idx = 2
                     for atividade in sorted(df_pendente_envio['Atividade'].unique()):
                         df_ativ = df_pendente_envio[df_pendente_envio['Atividade'] == atividade].copy()
+                        
+                        # --- 1. Título do Setor ---
                         ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=9)
-                        ws.cell(row=row_idx, column=1, value=f"SETOR: {atividade.upper()}").fill = sector_fill
-                        ws.cell(row=row_idx, column=1).font = font_bold; ws.cell(row=row_idx, column=1).alignment = center_align
+                        c_setor = ws.cell(row=row_idx, column=1, value=f"SETOR: {atividade.upper()}")
+                        c_setor.fill = sector_fill
+                        c_setor.font = font_bold
+                        c_setor.alignment = center_align
                         row_idx += 1
                         
+                        # --- 2. Cabeçalhos das Colunas ---
+                        for col_num, col_name in enumerate(colunas_fin, 1):
+                            c_head = ws.cell(row=row_idx, column=col_num, value=col_name)
+                            c_head.fill = header_fill
+                            c_head.font = font_white
+                            c_head.alignment = center_align
+                        row_idx += 1
+                        
+                        # --- 3. Linhas de Dados do Setor ---
                         for _, r in df_ativ.iterrows():
                             ws.cell(row=row_idx, column=1, value=int(r['UC']))
                             ws.cell(row=row_idx, column=2, value=r['Nome da Unidade'])
                             ws.cell(row=row_idx, column=3, value=r['Mês Referência'])
-                            c_v = ws.cell(row=row_idx, column=4, value=pd.to_datetime(r['Vencimento'], format='%d/%m/%Y'))
-                            c_v.number_format = 'DD/MM/YYYY'
+                            
+                            c_venc = ws.cell(row=row_idx, column=4, value=pd.to_datetime(r['Vencimento'], format='%d/%m/%Y'))
+                            c_venc.number_format = 'DD/MM/YYYY'
+                            
                             for i, col_name in enumerate(['CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura'], 5):
-                                c = ws.cell(row=row_idx, column=i, value=float(r[col_name]))
-                                c.number_format = 'R$ #,##0.00'
+                                c_val = ws.cell(row=row_idx, column=i, value=float(r[col_name]))
+                                c_val.number_format = 'R$ #,##0.00'
                             row_idx += 1
                         
-                        # Resumo por Setor no Excel
+                        row_idx += 1 # Espaço em branco
+                        
+                        # --- 4. Título do Resumo do Setor ---
+                        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
+                        c_res = ws.cell(row=row_idx, column=1, value=f"RESUMO: {atividade.upper()}")
+                        c_res.fill = sector_fill
+                        c_res.font = font_bold
+                        c_res.alignment = center_align
                         row_idx += 1
-                        ws.cell(row=row_idx, column=1, value=f"RESUMO: {atividade.upper()}").font = font_bold
+                        
+                        # --- 5. Cabeçalhos do Resumo ---
+                        c_rh1 = ws.cell(row=row_idx, column=1, value="Data de Vencimento")
+                        c_rh2 = ws.cell(row=row_idx, column=2, value="Valor Total")
+                        for cell in [c_rh1, c_rh2]:
+                            cell.fill = header_fill
+                            cell.font = font_white
+                            cell.alignment = center_align
                         row_idx += 1
+                        
+                        # --- 6. Dados do Resumo do Setor ---
                         df_res = df_ativ.groupby('Vencimento')['Valor Total Fatura'].sum().reset_index()
                         df_res['D_Ord'] = pd.to_datetime(df_res['Vencimento'], format='%d/%m/%Y')
                         for _, rs in df_res.sort_values('D_Ord').iterrows():
-                            ws.cell(row=row_idx, column=1, value=pd.to_datetime(rs['Vencimento'], format='%d/%m/%Y')).number_format = 'DD/MM/YYYY'
-                            c_v = ws.cell(row=row_idx, column=2, value=float(rs['Valor Total Fatura']))
-                            c_v.number_format = 'R$ #,##0.00'
+                            c_rv = ws.cell(row=row_idx, column=1, value=pd.to_datetime(rs['Vencimento'], format='%d/%m/%Y'))
+                            c_rv.number_format = 'DD/MM/YYYY'
+                            
+                            c_rt = ws.cell(row=row_idx, column=2, value=float(rs['Valor Total Fatura']))
+                            c_rt.number_format = 'R$ #,##0.00'
                             row_idx += 1
-                        row_idx += 1
+                            
+                        row_idx += 2 # Espaço antes do próximo setor
                     
-                    # Resumo Geral Final no Excel
-                    ws.cell(row=row_idx, column=1, value="RESUMO GERAL (TODOS OS SETORES)").font = font_bold
-                    ws.cell(row=row_idx, column=1).fill = sector_fill
+                    # --- RESUMO GERAL FINAL ---
+                    ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
+                    c_rg = ws.cell(row=row_idx, column=1, value="RESUMO GERAL (TODOS OS SETORES)")
+                    c_rg.fill = sector_fill
+                    c_rg.font = font_bold
+                    c_rg.alignment = center_align
                     row_idx += 1
+                    
+                    # Cabeçalhos do Resumo Geral
+                    c_gh1 = ws.cell(row=row_idx, column=1, value="Data de Vencimento")
+                    c_gh2 = ws.cell(row=row_idx, column=2, value="Valor Total")
+                    for cell in [c_gh1, c_gh2]:
+                        cell.fill = header_fill
+                        cell.font = font_white
+                        cell.alignment = center_align
+                    row_idx += 1
+                    
+                    # Dados do Resumo Geral
                     df_g = df_pendente_envio.groupby('Vencimento')['Valor Total Fatura'].sum().reset_index()
                     df_g['D'] = pd.to_datetime(df_g['Vencimento'], format='%d/%m/%Y')
                     for _, res_g in df_g.sort_values('D').iterrows():
-                        ws.cell(row=row_idx, column=1, value=pd.to_datetime(res_g['Vencimento'], format='%d/%m/%Y')).number_format = 'DD/MM/YYYY'
-                        c_vg = ws.cell(row=row_idx, column=2, value=float(res_g['Valor Total Fatura']))
-                        c_vg.number_format = 'R$ #,##0.00'
+                        c_gv = ws.cell(row=row_idx, column=1, value=pd.to_datetime(res_g['Vencimento'], format='%d/%m/%Y'))
+                        c_gv.number_format = 'DD/MM/YYYY'
+                        
+                        c_gt = ws.cell(row=row_idx, column=2, value=float(res_g['Valor Total Fatura']))
+                        c_gt.number_format = 'R$ #,##0.00'
                         row_idx += 1
 
+                    # --- Ajuste automático da largura das colunas ---
                     for col in ws.columns:
-                        max_l = 0; column = col[0].column_letter
+                        max_l = 0
+                        column = col[0].column_letter
                         for cell in col:
                             try: max_l = max(max_l, len(str(cell.value)))
                             except: pass

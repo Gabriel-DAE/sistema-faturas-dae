@@ -179,6 +179,15 @@ def inicializar_banco():
             data_envio TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
+
+    try:
+        for tabela in ['faturas_cpfl', 'cadastro_uc', 'historico_financeiro']:
+            cursor.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name = '{tabela}' AND data_type = 'real';")
+            colunas_baixa_precisao = cursor.fetchall()
+            for col in colunas_baixa_precisao:
+                cursor.execute(f"ALTER TABLE {tabela} ALTER COLUMN {col[0]} TYPE DOUBLE PRECISION;")
+    except Exception as e:
+        print("Aviso ao atualizar precisão do banco:", e)
     
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_faturas_uc_mes ON faturas_cpfl (unidade_consumidora, mes_referencia);")
     
@@ -290,9 +299,6 @@ def carregar_dados():
         if col in df.columns:
             df[col] = df[col].astype('category')
 
-    colunas_float = df.select_dtypes(include=['float64']).columns
-    df[colunas_float] = df[colunas_float].astype('float32')
-    
     colunas_finais = [c for c in ordem_colunas if c in df.columns]
     return df[colunas_finais]
 

@@ -844,13 +844,20 @@ with aba_controle:
                         row_idx += 1
 
                     # --- Ajuste automático da largura das colunas ---
-                    for col in ws.columns:
+                    from openpyxl.utils import get_column_letter # Importamos o conversor seguro
+                    
+                    for i, col in enumerate(ws.columns, 1):
                         max_l = 0
-                        column = col[0].column_letter
+                        col_letter = get_column_letter(i) # Pega a letra (A, B, C...) com base no número
+                        
                         for cell in col:
-                            try: max_l = max(max_l, len(str(cell.value)))
-                            except: pass
-                        ws.column_dimensions[column].width = max_l + 4
+                            try: 
+                                if cell.value:
+                                    max_l = max(max_l, len(str(cell.value)))
+                            except: 
+                                pass
+                                
+                        ws.column_dimensions[col_letter].width = max_l + 4
 
                 # BOTÃO ÚNICO QUE FAZ TUDO
                 col_btn_gerar, col_vazia1, col_vazia2 = st.columns([1, 2, 2])

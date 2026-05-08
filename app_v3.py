@@ -239,7 +239,7 @@ def carregar_dados():
         'tarifa_aneel_dem_reativa_ponta': 'Tarifa Dem. Reat. Ponta', 'tarifa_trib_dem_reativa_ponta': 'Tarifa Trib. Dem. Reat. Ponta',
         'valor_dem_reativa_ponta': 'Valor Dem. Reat. Ponta', 'demanda_reativa_fora_ponta': 'Dem. Reat. F.Ponta',
         'tarifa_aneel_dem_reativa_fponta': 'Tarifa Dem. Reat. F.Ponta', 'tarifa_trib_dem_reativa_fponta': 'Tarifa Trib. Dem. Reat. F.Ponta',
-        'valor_dem_reativa_fponta': 'Valor Dem. Reat. F.Ponta', 'cip': 'CIP', 'retencao_consumo_irrf': 'Retenção Cons. IRRF',
+        'valor_dem_reativa_fponta': 'Valor Dem. Reat. F.Ponta', 'subtotal_fatura': 'Subtotal PDF', 'cip': 'CIP', 'retencao_consumo_irrf': 'Retenção Cons. IRRF',
         'retencao_demanda_irrf': 'Retenção Dem. IRRF', 'valor_total_pis': 'Valor PIS', 'valor_total_cofins': 'Valor COFINS',
         'valor_total_icms': 'Valor ICMS', 'valor_total_fatura': 'Valor Total Fatura', 'data_insercao': 'Data Cadastro'
     }
@@ -288,7 +288,7 @@ def carregar_dados():
         'Cons. Reat. F.Ponta', 'Tarifa Cons. Reat. F.Ponta', 'Tarifa Trib. Cons. Reat. F.Ponta', 'Valor Cons. Reat. F.Ponta', 
         'Dem. Reat. Ponta', 'Tarifa Dem. Reat. Ponta', 'Tarifa Trib. Dem. Reat. Ponta', 'Valor Dem. Reat. Ponta', 
         'Dem. Reat. F.Ponta', 'Tarifa Dem. Reat. F.Ponta', 'Tarifa Trib. Dem. Reat. F.Ponta', 'Valor Dem. Reat. F.Ponta', 
-        'CIP', 'Retenção Cons. IRRF', 'Retenção Dem. IRRF', 'Valor PIS', 'Valor COFINS', 'Valor ICMS', 
+        'Subtotal PDF', 'CIP', 'Retenção Cons. IRRF', 'Retenção Dem. IRRF', 'Valor PIS', 'Valor COFINS', 'Valor ICMS', 
         'Total Consumo', 'Valor Total Consumo', 'Valor Total Dem.', 'Valor Total Dem. Isenta', 'Valor Total Dem. Ultrap.', 
         'Valor Total Desv. Dem.', 'Total Cons. Reat.', 'Valor Total Cons. Reat.', 'Valor Total Dem. Reat.', 'Valor Total Reativo',
         'Valor Total Fatura', 'Data Cadastro'
@@ -333,7 +333,7 @@ def processar_pdf(arquivo_pdf):
         'demanda_ultrapassagem_ponta', 'tarifa_aneel_dem_ultrap_ponta', 'tarifa_trib_dem_ultrap_ponta', 'valor_dem_ultrap_ponta',
         'demanda_ultrapassagem_fora_ponta', 'tarifa_aneel_dem_ultrap_fponta', 'tarifa_trib_dem_ultrap_fponta', 'valor_dem_ultrap_fponta',
         'demanda_reativa_ponta', 'tarifa_aneel_dem_reativa_ponta', 'tarifa_trib_dem_reativa_ponta', 'valor_dem_reativa_ponta',
-        'demanda_reativa_fora_ponta', 'tarifa_aneel_dem_reativa_fponta', 'tarifa_trib_dem_reativa_fponta', 'valor_dem_reativa_fponta'
+        'demanda_reativa_fora_ponta', 'tarifa_aneel_dem_reativa_fponta', 'tarifa_trib_dem_reativa_fponta', 'valor_dem_reativa_fponta', 'subtotal_fatura'
     ]
     dados = {k: 0.0 for k in chaves_numericas}
     
@@ -465,7 +465,12 @@ def processar_pdf(arquivo_pdf):
     if m_dem_reat_fp: dados['demanda_reativa_fora_ponta'], dados['tarifa_aneel_dem_reativa_fponta'], tarifa_trib_dem_reativa_fponta, dados['valor_dem_reativa_fponta'] = [limpar_numero(x) for x in m_dem_reat_fp.groups()]
 
     dados['cip'] = extrair_valor_regex(r"Contribuição Custeio IP-CIP.*?([\d\.]+,\d+)", texto)
-    dados['subtotal_fatura'] = extrair_valor_regex(r"Subtotal.*?([\d\.]+,\d{2})", texto)
+    val_subtotal = extrair_valor_regex(r"Subtotal\s*([\d.,]+)", texto)
+    if val_subtotal == 0.0:
+        val_subtotal = extrair_valor_regex(r"Total Distribuidora\s*([\d.,]+)", texto)    
+    if val_subtotal == 0.0:
+        val_subtotal = extrair_valor_regex(r"ICMS\s+([\d.,]+)\s+\d{2}[.,]\d{2}", texto)
+    dados['subtotal_fatura'] = val_subtotal
     dados['retencao_consumo_irrf'] = extrair_valor_regex(r"Retencao Consumo IRRF-.*?([\d\.]+,[\d]{2})-", texto)
     dados['retencao_demanda_irrf'] = extrair_valor_regex(r"Retencao Demanda IRRF-.*?([\d\.]+,[\d]{2})-", texto)
     dados['valor_total_pis'] = extrair_valor_regex(r"PIS/PASEP.*?\s([\d\.]+,\d+)$", texto)

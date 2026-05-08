@@ -104,7 +104,7 @@ with col_logo:
 
 with col_titulo:
     st.subheader("⚡ Sistema de Faturas de Energia - DAE Bauru")
-    st.markdown("*Sistema de Análise Técnica e Auditoria Tarifária*")
+    st.markdown("*Sistema de Análise Técnica e Financeira*")
 
 # --- 1. BANCO DE DADOS: CRIAÇÃO E PRÉ-CADASTRO ---
 def inicializar_banco():
@@ -480,7 +480,7 @@ def processar_pdf(arquivo_pdf):
 
 
 # --- 4. INTERFACE ---
-aba_dash, aba_controle, aba_dados, aba_espelho, aba_pdf, aba_config = st.tabs(["📈 Dashboard", "💰 Controle Financeiro", "📊 Banco de Dados", "📑 Espelho de Fatura", "📄 Upload PDF", "⚙️ Configurações"])
+aba_dash, aba_controle, aba_dados, aba_espelho, aba_pdf, aba_config = st.tabs(["📈 Dashboard", "💰 Controle Financeiro", "📊 Banco de Dados", "📑 Espelho de Fatura", "📄 Upload de Fatura", "⚙️ Configurações"])
 
 # ==========================================
 # ABA DASHBOARD
@@ -490,7 +490,7 @@ with aba_dash:
     
     if not df_dash.empty:
         st.markdown("##### ⚡ Business Intelligence - Consumo DAE")
-        st.markdown("💡 **Dica PRO:** Segure a tecla **SHIFT** para seleção múltipla nos gráficos. Use os filtros superiores para seleções rápidas.")
+        st.markdown("💡 **Dica:** Segure a tecla **SHIFT** para seleção múltipla nos gráficos. Utilize os filtros dinâmicos dos gráficos.")
         
         # 1. Preparação dos Dados
         df_dash['Ano'] = df_dash['Data Referência Oculta'].dt.year.astype(str)
@@ -943,7 +943,7 @@ with aba_dados:
         col_f1, col_f2, col_f3, col_f4 = st.columns(4)
         
         # Cria as caixas de seleção buscando os dados únicos
-        filtro_mes = col_f1.multiselect("📅 Filtrar por Mês", options=df['Mês Referência'].unique())
+        filtro_mes = col_f1.multiselect("📅 Filtrar por Referência", options=df['Mês Referência'].unique())
         filtro_classe = col_f2.multiselect("⚡ Filtrar Classificação", options=df['Classificação'].unique())
         filtro_uc = col_f3.multiselect("📍 Filtrar por UC", options=df['UC'].unique())
         filtro_busca = col_f4.text_input("🔍 Busca Livre", placeholder="Nome da unidade...")
@@ -1258,7 +1258,7 @@ with aba_espelho:
 with aba_pdf:
     st.markdown("##### 📥 Importação de Faturas")
     
-    tab_pdf, tab_excel = st.tabs(["📄 Importação de Faturas (PDF)", "📊 Upload de Excel (Lote Histórico)"])
+    tab_pdf, tab_excel = st.tabs(["📄 Upload de Faturas (PDF)", "📊 Upload em Lote (excel)"])
     
     with tab_pdf:
         st.markdown("Faça o upload dos arquivos PDF originais da CPFL para extração automática.")

@@ -1209,7 +1209,7 @@ with aba_espelho:
 
                 # --- BOTÃO SALVAR CENTRALIZADO ---
                 st.write("")
-                _, col_btn, _ = st.columns([2, 1, 2])
+                _, _, col_btn = st.columns([2, 2, 1])
                 with col_btn:
                     if st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True):
                         try:

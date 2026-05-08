@@ -1288,18 +1288,17 @@ with aba_pdf:
             del st.session_state["relatorio_pdf"]
 
         # 3. Adiciona a "key" com a variável dinâmica no componente de upload
-        arquivos_upload = st.file_uploader(
-            "Selecione as faturas em PDF", 
-            type=["pdf"], 
-            accept_multiple_files=True,
-            key=f"uploader_{st.session_state['pdf_uploader_key']}" # <--- O PULO DO GATO AQUI
-        )
+        arquivos_upload = st.file_uploader("Selecione as faturas em PDF", type=["pdf"], accept_multiple_files=True)
         
         if arquivos_upload:
-            if st.button("🚀 Extrair e Salvar Dados", type="primary"):
-                sucessos = 0
-                duplicadas = 0
-                erros = 0
+            if len(arquivos_upload) > 30:
+                st.error(f"⚠️ Limite excedido! Você selecionou {len(arquivos_upload)} arquivos.")
+                st.warning("💡 Para evitar sobrecarga e travamento do sistema, por favor, envie no máximo 30 faturas por vez. Remova alguns arquivos acima para liberar o botão de envio.")
+            else:
+                if st.button("🚀 Extrair e Salvar Dados", type="primary"):
+                    sucessos = 0
+                    duplicadas = 0
+                    erros = 0
                 
                 conexao = obter_conexao()
                 c = conexao.cursor()

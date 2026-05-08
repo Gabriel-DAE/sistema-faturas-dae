@@ -1303,8 +1303,8 @@ with aba_pdf:
                     conexao = obter_conexao()
                     c = conexao.cursor()
                 
-                barra_progresso = st.progress(0)
-                total_arquivos = len(arquivos_upload)
+                    barra_progresso = st.progress(0)
+                    total_arquivos = len(arquivos_upload)
                 
                 for i, arquivo in enumerate(arquivos_upload):
                     try:

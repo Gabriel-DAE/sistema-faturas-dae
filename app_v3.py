@@ -1288,7 +1288,12 @@ with aba_pdf:
             del st.session_state["relatorio_pdf"]
 
         # 3. Adiciona a "key" com a variável dinâmica no componente de upload
-        arquivos_upload = st.file_uploader("Selecione as faturas em PDF", type=["pdf"], accept_multiple_files=True)
+        arquivos_upload = st.file_uploader(
+            "Selecione as faturas em PDF", 
+            type=["pdf"], 
+            accept_multiple_files=True,
+            key=f"uploader_{st.session_state['pdf_uploader_key']}"
+        )
         
         if arquivos_upload:
             if len(arquivos_upload) > 30:
@@ -1299,42 +1304,43 @@ with aba_pdf:
                     sucessos = 0
                     duplicadas = 0
                     erros = 0
-                
+                    
                     conexao = obter_conexao()
                     c = conexao.cursor()
-                
+                    
                     barra_progresso = st.progress(0)
                     total_arquivos = len(arquivos_upload)
-                
-                for i, arquivo in enumerate(arquivos_upload):
-                    try:
-                        d = processar_pdf(arquivo)
-                        
-                        c.execute("SELECT id FROM faturas_cpfl WHERE unidade_consumidora = %s AND mes_referencia = %s", (d['unidade_consumidora'], d['mes_referencia']))
-                        if c.fetchone():
-                            duplicadas += 1
-                        else:
-                            colunas = ', '.join(d.keys())
-                            placeholders = ', '.join(['%s'] * len(d))
-                            valores = tuple(d.values())
-                            c.execute(f"INSERT INTO faturas_cpfl ({colunas}) VALUES ({placeholders})", valores)
-                            sucessos += 1
-                            
-                    except Exception as e:
-                        erros += 1
-                        st.error(f"Erro ao processar o arquivo '{arquivo.name}': {e}")
                     
-                    barra_progresso.progress((i + 1) / total_arquivos)
-                    gc.collect() # Limpeza de RAM que adicionamos anteriormente
+                    # Tudo daqui para baixo foi empurrado para a direita (dentro do if st.button)
+                    for i, arquivo in enumerate(arquivos_upload):
+                        try:
+                            d = processar_pdf(arquivo)
+                            
+                            c.execute("SELECT id FROM faturas_cpfl WHERE unidade_consumidora = %s AND mes_referencia = %s", (d['unidade_consumidora'], d['mes_referencia']))
+                            if c.fetchone():
+                                duplicadas += 1
+                            else:
+                                colunas = ', '.join(d.keys())
+                                placeholders = ', '.join(['%s'] * len(d))
+                                valores = tuple(d.values())
+                                c.execute(f"INSERT INTO faturas_cpfl ({colunas}) VALUES ({placeholders})", valores)
+                                sucessos += 1
+                                
+                        except Exception as e:
+                            erros += 1
+                            st.error(f"Erro ao processar o arquivo '{arquivo.name}': {e}")
+                        
+                        barra_progresso.progress((i + 1) / total_arquivos)
+                        gc.collect() # Limpeza de RAM que adicionamos anteriormente
 
-                conexao.commit()
-                carregar_dados.clear()
-                conexao.close()
-                
-                # 4. Salva os resultados na memória, altera a chave do uploader e recarrega a tela!
-                st.session_state["relatorio_pdf"] = {"sucessos": sucessos, "duplicadas": duplicadas, "erros": erros}
-                st.session_state["pdf_uploader_key"] += 1
-                st.rerun()
+                    conexao.commit()
+                    carregar_dados.clear()
+                    conexao.close()
+                    
+                    # 4. Salva os resultados na memória, altera a chave do uploader e recarrega a tela!
+                    st.session_state["relatorio_pdf"] = {"sucessos": sucessos, "duplicadas": duplicadas, "erros": erros}
+                    st.session_state["pdf_uploader_key"] += 1
+                    st.rerun()
 
     with tab_excel:
         st.markdown("Faça o upload de uma planilha contendo o histórico de faturas antigas.")

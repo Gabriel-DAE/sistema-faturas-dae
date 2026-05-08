@@ -1209,9 +1209,9 @@ with aba_espelho:
 
                 # --- BOTÃO SALVAR CENTRALIZADO ---
                 st.write("")
-                _, col_btn, _ = st.columns([1, 1.5, 1])
+                _, col_btn, _ = st.columns([2, 1.5, 2])
                 with col_btn:
-                    if st.form_submit_button("💾 Salvar Alterações no Banco", type="primary", use_container_width=True):
+                    if st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True):
                         try:
                             conexao = obter_conexao()
                             cursor = conexao.cursor()

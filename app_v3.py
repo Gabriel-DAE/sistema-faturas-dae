@@ -1300,8 +1300,8 @@ with aba_pdf:
                     duplicadas = 0
                     erros = 0
                 
-                conexao = obter_conexao()
-                c = conexao.cursor()
+                    conexao = obter_conexao()
+                    c = conexao.cursor()
                 
                 barra_progresso = st.progress(0)
                 total_arquivos = len(arquivos_upload)

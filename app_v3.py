@@ -671,7 +671,6 @@ with aba_controle:
 
         # --- SUB-ABA 1: GERADOR DE RELATÓRIO ---
         with tab_relatorio:
-            st.markdown(f"### 💸 Relatório Semanal - {mes_auditoria}")
             
             # 1. Busca faturas já enviadas para filtrar a visualização
             df_enviados = pd.read_sql_query(f"SELECT id, unidade_consumidora, data_envio, valor_fatura FROM historico_financeiro WHERE mes_referencia = '{mes_auditoria}'", conexao)

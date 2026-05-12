@@ -104,7 +104,6 @@ with col_logo:
 
 with col_titulo:
     st.subheader("⚡ Sistema de Faturas de Energia - DAE Bauru")
-    st.markdown("*Sistema de Análise Técnica e Financeira*")
 
 # --- 1. BANCO DE DADOS: CRIAÇÃO E PRÉ-CADASTRO ---
 def inicializar_banco():

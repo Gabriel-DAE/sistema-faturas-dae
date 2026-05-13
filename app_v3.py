@@ -1102,11 +1102,11 @@ with aba_espelho:
                             st.markdown("---")
                             st.markdown("**📉 Demandas Contratadas (kW)**")
                             ed_dc_p = st.number_input("Contratada Ponta", value=float(f['Dem. Contr. Ponta']), format="%.2f", key=f"dcp_a_{id_fatura}")
-                            ed_dc_fp = st.number_input("Contratada F. Ponta", value=float(f['Dem. Contr. F.Ponta']), format="%.2f", key=f"dcfp_a_{id_fatura}")
+                            ed_dc_fp = st.number_input("Contratada F.Ponta", value=float(f['Dem. Contr. F.Ponta']), format="%.2f", key=f"dcfp_a_{id_fatura}")
                         with c2:
                             st.markdown("**⚡ Consumo Fora Ponta (kWh)**")
-                            ed_cons_fp = st.number_input("Quantidade Fora Ponta", value=float(f['Consumo F.Ponta']), format="%.2f", key=f"cfp_a_{id_fatura}")
-                            ed_val_fp = st.number_input("Valor F. Ponta (R$)", value=float(f['Valor Cons. F.Ponta TUSD'] + f['Valor Cons. F.Ponta TE']), format="%.2f", key=f"vfp_a_{id_fatura}")
+                            ed_cons_fp = st.number_input("Quantidade F.Ponta", value=float(f['Consumo F.Ponta']), format="%.2f", key=f"cfp_a_{id_fatura}")
+                            ed_val_fp = st.number_input("Valor F.Ponta (R$)", value=float(f['Valor Cons. F.Ponta TUSD'] + f['Valor Cons. F.Ponta TE']), format="%.2f", key=f"vfp_a_{id_fatura}")
                             st.markdown("---")
                             st.markdown("**📝 Demandas Registradas e Isentas (kW)**")
                             col_p, col_fp = st.columns(2)
@@ -1474,7 +1474,7 @@ with aba_config:
             
             is_b3 = True if classif_input and "B3" in classif_input else False
             dc_p = st.number_input("Demanda Contratada Ponta (kW)", value=float(v_dc_p), format="%.2f", disabled=is_b3)
-            dc_fp = st.number_input("Demanda Contratada Fora Ponta (kW)", value=float(v_dc_fp), format="%.2f", disabled=is_b3)
+            dc_fp = st.number_input("Demanda Contratada F.Ponta (kW)", value=float(v_dc_fp), format="%.2f", disabled=is_b3)
             
             st.write("")
             if 'msg_uc' in st.session_state:

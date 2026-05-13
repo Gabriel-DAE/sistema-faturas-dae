@@ -1428,67 +1428,69 @@ with aba_pdf:
 # ==========================================
 with aba_config:
     st.markdown("##### ⚙️ Configurações Gerais do Sistema")
-    st.markdown("###### 🏢 Cadastro da Unidade Consumidora")
+    st.markdown("###### 🏢 Cadastro Manual da Unidade Consumidora")
     
-    tab_cad_manual, tab_cad_lote = st.tabs(["✍️ Cadastro Manual", "📊 Upload em Lote (Excel)"])
+    uc_busca = st.text_input("Buscar UC (Ex: 40190245)", value="").strip()
     
-    with tab_cad_manual:
-        a1, a2, a3 = st.columns(3)
-        with a1:
-            uc_busca = st.text_input("Buscar UC (Ex: 40190245)", value="").strip()
+    if uc_busca:
+        conexao = obter_conexao()
+        c = conexao.cursor()
+        c.execute("SELECT nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status FROM cadastro_uc WHERE unidade_consumidora = %s", (uc_busca,))
+        dados_uc = c.fetchone()
+        conexao.close()
+    else:
+        dados_uc = None
+    
+    if dados_uc:
+        v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = dados_uc
+    else:
+        v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = ("", None, None, 0.0, 0.0, None)
         
-        if uc_busca:
-            conexao = obter_conexao()
-            c = conexao.cursor()
-            c.execute("SELECT nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status FROM cadastro_uc WHERE unidade_consumidora = %s", (uc_busca,))
-            dados_uc = c.fetchone()
-            conexao.close()
-        else:
-            dados_uc = None
+    with st.form("form_uc"):
+        nome_input = st.text_input("Nome da Instalação/Unidade", value=v_nome, placeholder="Ex: Poço 15 - Geisel")
         
-        if dados_uc:
-            v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = dados_uc
-        else:
-            # MUDANÇA 1: Trocamos os textos padrão por 'None' para nascer em branco
-            v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = ("", None, None, 0.0, 0.0, None)
+        # --- LINHA 1: Dividindo os 3 menus suspensos em 3 colunas iguais ---
+        col_ativ, col_class, col_status = st.columns(3)
+        
+        with col_ativ:
+            lista_atividades = ["Administrativa", "Água", "Esgoto"]
+            idx_ativ = lista_atividades.index(v_ativ) if v_ativ in lista_atividades else None
+            ativ_input = st.selectbox("Atividade", lista_atividades, index=idx_ativ, placeholder="Selecione...")
             
-        with st.form("form_uc"):
-            a1, a2, a3 = st.columns(3)
-            with a1:
-                nome_input = st.text_input("Nome da Instalação/Unidade", value=v_nome, placeholder="Ex: Poço 15 - Geisel")
+        with col_class:
+            lista_classes = ["Tarifa Azul-A4", "Tarifa Verde-A4", "Convencional B3"]
+            idx_class = lista_classes.index(v_class) if v_class in lista_classes else None
+            classif_input = st.selectbox("Classificação", lista_classes, index=idx_class, placeholder="Selecione...")
 
-                lista_atividades = ["Administrativa", "Água", "Esgoto"]
-                # MUDANÇA 2: Se não achar a atividade na lista (ou for None), o index vira None
-                idx_ativ = lista_atividades.index(v_ativ) if v_ativ in lista_atividades else None
-                ativ_input = st.selectbox("Atividade", lista_atividades, index=idx_ativ, placeholder="Selecione...")
-
-                lista_classes = ["Tarifa Azul-A4", "Tarifa Verde-A4", "Convencional B3"]
-                idx_class = lista_classes.index(v_class) if v_class in lista_classes else None
-                classif_input = st.selectbox("Classificação", lista_classes, index=idx_class, placeholder="Selecione...")
-
-                lista_status = ["ATIVA", "INATIVA"]
-                idx_status = lista_status.index(v_status) if v_status in lista_status else None
-                status_input = st.selectbox("Status de Operação", lista_status, index=idx_status, placeholder="Selecione...")
-            
-            # MUDANÇA 3: Adicionamos "classif_input and" para não dar erro quando o campo estiver vazio
-            if classif_input and "Verde" in classif_input:
-                st.info("💡 Na **Tarifa Verde-A4**, informe a Demanda Única no campo 'Fora Ponta'. O campo Ponta será desconsiderado no cálculo.")
-            elif classif_input and "B3" in classif_input:
-                st.info("💡 Na **Convencional B3**, não existe demanda contratada. Pode deixar os campos zerados.")
-            
-            is_b3 = True if classif_input and "B3" in classif_input else False
-            a1, a2, a3 = st.columns(3)
-            with a1:
-                dc_p = st.number_input("Demanda Contratada Ponta (kW)", value=float(v_dc_p), format="%.2f", disabled=is_b3)
-                dc_fp = st.number_input("Demanda Contratada F.Ponta (kW)", value=float(v_dc_fp), format="%.2f", disabled=is_b3)
-            
-            st.write("")
-            if 'msg_uc' in st.session_state:
-                st.success(st.session_state['msg_uc'])
-                del st.session_state['msg_uc']
-            
-            if st.form_submit_button("Salvar Cadastro da UC", type="primary"):
-                # MUDANÇA 4: A trava de segurança! Impede salvar se tiver algo em branco
+        with col_status:
+            lista_status = ["ATIVA", "INATIVA"]
+            idx_status = lista_status.index(v_status) if v_status in lista_status else None
+            status_input = st.selectbox("Status de Operação", lista_status, index=idx_status, placeholder="Selecione...")
+        
+        # --- AVISOS ---
+        if classif_input and "Verde" in classif_input:
+            st.info("💡 Na **Tarifa Verde-A4**, informe a Demanda Única no campo 'Fora Ponta'. O campo Ponta será desconsiderado no cálculo.")
+        elif classif_input and "B3" in classif_input:
+            st.info("💡 Na **Convencional B3**, não existe demanda contratada. Pode deixar os campos zerados.")
+        
+        # --- LINHA 2: Dividindo as demandas numéricas em 2 colunas ---
+        col_dem1, col_dem2 = st.columns(2)
+        is_b3 = True if classif_input and "B3" in classif_input else False
+        
+        with col_dem1:
+            dc_p = st.number_input("Demanda Contratada Ponta (kW)", value=float(v_dc_p), format="%.2f", disabled=is_b3)
+        with col_dem2:
+            dc_fp = st.number_input("Demanda Contratada Fora Ponta (kW)", value=float(v_dc_fp), format="%.2f", disabled=is_b3)
+        
+        st.write("")
+        if 'msg_uc' in st.session_state:
+            st.success(st.session_state['msg_uc'])
+            del st.session_state['msg_uc']
+        
+        # --- BOTÃO SALVAR ---
+        _, col_btn, _ = st.columns([1, 1, 1])
+        with col_btn:
+            if st.form_submit_button("Salvar Cadastro da UC", type="primary", use_container_width=True):
                 if ativ_input is None or classif_input is None or status_input is None or not nome_input:
                     st.warning("⚠️ Por favor, preencha o Nome, Atividade, Classificação e Status antes de salvar.")
                 else:
@@ -1501,130 +1503,50 @@ with aba_config:
                     conexao = obter_conexao()
                     c = conexao.cursor()
                     
-                c.execute('''
-                    INSERT INTO cadastro_uc (unidade_consumidora, nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (unidade_consumidora) DO UPDATE SET 
-                    nome_unidade = EXCLUDED.nome_unidade,
-                    atividade = EXCLUDED.atividade,
-                    classificacao = EXCLUDED.classificacao,
-                    demanda_contratada_ponta = EXCLUDED.demanda_contratada_ponta,
-                    demanda_contratada_fponta = EXCLUDED.demanda_contratada_fponta,
-                    status = EXCLUDED.status;
-                ''', (uc_busca, nome_input, ativ_input, classif_input, dc_p, dc_fp, status_input))
-                c.execute('''
-                    UPDATE faturas_cpfl 
-                    SET nome_unidade = %s 
-                    WHERE unidade_consumidora = %s;
-                ''', (nome_input, uc_busca))
-                
-                conexao.commit()
-                conexao.close()
-                
-                st.session_state['msg_uc'] = "✅ Cadastro da UC realizado com sucesso!"
-                st.rerun()
-
-    with tab_cad_lote:
-        st.info("💡 Crie uma planilha no Excel com o cabeçalho idêntico à tabela abaixo e faça o upload.")
-        
-        df_exemplo = pd.DataFrame({
-            "unidade_consumidora": ["40190245", "4065530"],
-            "nome_unidade": ["ETA Bauru", "Promocao Social"],
-            "atividade": ["Água", "Administrativa"],
-            "classificacao": ["Tarifa Azul-A4", "Convencional B3"],
-            "demanda_contratada_ponta": [275.0, 0.0],
-            "demanda_contratada_fponta": [275.0, 0.0],
-            "status": ["ATIVA", "INATIVA"]
-        })
-        
-        st.dataframe(df_exemplo, hide_index=True, use_container_width=True)
-        
-        arquivo_ucs_excel = st.file_uploader("Selecione a planilha de UCs (.xlsx)", type=["xlsx"], key="upload_uc")
-        
-        if arquivo_ucs_excel is not None:
-            if st.button("🚀 Processar e Cadastrar Unidades", type="primary"):
-                try:
-                    df_ucs = pd.read_excel(arquivo_ucs_excel)
-                    conexao = obter_conexao()
-                    c = conexao.cursor()
+                    c.execute('''
+                        INSERT INTO cadastro_uc (unidade_consumidora, nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (unidade_consumidora) DO UPDATE SET 
+                        nome_unidade = EXCLUDED.nome_unidade,
+                        atividade = EXCLUDED.atividade,
+                        classificacao = EXCLUDED.classificacao,
+                        demanda_contratada_ponta = EXCLUDED.demanda_contratada_ponta,
+                        demanda_contratada_fponta = EXCLUDED.demanda_contratada_fponta,
+                        status = EXCLUDED.status;
+                    ''', (uc_busca, nome_input, ativ_input, classif_input, dc_p, dc_fp, status_input))
                     
-                    inseridas = 0
+                    c.execute('''
+                        UPDATE faturas_cpfl 
+                        SET nome_unidade = %s 
+                        WHERE unidade_consumidora = %s;
+                    ''', (nome_input, uc_busca))
                     
-                    for index, row in df_ucs.iterrows():
-                        uc = str(row.get('unidade_consumidora', '')).strip()
-                        
-                        if not uc or uc == 'nan':
-                            continue
-                        
-                        nome = str(row.get('nome_unidade', '')).strip()
-                        ativ = str(row.get('atividade', 'Administrativa')).strip()
-                        classif = str(row.get('classificacao', 'Tarifa Azul-A4')).strip()
-                        status_uc = str(row.get('status', 'ATIVA')).strip().upper()
-                        
-                        try:
-                            dc_p = float(row.get('demanda_contratada_ponta', 0.0))
-                        except:
-                            dc_p = 0.0
-                            
-                        try:
-                            dc_fp = float(row.get('demanda_contratada_fponta', 0.0))
-                        except:
-                            dc_fp = 0.0
-
-                        if "Verde" in classif:
-                            dc_p = 0.0
-                        elif "B3" in classif:
-                            dc_p = 0.0
-                            dc_fp = 0.0
-                            
-                        c.execute('''
-                            INSERT INTO cadastro_uc (unidade_consumidora, nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s)
-                            ON CONFLICT (unidade_consumidora) DO UPDATE SET 
-                            nome_unidade = EXCLUDED.nome_unidade,
-                            atividade = EXCLUDED.atividade,
-                            classificacao = EXCLUDED.classificacao,
-                            demanda_contratada_ponta = EXCLUDED.demanda_contratada_ponta,
-                            demanda_contratada_fponta = EXCLUDED.demanda_contratada_fponta,
-                            status = EXCLUDED.status;
-                        ''', (uc, nome, ativ, classif, dc_p, dc_fp, status_uc))
-                        c.execute('''
-                            UPDATE faturas_cpfl 
-                            SET nome_unidade = %s 
-                            WHERE unidade_consumidora = %s;
-                        ''', (nome, uc))
-
-                        inseridas += 1
-                        
                     conexao.commit()
                     conexao.close()
                     
-                    st.success(f"✅ Lote processado! **{inseridas}** UCs cadastradas ou atualizadas no sistema.")
-                    st.balloons()
-                    
-                except Exception as e:
-                    st.error(f"Erro ao processar a planilha. Verifique se o nome das colunas está correto. Detalhe: {e}")
+                    st.session_state['msg_uc'] = "✅ Cadastro da UC realizado com sucesso!"
+                    st.rerun()
 
-        st.divider()
-        st.markdown("###### 🔄 Sincronização de Histórico")
-        st.info("Use este botão para corrigir o nome, atividade e classe de TODAS as faturas antigas de uma só vez.")
-        
-        if st.button("🔄 Sincronizar Faturas Antigas", type="primary"):
-            try:
-                conexao = obter_conexao()
-                c = conexao.cursor()
-                c.execute('''
-                    UPDATE faturas_cpfl
-                    SET nome_unidade = cadastro_uc.nome_unidade,
-                        atividade = cadastro_uc.atividade,
-                        classificacao = cadastro_uc.classificacao
-                    FROM cadastro_uc
-                    WHERE faturas_cpfl.unidade_consumidora = cadastro_uc.unidade_consumidora;
-                ''')
-                linhas_afetadas = c.rowcount
-                conexao.commit()
-                conexao.close()
-                carregar_dados.clear()
-                st.success(f"✅ Sincronização concluída! {linhas_afetadas} faturas foram atualizadas.")
-            except Exception as e:
-                st.error(f"Erro ao sincronizar: {e}")
+    st.divider()
+    st.markdown("###### 🔄 Sincronização de Histórico")
+    st.info("Use este botão para corrigir o nome, atividade e classe de TODAS as faturas antigas de uma só vez.")
+    
+    if st.button("🔄 Sincronizar Faturas Antigas", type="primary"):
+        try:
+            conexao = obter_conexao()
+            c = conexao.cursor()
+            c.execute('''
+                UPDATE faturas_cpfl
+                SET nome_unidade = cadastro_uc.nome_unidade,
+                    atividade = cadastro_uc.atividade,
+                    classificacao = cadastro_uc.classificacao
+                FROM cadastro_uc
+                WHERE faturas_cpfl.unidade_consumidora = cadastro_uc.unidade_consumidora;
+            ''')
+            linhas_afetadas = c.rowcount
+            conexao.commit()
+            conexao.close()
+            carregar_dados.clear()
+            st.success(f"✅ Sincronização concluída! {linhas_afetadas} faturas foram atualizadas.")
+        except Exception as e:
+            st.error(f"Erro ao sincronizar: {e}")

@@ -1192,14 +1192,14 @@ with aba_espelho:
 
                 # --- BLOCO COMUM PARA TODAS AS TARIFAS: IMPOSTOS ---
                 with tab_impostos:
-                    c1, c2 = st.columns(2)
+                    c1, c2, c3 = st.columns(3)
                     with c1:
                         st.markdown("**🏛️ Encargos e Tributos**")
                         ed_cip = st.number_input("CIP (R$)", value=float(f['CIP']), format="%.2f", key=f"cip_{id_fatura}")
                         ed_pis = st.number_input("PIS (R$)", value=float(f['Valor PIS']), format="%.2f", key=f"pis_{id_fatura}")
                         ed_cofins = st.number_input("COFINS (R$)", value=float(f['Valor COFINS']), format="%.2f", key=f"cofins_{id_fatura}")
                         ed_icms = st.number_input("ICMS (R$)", value=float(f['Valor ICMS']), format="%.2f", key=f"icms_{id_fatura}")
-                    with c2:
+                    with c3:
                         st.markdown("**🏁 Resumo Financeiro**")
                         lista_bandeiras = ["VERDE", "AMARELA", "VERMELHA I", "VERMELHA II", "ESCASSEZ HÍDRICA"]
                         bandeira_atual = f['Bandeira'] if f['Bandeira'] in lista_bandeiras else "VERDE"

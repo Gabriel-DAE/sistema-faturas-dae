@@ -1531,22 +1531,24 @@ with aba_config:
     st.markdown("###### 🔄 Correção do Banco de Dados")
     st.info("Use este botão para corrigir o nome, atividade e classe de TODAS as faturas antigas de uma só vez.")
     
-    if st.button("🔄 Corrigir Faturas Antigas", type="primary"):
-        try:
-            conexao = obter_conexao()
-            c = conexao.cursor()
-            c.execute('''
-                UPDATE faturas_cpfl
-                SET nome_unidade = cadastro_uc.nome_unidade,
-                    atividade = cadastro_uc.atividade,
-                    classificacao = cadastro_uc.classificacao
-                FROM cadastro_uc
-                WHERE faturas_cpfl.unidade_consumidora = cadastro_uc.unidade_consumidora;
-            ''')
-            linhas_afetadas = c.rowcount
-            conexao.commit()
-            conexao.close()
-            carregar_dados.clear()
-            st.success(f"✅ Sincronização concluída! {linhas_afetadas} faturas foram atualizadas.")
-        except Exception as e:
-            st.error(f"Erro ao sincronizar: {e}")
+    col_btn, _, _ = st.columns([1, 3, 3])
+    with col_btn:
+        if st.button("🔄 Corrigir Faturas Antigas", type="primary"):
+            try:
+                conexao = obter_conexao()
+                c = conexao.cursor()
+                c.execute('''
+                    UPDATE faturas_cpfl
+                    SET nome_unidade = cadastro_uc.nome_unidade,
+                        atividade = cadastro_uc.atividade,
+                        classificacao = cadastro_uc.classificacao
+                    FROM cadastro_uc
+                    WHERE faturas_cpfl.unidade_consumidora = cadastro_uc.unidade_consumidora;
+                ''')
+                linhas_afetadas = c.rowcount
+                conexao.commit()
+                conexao.close()
+                carregar_dados.clear()
+                st.success(f"✅ Sincronização concluída! {linhas_afetadas} faturas foram atualizadas.")
+            except Exception as e:
+                st.error(f"Erro ao sincronizar: {e}")

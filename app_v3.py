@@ -1180,7 +1180,7 @@ with aba_espelho:
                     tab_cons, tab_impostos = st.tabs(["📊 Consumo", "💰 Impostos e Totais"])
                     
                     with tab_cons:
-                        c1, _ = st.columns([2, 2])
+                        c1, _ = st.columns([1, 3])
                         with c1:
                             st.markdown("**⚡ Consumo Ativo (kWh)**")
                             ed_cons_fp = st.number_input("Quantidade Total", value=float(f['Total Consumo']), format="%.2f", key=f"c_b3_{id_fatura}")

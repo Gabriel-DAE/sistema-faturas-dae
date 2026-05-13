@@ -1533,7 +1533,7 @@ with aba_config:
     
     col_btn, _, _ = st.columns([1, 3, 3])
     with col_btn:
-        if st.button("🔄 Corrigir Faturas Antigas", type="primary"):
+        if st.form_submit_button("🔄 Corrigir Faturas Antigas", type="primary", use_container_width=True):
             try:
                 conexao = obter_conexao()
                 c = conexao.cursor()

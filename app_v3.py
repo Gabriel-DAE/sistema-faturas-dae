@@ -1433,7 +1433,9 @@ with aba_config:
     tab_cad_manual, tab_cad_lote = st.tabs(["✍️ Cadastro Manual", "📊 Upload em Lote (Excel)"])
     
     with tab_cad_manual:
-        uc_busca = st.text_input("Buscar UC (Ex: 40190245)", value="").strip()
+        a1, a2, a3 = st.columns(3)
+        with a1:
+            uc_busca = st.text_input("Buscar UC (Ex: 40190245)", value="").strip()
         
         if uc_busca:
             conexao = obter_conexao()

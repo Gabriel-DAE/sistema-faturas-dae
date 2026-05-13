@@ -916,7 +916,7 @@ with aba_controle:
         # --- SUB-ABA 3: VENCIMENTOS (TABELA QUE FORMATAMOS ANTES) ---
         with tab_vencimentos:
             df_venc = df_mes.groupby('Vencimento')['Valor Total Fatura'].agg(['count', 'sum']).reset_index()
-            df_venc.columns = ['Data de Vencimento', 'Qtd Faturas', 'Valor Total']
+            df_venc.columns = ['Data de Vencimento', 'Quantidade Faturas', 'Valor Total']
             df_venc['Data_Ord'] = pd.to_datetime(df_venc['Data de Vencimento'], format='%d/%m/%Y')
             df_venc = df_venc.sort_values('Data_Ord').drop(columns=['Data_Ord'])
             df_venc['Valor Total'] = df_venc['Valor Total'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
@@ -1097,7 +1097,7 @@ with aba_espelho:
                         c1, c2 = st.columns(2)
                         with c1:
                             st.markdown("**⚡ Consumo Ponta (kWh)**")
-                            ed_cons_p = st.number_input("Qtd Ponta", value=float(f['Consumo Ponta']), format="%.2f", key=f"cp_a_{id_fatura}")
+                            ed_cons_p = st.number_input("Quantidade Ponta", value=float(f['Consumo Ponta']), format="%.2f", key=f"cp_a_{id_fatura}")
                             ed_val_p = st.number_input("Valor Ponta (R$)", value=float(f['Valor Cons. Ponta TUSD'] + f['Valor Cons. Ponta TE']), format="%.2f", key=f"vp_a_{id_fatura}")
                             st.markdown("---")
                             st.markdown("**📉 Demandas Contratadas (kW)**")
@@ -1105,7 +1105,7 @@ with aba_espelho:
                             ed_dc_fp = st.number_input("Contratada F. Ponta", value=float(f['Dem. Contr. F.Ponta']), format="%.2f", key=f"dcfp_a_{id_fatura}")
                         with c2:
                             st.markdown("**⚡ Consumo Fora Ponta (kWh)**")
-                            ed_cons_fp = st.number_input("Qtd Fora Ponta", value=float(f['Consumo F.Ponta']), format="%.2f", key=f"cfp_a_{id_fatura}")
+                            ed_cons_fp = st.number_input("Quantidade Fora Ponta", value=float(f['Consumo F.Ponta']), format="%.2f", key=f"cfp_a_{id_fatura}")
                             ed_val_fp = st.number_input("Valor F. Ponta (R$)", value=float(f['Valor Cons. F.Ponta TUSD'] + f['Valor Cons. F.Ponta TE']), format="%.2f", key=f"vfp_a_{id_fatura}")
                             st.markdown("---")
                             st.markdown("**📝 Demandas Registradas e Isentas (kW)**")
@@ -1114,12 +1114,12 @@ with aba_espelho:
                                 ed_dr_p = st.number_input("Registrada Ponta", value=float(f['Dem. Reg. Ponta']), format="%.2f", key=f"drp_a_{id_fatura}")
                                 ed_val_dr_p = st.number_input("Valor Reg. Ponta", value=float(f['Valor Dem. Ponta']), format="%.2f", key=f"vdrp_a_{id_fatura}")
                                 ed_di_p = st.number_input("Isenta Ponta", value=float(f['Dem. Isenta Ponta']), format="%.2f", key=f"dip_a_{id_fatura}")
-                                ed_v_di_p = st.number_input("Valor Isenta P.", value=float(f['Valor Dem. Isenta Ponta']), format="%.2f", key=f"vdip_a_{id_fatura}")
+                                ed_v_di_p = st.number_input("Valor Isenta Ponta", value=float(f['Valor Dem. Isenta Ponta']), format="%.2f", key=f"vdip_a_{id_fatura}")
                             with col_fp:
-                                ed_dr_fp = st.number_input("Registrada F.P", value=float(f['Dem. Reg. F.Ponta']), format="%.2f", key=f"drfp_a_{id_fatura}")
-                                ed_val_dr_fp = st.number_input("Valor Reg. F.P", value=float(f['Valor Dem. F.Ponta']), format="%.2f", key=f"vdrfp_a_{id_fatura}")
-                                ed_di_fp = st.number_input("Isenta F.P", value=float(f['Dem. Isenta F.Ponta']), format="%.2f", key=f"difp_a_{id_fatura}")
-                                ed_v_di_fp = st.number_input("Valor Isenta F.P", value=float(f['Valor Dem. Isenta F.Ponta']), format="%.2f", key=f"vdifp_a_{id_fatura}")
+                                ed_dr_fp = st.number_input("Registrada F.Ponta", value=float(f['Dem. Reg. F.Ponta']), format="%.2f", key=f"drfp_a_{id_fatura}")
+                                ed_val_dr_fp = st.number_input("Valor Reg. F.Ponta", value=float(f['Valor Dem. F.Ponta']), format="%.2f", key=f"vdrfp_a_{id_fatura}")
+                                ed_di_fp = st.number_input("Isenta F.Ponta", value=float(f['Dem. Isenta F.Ponta']), format="%.2f", key=f"difp_a_{id_fatura}")
+                                ed_v_di_fp = st.number_input("Valor Isenta F.Ponta", value=float(f['Valor Dem. Isenta F.Ponta']), format="%.2f", key=f"vdifp_a_{id_fatura}")
 
                     with tab_ultrap:
                         c1, c2 = st.columns(2)
@@ -1127,14 +1127,14 @@ with aba_espelho:
                             st.markdown("**🚫 Ultrapassagem (kW)**")
                             ed_ult_p = st.number_input("Ultrapassagem Ponta", value=float(f['Dem. Ultrap. Ponta']), format="%.2f", key=f"ultp_a_{id_fatura}")
                             ed_v_ult_p = st.number_input("Valor Ultrap. Ponta", value=float(f['Valor Dem. Ultrap. Ponta']), format="%.2f", key=f"vultp_a_{id_fatura}")
-                            ed_ult_fp = st.number_input("Ultrapassagem F.P", value=float(f['Dem. Ultrap. F.Ponta']), format="%.2f", key=f"ultfp_a_{id_fatura}")
-                            ed_v_ult_fp = st.number_input("Valor Ultrap. F.P", value=float(f['Valor Dem. Ultrap. F.Ponta']), format="%.2f", key=f"vultfp_a_{id_fatura}")
+                            ed_ult_fp = st.number_input("Ultrapassagem F.Ponta", value=float(f['Dem. Ultrap. F.Ponta']), format="%.2f", key=f"ultfp_a_{id_fatura}")
+                            ed_v_ult_fp = st.number_input("Valor Ultrap. F.Ponta", value=float(f['Valor Dem. Ultrap. F.Ponta']), format="%.2f", key=f"vultfp_a_{id_fatura}")
                         with c2:
                             st.markdown("**⚛️ Reativo Exc.**")
                             ed_reat_p = st.number_input("Reativo Ponta", value=float(f['Dem. Reat. Ponta']), format="%.2f", key=f"reatp_a_{id_fatura}")
                             ed_v_reat_p = st.number_input("Valor Reativo Ponta", value=float(f['Valor Dem. Reat. Ponta']), format="%.2f", key=f"vreatp_a_{id_fatura}")
-                            ed_reat_fp = st.number_input("Reativo F.P", value=float(f['Dem. Reat. F.Ponta']), format="%.2f", key=f"reatfp_a_{id_fatura}")
-                            ed_v_reat_fp = st.number_input("Valor Reativo F.P", value=float(f['Valor Dem. Reat. F.Ponta']), format="%.2f", key=f"vreatfp_a_{id_fatura}")
+                            ed_reat_fp = st.number_input("Reativo F.Ponta", value=float(f['Dem. Reat. F.Ponta']), format="%.2f", key=f"reatfp_a_{id_fatura}")
+                            ed_v_reat_fp = st.number_input("Valor Reativo F.Ponta", value=float(f['Valor Dem. Reat. F.Ponta']), format="%.2f", key=f"vreatfp_a_{id_fatura}")
 
                 # --- LÓGICA TARIFA VERDE ---
                 elif "Verde" in str(classe):
@@ -1145,11 +1145,11 @@ with aba_espelho:
                         c1, c2 = st.columns(2)
                         with c1:
                             st.markdown("**⚡ Consumo Ponta (kWh)**")
-                            ed_cons_p = st.number_input("Qtd Ponta", value=float(f['Consumo Ponta']), format="%.2f", key=f"cp_v_{id_fatura}")
+                            ed_cons_p = st.number_input("Quantidade Ponta", value=float(f['Consumo Ponta']), format="%.2f", key=f"cp_v_{id_fatura}")
                             ed_val_p = st.number_input("Valor Ponta (R$)", value=float(f['Valor Cons. Ponta TUSD'] + f['Valor Cons. Ponta TE']), format="%.2f", key=f"vp_v_{id_fatura}")
                         with c2:
                             st.markdown("**⚡ Consumo Fora Ponta (kWh)**")
-                            ed_cons_fp = st.number_input("Qtd F.Ponta", value=float(f['Consumo F.Ponta']), format="%.2f", key=f"cfp_v_{id_fatura}")
+                            ed_cons_fp = st.number_input("Quantidade F.Ponta", value=float(f['Consumo F.Ponta']), format="%.2f", key=f"cfp_v_{id_fatura}")
                             ed_val_fp = st.number_input("Valor F.Ponta (R$)", value=float(f['Valor Cons. F.Ponta TUSD'] + f['Valor Cons. F.Ponta TE']), format="%.2f", key=f"vfp_v_{id_fatura}")
                             st.markdown("---")
                             st.markdown("**📉 Demanda Única (kW)**")
@@ -1206,7 +1206,7 @@ with aba_espelho:
                         
                         ed_bandeira = st.selectbox("Bandeira", lista_bandeiras, index=lista_bandeiras.index(bandeira_atual), key=f"band_{id_fatura}")
                         ed_val_band = st.number_input("Valor Bandeira (R$)", value=float(f['Adicional Bandeira']), format="%.2f", key=f"valband_{id_fatura}")
-                        ed_total = st.number_input("TOTAL DA FATURA", value=float(f['Valor Total Fatura']), format="%.2f", key=f"total_{id_fatura}")
+                        ed_total = st.number_input("TOTAL DA FATURA (R$)", value=float(f['Valor Total Fatura']), format="%.2f", key=f"total_{id_fatura}")
 
                 # --- BOTÃO SALVAR CENTRALIZADO ---
                 st.write("")

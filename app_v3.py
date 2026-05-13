@@ -1043,13 +1043,20 @@ with aba_dados:
         st.info("Nenhum dado encontrado.")
 
 # ==========================================
-# ABA ESPELHO DE FATURA (VERSÃO FINAL UNIFICADA)
+# ABA ESPELHO DE FATURA (VERSÃO FINAL UNIFICADA E CORRIGIDA)
 # ==========================================
 with aba_espelho:
-    st.markdown("##### 📑 Espelho Técnico e Edição de Fatura")
+    c_esp1, c_esp2 = st.columns([4, 1])
+    c_esp1.markdown("##### 📑 Espelho Técnico e Edição de Fatura")
+    
+    # Botão salva-vidas para forçar a limpeza do cache caso altere algo direto no banco
+    if c_esp2.button("🔄 Atualizar Dados", use_container_width=True):
+        carregar_dados.clear()
+        st.rerun()
+
     if 'msg_sucesso_espelho' in st.session_state:
         st.success(st.session_state['msg_sucesso_espelho'])
-        st.balloons() # Adiciona um efeito visual de comemoração
+        st.balloons() 
         del st.session_state['msg_sucesso_espelho']
     
     df_espelho = carregar_dados()
@@ -1076,13 +1083,13 @@ with aba_espelho:
             st.divider()
             
             with st.form("form_edicao_espelho"):
-                col_info1, col_info2, col_info3 = st.columns(3)
+                col_info1, col_info2, col_info3, col_info4 = st.columns(4)
                 col_info1.markdown(f"**Unidade:** {f['Nome da Unidade']}")
                 col_info2.markdown(f"**Classificação:** {classe}")
                 col_info3.markdown(f"**Vencimento:** {f['Vencimento']}")
+                col_info4.markdown(f"**ID Banco:** `{id_fatura}`") # Ajuda a auditar duplicações
 
                 # --- ZERAMENTO DE SEGURANÇA ---
-                # Garante que variáveis não usadas por uma tarifa cheguem zeradas no banco
                 ed_cons_p = ed_val_p = ed_cons_fp = ed_val_fp = 0.0
                 ed_dc_p = ed_dc_fp = ed_dr_p = ed_val_dr_p = ed_dr_fp = ed_val_dr_fp = 0.0
                 ed_di_p = ed_v_di_p = ed_di_fp = ed_v_di_fp = 0.0
@@ -1178,19 +1185,19 @@ with aba_espelho:
                     st.subheader("🏠 Detalhamento e Ajuste - Convencional B3")
                     st.info("💡 Unidade do Grupo B: Sem cobrança de demanda ou reativo.")
                     
-                    # Note que a B3 só tem 2 abas!
                     tab_cons, tab_impostos = st.tabs(["📊 Consumo", "💰 Impostos e Totais"])
                     
                     with tab_cons:
                         c1, _ = st.columns([2, 2])
                         with c1:
                             st.markdown("**⚡ Consumo Ativo (kWh)**")
-                            ed_cons_fp = st.number_input("Quantidade Total", value=float(f['Consumo F.Ponta']), format="%.2f", key="c_b3")
-                            ed_val_fp = st.number_input("Valor Total do Consumo (R$)", value=float(f['Valor Cons. F.Ponta TUSD'] + f['Valor Cons. F.Ponta TE']), format="%.2f", key="vc_b3")
+                            # B3 Puxa o 'Total Consumo' para evitar que sujeiras na linha Ponta sumam com o valor
+                            ed_cons_fp = st.number_input("Quantidade Total", value=float(f['Total Consumo']), format="%.2f", key="c_b3")
+                            ed_val_fp = st.number_input("Valor Total do Consumo (R$)", value=float(f['Valor Total Consumo']), format="%.2f", key="vc_b3")
 
                 else:
                     st.warning("Tipo de tarifa não configurada no espelho.")
-                    tab_impostos = st.container() # Cria um bloco invisível para não dar erro
+                    tab_impostos = st.container()
 
                 # --- BLOCO COMUM PARA TODAS AS TARIFAS: IMPOSTOS ---
                 with tab_impostos:
@@ -1218,9 +1225,12 @@ with aba_espelho:
                         try:
                             conexao = obter_conexao()
                             cursor = conexao.cursor()
+                            
+                            # O PULO DO GATO: As colunas TE recebem 0.0 na força bruta para impedir o loop de soma
                             sql_update = """
                                 UPDATE faturas_cpfl SET 
-                                    consumo_ponta=%s, valor_cons_ponta_tusd=%s, consumo_fora_ponta=%s, valor_cons_fponta_tusd=%s,
+                                    consumo_ponta=%s, valor_cons_ponta_tusd=%s, valor_cons_ponta_te=0.0,
+                                    consumo_fora_ponta=%s, valor_cons_fponta_tusd=%s, valor_cons_fponta_te=0.0,
                                     demanda_contratada_ponta=%s, demanda_contratada_fponta=%s,
                                     demanda_registrada_ponta=%s, valor_dem_ponta=%s,
                                     demanda_registrada_fora_ponta=%s, valor_dem_fponta=%s,
@@ -1247,8 +1257,8 @@ with aba_espelho:
                             conexao.close()
                             
                             st.session_state['msg_sucesso_espelho'] = "✅ Alterações salvas com sucesso! Os dados foram atualizados no banco."
-                            carregar_dados.clear() # Limpa o cache para o Dash ler o novo valor
-                            st.rerun() # Recarrega a página
+                            carregar_dados.clear() # Limpa o cache para recarregar o novo valor
+                            st.rerun() 
                             
                         except Exception as e:
                             st.error(f"🚨 Erro ao salvar no banco de dados: {e}")

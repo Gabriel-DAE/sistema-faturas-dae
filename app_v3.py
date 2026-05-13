@@ -1046,8 +1046,7 @@ with aba_dados:
 # ABA ESPELHO DE FATURA (CORREÇÃO DE ESTADO/CACHE DA TELA)
 # ==========================================
 with aba_espelho:
-    c_esp1, c_esp2 = st.columns([4, 1])
-    c_esp1.markdown("##### 📑 Espelho Técnico e Edição de Fatura")
+    st.markdown("##### 📑 Espelho Técnico e Edição de Fatura")
 
     if 'msg_sucesso_espelho' in st.session_state:
         st.success(st.session_state['msg_sucesso_espelho'])
@@ -1078,12 +1077,11 @@ with aba_espelho:
             st.divider()
             
             with st.form("form_edicao_espelho"):
-                col_info1, col_info2, col_info3, col_info4 = st.columns(4)
+                col_info1, col_info2, col_info3 = st.columns(3)
                 col_info1.markdown(f"**Unidade:** {f['Nome da Unidade']}")
                 col_info2.markdown(f"**Classificação:** {classe}")
                 col_info3.markdown(f"**Vencimento:** {f['Vencimento']}")
-                col_info4.markdown(f"**ID Banco:** `{id_fatura}`")
-
+                
                 ed_cons_p = ed_val_p = ed_cons_fp = ed_val_fp = 0.0
                 ed_dc_p = ed_dc_fp = ed_dr_p = ed_val_dr_p = ed_dr_fp = ed_val_dr_fp = 0.0
                 ed_di_p = ed_v_di_p = ed_di_fp = ed_v_di_fp = 0.0

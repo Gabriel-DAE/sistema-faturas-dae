@@ -1430,7 +1430,9 @@ with aba_config:
     st.markdown("##### ⚙️ Configurações Gerais do Sistema")
     st.markdown("###### 🏢 Cadastro Manual da Unidade Consumidora")
     
-    uc_busca = st.text_input("Buscar UC (Ex: 40190245)", value="").strip()
+    col, _, _, _ = st.columns(4)
+    with col:
+        uc_busca = st.text_input("Buscar UC (Ex: 40190245)", value="").strip()
     
     if uc_busca:
         conexao = obter_conexao()

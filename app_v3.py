@@ -1488,7 +1488,7 @@ with aba_config:
             del st.session_state['msg_uc']
         
         # --- BOTÃO SALVAR ---
-        col_btn, _, _ = st.columns([1, 2, 2])
+        col_btn, _, _ = st.columns([1, 2.5, 2.5])
         with col_btn:
             if st.form_submit_button("Salvar Cadastro da UC", type="primary", use_container_width=True):
                 if ativ_input is None or classif_input is None or status_input is None or not nome_input:
@@ -1528,10 +1528,10 @@ with aba_config:
                     st.rerun()
 
     st.divider()
-    st.markdown("###### 🔄 Sincronização de Histórico")
+    st.markdown("###### 🔄 Correção do Banco de Dados")
     st.info("Use este botão para corrigir o nome, atividade e classe de TODAS as faturas antigas de uma só vez.")
     
-    if st.button("🔄 Sincronizar Faturas Antigas", type="primary"):
+    if st.button("🔄 Corrigir Faturas Antigas", type="primary"):
         try:
             conexao = obter_conexao()
             c = conexao.cursor()

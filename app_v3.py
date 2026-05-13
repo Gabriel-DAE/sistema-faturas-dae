@@ -1488,7 +1488,7 @@ with aba_config:
             del st.session_state['msg_uc']
         
         # --- BOTÃO SALVAR ---
-        col_btn, _, _ = st.columns([1, 2.5, 2.5])
+        col_btn, _, _ = st.columns([1, 3, 3])
         with col_btn:
             if st.form_submit_button("Salvar Cadastro da UC", type="primary", use_container_width=True):
                 if ativ_input is None or classif_input is None or status_input is None or not nome_input:

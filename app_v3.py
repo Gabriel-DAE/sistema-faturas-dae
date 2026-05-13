@@ -1475,8 +1475,10 @@ with aba_config:
                 st.info("💡 Na **Convencional B3**, não existe demanda contratada. Pode deixar os campos zerados.")
             
             is_b3 = True if classif_input and "B3" in classif_input else False
-            dc_p = st.number_input("Demanda Contratada Ponta (kW)", value=float(v_dc_p), format="%.2f", disabled=is_b3)
-            dc_fp = st.number_input("Demanda Contratada F.Ponta (kW)", value=float(v_dc_fp), format="%.2f", disabled=is_b3)
+            a1, a2, a3 = st.columns(3)
+            with a1:
+                dc_p = st.number_input("Demanda Contratada Ponta (kW)", value=float(v_dc_p), format="%.2f", disabled=is_b3)
+                dc_fp = st.number_input("Demanda Contratada F.Ponta (kW)", value=float(v_dc_fp), format="%.2f", disabled=is_b3)
             
             st.write("")
             if 'msg_uc' in st.session_state:

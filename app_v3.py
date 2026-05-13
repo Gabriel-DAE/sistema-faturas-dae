@@ -876,7 +876,7 @@ with aba_controle:
                         use_container_width=True # Agora ele usa a largura total APENAS da coluna 1
                     )
             else:
-                st.success(f"✅ Não existe pendência de envio da referência {mes_auditoria}.")
+                st.success(f"✅ Não existe pendência de envio das faturas carregadas do mês {mes_auditoria}.")
 
             # --- GESTÃO DE ENVIOS (REVERSÃO) ---
             st.divider()

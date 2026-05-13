@@ -1452,19 +1452,24 @@ with aba_config:
             
         with st.form("form_uc"):
             nome_input = st.text_input("Nome da Instalação/Unidade", value=v_nome, placeholder="Ex: Poço 15 - Geisel")
-            
-            lista_atividades = ["Administrativa", "Água", "Esgoto"]
-            # MUDANÇA 2: Se não achar a atividade na lista (ou for None), o index vira None
-            idx_ativ = lista_atividades.index(v_ativ) if v_ativ in lista_atividades else None
-            ativ_input = st.selectbox("Atividade", lista_atividades, index=idx_ativ, placeholder="Selecione...")
-            
-            lista_classes = ["Tarifa Azul-A4", "Tarifa Verde-A4", "Convencional B3"]
-            idx_class = lista_classes.index(v_class) if v_class in lista_classes else None
-            classif_input = st.selectbox("Classificação", lista_classes, index=idx_class, placeholder="Selecione...")
 
-            lista_status = ["ATIVA", "INATIVA"]
-            idx_status = lista_status.index(v_status) if v_status in lista_status else None
-            status_input = st.selectbox("Status de Operação", lista_status, index=idx_status, placeholder="Selecione...")
+            col_ativ, col_class, col_status = st.columns(3)
+
+            with col_ativ:
+                lista_atividades = ["Administrativa", "Água", "Esgoto"]
+                # MUDANÇA 2: Se não achar a atividade na lista (ou for None), o index vira None
+                idx_ativ = lista_atividades.index(v_ativ) if v_ativ in lista_atividades else None
+                ativ_input = st.selectbox("Atividade", lista_atividades, index=idx_ativ, placeholder="Selecione...")
+
+            with col_class:
+                lista_classes = ["Tarifa Azul-A4", "Tarifa Verde-A4", "Convencional B3"]
+                idx_class = lista_classes.index(v_class) if v_class in lista_classes else None
+                classif_input = st.selectbox("Classificação", lista_classes, index=idx_class, placeholder="Selecione...")
+
+            with col_status:
+                lista_status = ["ATIVA", "INATIVA"]
+                idx_status = lista_status.index(v_status) if v_status in lista_status else None
+                status_input = st.selectbox("Status de Operação", lista_status, index=idx_status, placeholder="Selecione...")
             
             # MUDANÇA 3: Adicionamos "classif_input and" para não dar erro quando o campo estiver vazio
             if classif_input and "Verde" in classif_input:

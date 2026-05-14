@@ -677,16 +677,25 @@ with aba_dash:
         st.markdown("##### 📉 Análise de Demanda: Registrada vs Contratada (Fora Ponta)")
         st.markdown("💡 **Dica:** Esta análise revela o comportamento real frente ao contrato. Selecione uma **Unidade Consumidora específica** no gráfico acima para visualizar o teto contratual individualizado.")
 
-        # 1. Prepara os dados agrupando cronologicamente
-        # Usamos o 'df_filtrado_dash' para que ele obedeça aos filtros de Ano, Mês e UC que o usuário clicou
-        df_demanda = df_filtrado_dash.groupby('Data Referência Oculta').agg({
+        # 1. Cria um DataFrame totalmente filtrado (obedecendo a TODOS os cliques ativos)
+        df_demanda_filtrado = df_base_dash.copy()
+        
+        if st.session_state.clique_ano:
+            df_demanda_filtrado = df_demanda_filtrado[df_demanda_filtrado['Ano'].isin(st.session_state.clique_ano)]
+        if st.session_state.clique_mes:
+            df_demanda_filtrado = df_demanda_filtrado[df_demanda_filtrado['Mes_Nome'].isin(st.session_state.clique_mes)]
+        if st.session_state.clique_uc:
+            df_demanda_filtrado = df_demanda_filtrado[df_demanda_filtrado['Nome da Unidade'].isin(st.session_state.clique_uc)]
+
+        # 2. Prepara os dados agrupando cronologicamente
+        df_demanda = df_demanda_filtrado.groupby('Data Referência Oculta').agg({
             'Dem. Reg. F.Ponta': 'sum',
             'Dem. Contr. F.Ponta': 'sum',
             'Mês Referência': 'first' # Mantém o rótulo do mês para o eixo X
         }).reset_index().sort_values('Data Referência Oculta')
 
         if not df_demanda.empty:
-            # 2. Constrói o Gráfico Combinado usando Graph Objects (go)
+            # 3. Constrói o Gráfico Combinado usando Graph Objects (go)
             fig_demanda = go.Figure()
 
             # Adiciona as Barras (Demanda Registrada/Utilizada)
@@ -714,7 +723,7 @@ with aba_dash:
                 )
             )
 
-            # 3. Estiliza o layout para ficar com aparência corporativa
+            # 4. Estiliza o layout para ficar com aparência corporativa
             fig_demanda.update_layout(
                 xaxis_title=None,
                 yaxis_title="Demanda (kW)",
@@ -729,7 +738,7 @@ with aba_dash:
                 )
             )
 
-            # O on_select está desativado aqui para atuar apenas como visualizador final
+            # Exibe o gráfico na tela
             st.plotly_chart(fig_demanda, use_container_width=True)
         else:
             st.info("Não há dados de demanda para os filtros selecionados.")

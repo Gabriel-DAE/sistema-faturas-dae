@@ -672,6 +672,68 @@ with aba_dash:
                 st.session_state.clique_uc = ucs_sel
                 st.rerun()
 
+        # --- GRÁFICO 4: Análise de Demanda (Registrada vs Contratada) ---
+        st.divider()
+        st.markdown("##### 📉 Análise de Demanda: Registrada vs Contratada (Fora Ponta)")
+        st.markdown("💡 **Dica:** Esta análise revela o comportamento real frente ao contrato. Selecione uma **Unidade Consumidora específica** no gráfico acima para visualizar o teto contratual individualizado.")
+
+        # 1. Prepara os dados agrupando cronologicamente
+        # Usamos o 'df_filtrado_dash' para que ele obedeça aos filtros de Ano, Mês e UC que o usuário clicou
+        df_demanda = df_filtrado_dash.groupby('Data Referência Oculta').agg({
+            'Dem. Reg. F.Ponta': 'sum',
+            'Dem. Contr. F.Ponta': 'sum',
+            'Mês Referência': 'first' # Mantém o rótulo do mês para o eixo X
+        }).reset_index().sort_values('Data Referência Oculta')
+
+        if not df_demanda.empty:
+            # 2. Constrói o Gráfico Combinado usando Graph Objects (go)
+            fig_demanda = go.Figure()
+
+            # Adiciona as Barras (Demanda Registrada/Utilizada)
+            fig_demanda.add_trace(
+                go.Bar(
+                    x=df_demanda['Mês Referência'], 
+                    y=df_demanda['Dem. Reg. F.Ponta'],
+                    name='Registrada (kW)', 
+                    marker_color='#0055A5',
+                    text=df_demanda['Dem. Reg. F.Ponta'],
+                    textposition='auto',
+                    texttemplate='%{text:.0f}'
+                )
+            )
+
+            # Adiciona a Linha (Demanda Contratada/Limite)
+            fig_demanda.add_trace(
+                go.Scatter(
+                    x=df_demanda['Mês Referência'], 
+                    y=df_demanda['Dem. Contr. F.Ponta'],
+                    mode='lines+markers', 
+                    name='Contratada (kW)', 
+                    line=dict(color='#FF4B4B', width=3, dash='dash'),
+                    marker=dict(size=8, color='#FF4B4B')
+                )
+            )
+
+            # 3. Estiliza o layout para ficar com aparência corporativa
+            fig_demanda.update_layout(
+                xaxis_title=None,
+                yaxis_title="Demanda (kW)",
+                barmode='group',
+                hovermode="x unified",
+                legend=dict(
+                    orientation="h",
+                    yanchor="bottom",
+                    y=1.02,
+                    xanchor="right",
+                    x=1
+                )
+            )
+
+            # O on_select está desativado aqui para atuar apenas como visualizador final
+            st.plotly_chart(fig_demanda, use_container_width=True)
+        else:
+            st.info("Não há dados de demanda para os filtros selecionados.")
+
 # ==========================================
 # ABA CONTROLE E AUDITORIA
 # ==========================================

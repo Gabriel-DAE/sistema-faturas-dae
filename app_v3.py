@@ -583,10 +583,14 @@ with aba_dash:
             fig_ano.update_traces(marker_color=cores_ano, texttemplate='%{y:.3s}', textposition='outside')
 
         evento_ano = col_graf1.plotly_chart(fig_ano, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
-        if evento_ano and len(evento_ano.selection.get("points", [])) > 0:
-            anos_sel = list(set([str(pt["x"]) for pt in evento_ano.selection["points"]]))
+        
+        if evento_ano:
+            # Captura os selecionados (pode ser vazio se o usuário desmarcar)
+            anos_sel = list(set([str(pt["x"]) for pt in evento_ano.selection.get("points", [])]))
+            # Se mudou em relação à memória, atualiza e recarrega
             if st.session_state.clique_ano != anos_sel:
-                st.session_state.clique_ano = anos_sel; st.rerun()
+                st.session_state.clique_ano = anos_sel
+                st.rerun()
 
         # --- GRÁFICO 2: Sazonalidade Mensal ---
         df_mes_ciclo = df_para_mes.groupby(['Mes_Num', 'Mes_Nome'])[param_coluna].sum().reset_index().sort_values('Mes_Num')
@@ -610,10 +614,12 @@ with aba_dash:
             fig_mes.add_hline(y=media_val, line_dash="dash", line_color="#FF4B4B", annotation_text=fmt, annotation_position="top right")
 
         evento_mes = col_graf2.plotly_chart(fig_mes, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
-        if evento_mes and len(evento_mes.selection.get("points", [])) > 0:
-            meses_sel = [str(pt["x"]) for pt in evento_mes.selection["points"]]
+        
+        if evento_mes:
+            meses_sel = list(set([str(pt["x"]) for pt in evento_mes.selection.get("points", [])]))
             if st.session_state.clique_mes != meses_sel:
-                st.session_state.clique_mes = meses_sel; st.rerun()
+                st.session_state.clique_mes = meses_sel
+                st.rerun()
 
         st.divider()
         
@@ -645,10 +651,11 @@ with aba_dash:
         
         evento_uc = st.plotly_chart(fig_unidades, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
-        if evento_uc and len(evento_uc.selection.get("points", [])) > 0:
-            ucs_sel = list(set([str(pt["x"]) for pt in evento_uc.selection["points"]]))
+        if evento_uc:
+            ucs_sel = list(set([str(pt["x"]) for pt in evento_uc.selection.get("points", [])]))
             if st.session_state.clique_uc != ucs_sel:
-                st.session_state.clique_uc = ucs_sel; st.rerun()
+                st.session_state.clique_uc = ucs_sel
+                st.rerun()
 
 # ==========================================
 # ABA CONTROLE E AUDITORIA

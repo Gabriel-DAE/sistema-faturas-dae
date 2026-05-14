@@ -536,34 +536,53 @@ with aba_dash:
                 st.session_state.clique_ano = []; st.session_state.clique_mes = []; st.session_state.clique_uc = []
                 st.rerun()
 
-        # 3. Lógica de Filtragem (Ajustada para Múltiplas Classes)
-        df_filtrado_dash = df_dash
+        # 3. Lógica de Filtragem (Ajustada para Cross-Filtering)
+        df_base_dash = df_dash.copy()
         
-        # Se a lista de filtro não estiver vazia, aplica o filtro usando .isin()
+        # Filtro Fixo (Classificação)
         if filtro_classe_fixo:
-            df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Classificação'].isin(filtro_classe_fixo)]
+            df_base_dash = df_base_dash[df_base_dash['Classificação'].isin(filtro_classe_fixo)]
             
-        # Aplica os cliques múltiplos (SHIFT)
+        # Filtros Dinâmicos: O gráfico de Ano usa os outros filtros, EXCETO o seu próprio clique
+        df_para_ano = df_base_dash.copy()
+        if st.session_state.clique_mes:
+            df_para_ano = df_para_ano[df_para_ano['Mes_Nome'].isin(st.session_state.clique_mes)]
+        if st.session_state.clique_uc:
+            df_para_ano = df_para_ano[df_para_ano['Nome da Unidade'].isin(st.session_state.clique_uc)]
+
+        # Filtro Global Completo (Para aplicar nos gráficos debaixo: Mês e UC)
+        df_filtrado_dash = df_para_ano.copy()
         if st.session_state.clique_ano:
             df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Ano'].isin(st.session_state.clique_ano)]
-        if st.session_state.clique_mes:
-            df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Mes_Nome'].isin(st.session_state.clique_mes)]
-        if st.session_state.clique_uc:
-            df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Nome da Unidade'].isin(st.session_state.clique_uc)]
 
         st.write("")
         col_graf1, col_graf2 = st.columns(2)
         
         # --- GRÁFICO 1: Análise Anual ---
-        df_ano = df_filtrado_dash.groupby('Ano')[param_coluna].sum().reset_index()
+        # ATENÇÃO: Usando 'df_para_ano' para que todas as barras continuem visíveis
+        df_ano = df_para_ano.groupby('Ano')[param_coluna].sum().reset_index()
+        
+        # Lógica de Cores (Destaque Dinâmico)
+        cores_ano = []
+        for ano in df_ano['Ano']:
+            if not st.session_state.clique_ano:
+                cores_ano.append("#0055A5") # Azul padrão se nada for clicado
+            elif ano in st.session_state.clique_ano:
+                cores_ano.append("#0055A5") # Azul para o ano clicado/selecionado
+            else:
+                cores_ano.append("#D3D3D3") # Cinza claro para os anos "apagados"
+                
+        # Removido o color_discrete_sequence fixo da criação do px.bar
         fig_ano = px.bar(df_ano, x='Ano', y=param_coluna, text_auto='.3s', 
-                         title=f"{param_nome} por Ano", color_discrete_sequence=["#0055A5"])
+                         title=f"{param_nome} por Ano")
+        
         fig_ano.update_layout(xaxis_title=None, yaxis_title=param_nome, xaxis={'type': 'category'})
         
+        # Aplica a lista de cores (marker_color) no update_traces
         if is_dinheiro:
-            fig_ano.update_traces(texttemplate='R$ %{y:.3s}', textposition='outside')
+            fig_ano.update_traces(marker_color=cores_ano, texttemplate='R$ %{y:.3s}', textposition='outside')
         else:
-            fig_ano.update_traces(texttemplate='%{y:.3s}', textposition='outside')
+            fig_ano.update_traces(marker_color=cores_ano, texttemplate='%{y:.3s}', textposition='outside')
 
         evento_ano = col_graf1.plotly_chart(fig_ano, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         

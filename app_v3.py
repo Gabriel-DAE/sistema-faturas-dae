@@ -584,11 +584,16 @@ with aba_dash:
 
         evento_ano = col_graf1.plotly_chart(fig_ano, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
-        if evento_ano:
-            # Captura os selecionados (pode ser vazio se o usuário desmarcar)
-            anos_sel = list(set([str(pt["x"]) for pt in evento_ano.selection.get("points", [])]))
-            # Se mudou em relação à memória, atualiza e recarrega
-            if st.session_state.clique_ano != anos_sel:
+        if evento_ano and len(evento_ano.selection.get("points", [])) > 0:
+            anos_sel = sorted(list(set([str(pt["x"]) for pt in evento_ano.selection["points"]])))
+            anos_atuais = sorted(st.session_state.clique_ano)
+            
+            # Se clicou na mesma barra que já estava filtrada, ele "desliga" o filtro
+            if anos_sel == anos_atuais:
+                st.session_state.clique_ano = []
+                st.rerun()
+            # Se clicou em uma barra nova, ele aplica o filtro novo
+            elif anos_sel != anos_atuais:
                 st.session_state.clique_ano = anos_sel
                 st.rerun()
 
@@ -615,9 +620,14 @@ with aba_dash:
 
         evento_mes = col_graf2.plotly_chart(fig_mes, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
-        if evento_mes:
-            meses_sel = list(set([str(pt["x"]) for pt in evento_mes.selection.get("points", [])]))
-            if st.session_state.clique_mes != meses_sel:
+        if evento_mes and len(evento_mes.selection.get("points", [])) > 0:
+            meses_sel = sorted(list(set([str(pt["x"]) for pt in evento_mes.selection["points"]])))
+            meses_atuais = sorted(st.session_state.clique_mes)
+            
+            if meses_sel == meses_atuais:
+                st.session_state.clique_mes = []
+                st.rerun()
+            elif meses_sel != meses_atuais:
                 st.session_state.clique_mes = meses_sel
                 st.rerun()
 
@@ -651,9 +661,14 @@ with aba_dash:
         
         evento_uc = st.plotly_chart(fig_unidades, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         
-        if evento_uc:
-            ucs_sel = list(set([str(pt["x"]) for pt in evento_uc.selection.get("points", [])]))
-            if st.session_state.clique_uc != ucs_sel:
+        if evento_uc and len(evento_uc.selection.get("points", [])) > 0:
+            ucs_sel = sorted(list(set([str(pt["x"]) for pt in evento_uc.selection["points"]])))
+            ucs_atuais = sorted(st.session_state.clique_uc)
+            
+            if ucs_sel == ucs_atuais:
+                st.session_state.clique_uc = []
+                st.rerun()
+            elif ucs_sel != ucs_atuais:
                 st.session_state.clique_uc = ucs_sel
                 st.rerun()
 

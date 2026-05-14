@@ -536,67 +536,72 @@ with aba_dash:
                 st.session_state.clique_ano = []; st.session_state.clique_mes = []; st.session_state.clique_uc = []
                 st.rerun()
 
-        # 3. Lógica de Filtragem (Ajustada para Cross-Filtering)
+        # 3. Lógica de Filtragem (Cross-Filtering Completo)
         df_base_dash = df_dash.copy()
         
         # Filtro Fixo (Classificação)
         if filtro_classe_fixo:
             df_base_dash = df_base_dash[df_base_dash['Classificação'].isin(filtro_classe_fixo)]
             
-        # Filtros Dinâmicos: O gráfico de Ano usa os outros filtros, EXCETO o seu próprio clique
+        # --- PREPARAÇÃO DOS DATAFRAMES INDIVIDUAIS ---
+        # DF do Gráfico 1 (Ano): Ignora clique_ano, aplica mês e UC
         df_para_ano = df_base_dash.copy()
         if st.session_state.clique_mes:
             df_para_ano = df_para_ano[df_para_ano['Mes_Nome'].isin(st.session_state.clique_mes)]
         if st.session_state.clique_uc:
             df_para_ano = df_para_ano[df_para_ano['Nome da Unidade'].isin(st.session_state.clique_uc)]
 
-        # Filtro Global Completo (Para aplicar nos gráficos debaixo: Mês e UC)
-        df_filtrado_dash = df_para_ano.copy()
+        # DF do Gráfico 2 (Mês): Ignora clique_mes, aplica ano e UC
+        df_para_mes = df_base_dash.copy()
         if st.session_state.clique_ano:
-            df_filtrado_dash = df_filtrado_dash[df_filtrado_dash['Ano'].isin(st.session_state.clique_ano)]
+            df_para_mes = df_para_mes[df_para_mes['Ano'].isin(st.session_state.clique_ano)]
+        if st.session_state.clique_uc:
+            df_para_mes = df_para_mes[df_para_mes['Nome da Unidade'].isin(st.session_state.clique_uc)]
+
+        # DF do Gráfico 3 (UC): Ignora clique_uc, aplica ano e mês
+        df_para_uc = df_base_dash.copy()
+        if st.session_state.clique_ano:
+            df_para_uc = df_para_uc[df_para_uc['Ano'].isin(st.session_state.clique_ano)]
+        if st.session_state.clique_mes:
+            df_para_uc = df_para_uc[df_para_uc['Mes_Nome'].isin(st.session_state.clique_mes)]
 
         st.write("")
         col_graf1, col_graf2 = st.columns(2)
         
         # --- GRÁFICO 1: Análise Anual ---
-        # ATENÇÃO: Usando 'df_para_ano' para que todas as barras continuem visíveis
         df_ano = df_para_ano.groupby('Ano')[param_coluna].sum().reset_index()
         
-        # Lógica de Cores (Destaque Dinâmico)
-        cores_ano = []
-        for ano in df_ano['Ano']:
-            if not st.session_state.clique_ano:
-                cores_ano.append("#0055A5") # Azul padrão se nada for clicado
-            elif ano in st.session_state.clique_ano:
-                cores_ano.append("#0055A5") # Azul para o ano clicado/selecionado
-            else:
-                cores_ano.append("#D3D3D3") # Cinza claro para os anos "apagados"
+        # Gera a lista de cores dinamicamente (List Comprehension)
+        cores_ano = ["#0055A5" if not st.session_state.clique_ano or ano in st.session_state.clique_ano else "#D3D3D3" for ano in df_ano['Ano']]
                 
-        # Removido o color_discrete_sequence fixo da criação do px.bar
-        fig_ano = px.bar(df_ano, x='Ano', y=param_coluna, text_auto='.3s', 
-                         title=f"{param_nome} por Ano")
-        
+        fig_ano = px.bar(df_ano, x='Ano', y=param_coluna, text_auto='.3s', title=f"{param_nome} por Ano")
         fig_ano.update_layout(xaxis_title=None, yaxis_title=param_nome, xaxis={'type': 'category'})
         
-        # Aplica a lista de cores (marker_color) no update_traces
         if is_dinheiro:
             fig_ano.update_traces(marker_color=cores_ano, texttemplate='R$ %{y:.3s}', textposition='outside')
         else:
             fig_ano.update_traces(marker_color=cores_ano, texttemplate='%{y:.3s}', textposition='outside')
 
         evento_ano = col_graf1.plotly_chart(fig_ano, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
-        
         if evento_ano and len(evento_ano.selection.get("points", [])) > 0:
             anos_sel = list(set([str(pt["x"]) for pt in evento_ano.selection["points"]]))
             if st.session_state.clique_ano != anos_sel:
                 st.session_state.clique_ano = anos_sel; st.rerun()
 
         # --- GRÁFICO 2: Sazonalidade Mensal ---
-        df_mes_ciclo = df_filtrado_dash.groupby(['Mes_Num', 'Mes_Nome'])[param_coluna].sum().reset_index().sort_values('Mes_Num')
-        fig_mes = px.line(df_mes_ciclo, x='Mes_Nome', y=param_coluna, markers=True,
-                          title=f"Sazonalidade Mensal ({param_nome})", color_discrete_sequence=["#0055A5"])
+        df_mes_ciclo = df_para_mes.groupby(['Mes_Num', 'Mes_Nome'])[param_coluna].sum().reset_index().sort_values('Mes_Num')
+        
+        fig_mes = px.line(df_mes_ciclo, x='Mes_Nome', y=param_coluna, markers=True, title=f"Sazonalidade Mensal ({param_nome})")
         fig_mes.update_layout(xaxis_title=None, yaxis_title=param_nome)
         fig_mes.update_yaxes(rangemode="tozero")
+        
+        # Cores e tamanhos para os marcadores da linha
+        cores_mes = ["#0055A5" if not st.session_state.clique_mes or mes in st.session_state.clique_mes else "#D3D3D3" for mes in df_mes_ciclo['Mes_Nome']]
+        tamanho_mes = [10 if not st.session_state.clique_mes or mes in st.session_state.clique_mes else 6 for mes in df_mes_ciclo['Mes_Nome']]
+        
+        # Atualiza a linha e os pontos
+        cor_linha = "#A0C4E1" if st.session_state.clique_mes else "#0055A5" # Deixa a linha mais clara se houver filtro
+        fig_mes.update_traces(line=dict(color=cor_linha, width=3), marker=dict(color=cores_mes, size=tamanho_mes))
         
         if not df_mes_ciclo.empty:
             media_val = df_mes_ciclo[param_coluna].mean()
@@ -605,7 +610,6 @@ with aba_dash:
             fig_mes.add_hline(y=media_val, line_dash="dash", line_color="#FF4B4B", annotation_text=fmt, annotation_position="top right")
 
         evento_mes = col_graf2.plotly_chart(fig_mes, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
-        
         if evento_mes and len(evento_mes.selection.get("points", [])) > 0:
             meses_sel = [str(pt["x"]) for pt in evento_mes.selection["points"]]
             if st.session_state.clique_mes != meses_sel:
@@ -613,8 +617,8 @@ with aba_dash:
 
         st.divider()
         
-        # --- GRÁFICO 3: Participação Total por Unidade (Vertical) - TOP 30 ---     
-        df_unidades = df_filtrado_dash.groupby('Nome da Unidade')[param_coluna].sum().reset_index()
+        # --- GRÁFICO 3: Participação Total por Unidade ---      
+        df_unidades = df_para_uc.groupby('Nome da Unidade')[param_coluna].sum().reset_index()
         total_indicador = df_unidades[param_coluna].sum()
         
         if total_indicador > 0:
@@ -622,32 +626,22 @@ with aba_dash:
         else:
             df_unidades['Percentual'] = 0
             
-        # O CORTE DE TOP 30 (Sempre após calcular o percentual do total!)
         df_unidades = df_unidades.sort_values(param_coluna, ascending=False).head(30)
         
-        fig_unidades = px.bar(
-            df_unidades, 
-            x='Nome da Unidade', 
-            y=param_coluna, 
-            title=f"📊 Top 30 Unidades por {param_nome}", 
-            color_discrete_sequence=["#0055A5"]
-        )
+        # Gera a lista de cores dinamicamente
+        cores_uc = ["#0055A5" if not st.session_state.clique_uc or uc in st.session_state.clique_uc else "#D3D3D3" for uc in df_unidades['Nome da Unidade']]
+
+        fig_unidades = px.bar(df_unidades, x='Nome da Unidade', y=param_coluna, title=f"📊 Top 30 Unidades por {param_nome}")
         
-        # AUMENTO DE FONTE APLICADO AQUI
         fig_unidades.update_layout(
-            xaxis_title=None, 
-            yaxis_title=param_nome,
-            xaxis_tickangle=-45, 
-            margin=dict(b=120), # Margem um pouco maior para os nomes
-            font=dict(size=14)
+            xaxis_title=None, yaxis_title=param_nome, xaxis_tickangle=-45, 
+            margin=dict(b=120), font=dict(size=14)
         )
-        
-        fig_unidades.update_traces(customdata=df_unidades['Percentual'], textposition='outside', textfont_size=13)
         
         if is_dinheiro:
-            fig_unidades.update_traces(texttemplate='R$ %{y:.3s}<br>(%{customdata:.1f}%)')
+            fig_unidades.update_traces(marker_color=cores_uc, customdata=df_unidades['Percentual'], texttemplate='R$ %{y:.3s}<br>(%{customdata:.1f}%)', textposition='outside', textfont_size=13)
         else:
-            fig_unidades.update_traces(texttemplate='%{y:.3s}<br>(%{customdata:.1f}%)')
+            fig_unidades.update_traces(marker_color=cores_uc, customdata=df_unidades['Percentual'], texttemplate='%{y:.3s}<br>(%{customdata:.1f}%)', textposition='outside', textfont_size=13)
         
         evento_uc = st.plotly_chart(fig_unidades, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         

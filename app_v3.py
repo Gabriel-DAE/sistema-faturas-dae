@@ -6,6 +6,7 @@ import io
 import pdfplumber
 import re
 from datetime import datetime
+import calendar
 import plotly.express as px
 from plotly.subplots import make_subplots
 import plotly.graph_objects as go
@@ -148,7 +149,7 @@ def inicializar_banco():
         )
     ''')
     
-    # 2. Cria a tabela de Cadastro de UCs (Agora com STATUS)
+    # 2. Cria a tabela de Cadastro de UCs (Agora com STATUS e DIA VENCIMENTO)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS cadastro_uc (
             unidade_consumidora TEXT PRIMARY KEY, 
@@ -157,12 +158,14 @@ def inicializar_banco():
             classificacao TEXT, 
             demanda_contratada_ponta REAL, 
             demanda_contratada_fponta REAL,
-            status TEXT DEFAULT 'ATIVA'
+            status TEXT DEFAULT 'ATIVA',
+            dia_vencimento INTEGER DEFAULT 10
         )
     ''')
     # Comando de segurança para adicionar colunas em bancos que já existem
     try:
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'ATIVA';''')
+        cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS dia_vencimento INTEGER DEFAULT 10;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS subtotal_fatura REAL DEFAULT 0.0;''')
     except:
         pass
@@ -466,7 +469,7 @@ def processar_pdf(arquivo_pdf):
     dados['cip'] = extrair_valor_regex(r"Contribuição Custeio IP-CIP.*?([\d\.]+,\d+)", texto)
     val_subtotal = extrair_valor_regex(r"Subtotal\s*([\d.,]+)", texto)
     if val_subtotal == 0.0:
-        val_subtotal = extrair_valor_regex(r"Total Distribuidora\s*([\d.,]+)", texto)    
+        val_subtotal = extrair_valor_regex(r"Total Distribuidora\s*([\d.,]+)", texto)  
     if val_subtotal == 0.0:
         val_subtotal = extrair_valor_regex(r"ICMS\s+([\d.,]+)\s+\d{2}[.,]\d{2}", texto)
     dados['subtotal_fatura'] = val_subtotal
@@ -633,7 +636,7 @@ with aba_dash:
 
         st.divider()
         
-        # --- GRÁFICO 3: Participação Total por Unidade ---      
+        # --- GRÁFICO 3: Participação Total por Unidade ---     
         df_unidades = df_para_uc.groupby('Nome da Unidade')[param_coluna].sum().reset_index()
         total_indicador = df_unidades[param_coluna].sum()
         
@@ -752,7 +755,8 @@ with aba_controle:
     # 1. Carregar dados básicos
     df_faturas = carregar_dados()
     conexao = obter_conexao()
-    df_cadastro = pd.read_sql_query("SELECT unidade_consumidora, nome_unidade, status FROM cadastro_uc WHERE status = 'ATIVA'", conexao)
+    # Adicionado puxar o dia_vencimento
+    df_cadastro = pd.read_sql_query("SELECT unidade_consumidora, nome_unidade, status, dia_vencimento FROM cadastro_uc WHERE status = 'ATIVA'", conexao)
     
     if df_faturas.empty:
         st.info("Nenhuma fatura carregada para auditoria.")
@@ -1008,16 +1012,69 @@ with aba_controle:
                 else:
                     st.info("Nenhum envio registrado para este mês.")
                 
-        # --- SUB-ABA 2: PENDÊNCIAS DE CARGA (AUDITORIA ANTERIOR) ---
+        # --- SUB-ABA 2: PENDÊNCIAS DE CARGA (AUDITORIA ANTERIOR + INTELIGÊNCIA DE VENCIMENTO) ---
         with tab_pendencias:
             ucs_carregadas = df_mes['UC'].unique()
-            df_faltantes = df_cadastro[~df_cadastro['unidade_consumidora'].isin(ucs_carregadas)]
+            df_faltantes = df_cadastro[~df_cadastro['unidade_consumidora'].isin(ucs_carregadas)].copy()
             
             if not df_faltantes.empty:
-                st.warning(f"🚨 Faltam carregar {len(df_faltantes)} faturas de unidades ATIVAS.")
-                st.dataframe(df_faltantes[['unidade_consumidora', 'nome_unidade']], use_container_width=True, hide_index=True)
+                st.warning(f"🚨 Faltam carregar {len(df_faltantes)} faturas de unidades ATIVAS referentes a {mes_auditoria}.")
+                
+                # Desmembramento da competência para descobrir o mês de vencimento (subsequente)
+                mes_str, ano_str = mes_auditoria.split('/')
+                mes_map_num = {'JAN': 1, 'FEV': 2, 'MAR': 3, 'ABR': 4, 'MAI': 5, 'JUN': 6, 
+                               'JUL': 7, 'AGO': 8, 'SET': 9, 'OUT': 10, 'NOV': 11, 'DEZ': 12}
+                
+                mes_num = mes_map_num.get(mes_str.upper(), 1)
+                ano_num = int(ano_str)
+                
+                # O vencimento é sempre no mês seguinte ao da referência
+                mes_venc = mes_num + 1
+                ano_venc = ano_num
+                if mes_venc > 12:
+                    mes_venc = 1
+                    ano_venc += 1
+                
+                hoje = datetime.now().date()
+                
+                # Calcula a data prevista exata considerando dias impossíveis (ex: 31 de fev)
+                def calcular_vencimento_seguro(dia_cadastrado):
+                    dia = int(dia_cadastrado) if pd.notna(dia_cadastrado) else 10
+                    ultimo_dia = calendar.monthrange(ano_venc, mes_venc)[1]
+                    if dia > ultimo_dia:
+                        dia = ultimo_dia
+                    return datetime(ano_venc, mes_venc, dia).date()
+
+                df_faltantes['Vencimento Previsto (Data)'] = df_faltantes['dia_vencimento'].apply(calcular_vencimento_seguro)
+                
+                # Conta a distância em dias para calcular o Semáforo
+                df_faltantes['Dias Restantes'] = (df_faltantes['Vencimento Previsto (Data)'] - hoje).dt.days
+                
+                def semaforo_urgencia(dias):
+                    if dias <= 10:
+                        return '🔴'
+                    elif dias <= 20:
+                        return '🟠'
+                    else:
+                        return '🟢'
+                        
+                df_faltantes['Sinal'] = df_faltantes['Dias Restantes'].apply(semaforo_urgencia)
+                
+                # Ordenação pelas mais atrasadas/próximas ao vencimento (Dias Restantes)
+                df_faltantes = df_faltantes.sort_values('Dias Restantes', ascending=True)
+                
+                # Formata a data e renomeia as colunas finais
+                df_faltantes['Vencimento Previsto'] = pd.to_datetime(df_faltantes['Vencimento Previsto (Data)']).dt.strftime('%d/%m/%Y')
+                
+                df_exibir_pendencias = df_faltantes[['Sinal', 'unidade_consumidora', 'nome_unidade', 'Vencimento Previsto']].rename(columns={
+                    'Sinal': 'Urgência',
+                    'unidade_consumidora': 'UC',
+                    'nome_unidade': 'Nome da Unidade'
+                })
+                
+                st.dataframe(df_exibir_pendencias, use_container_width=True, hide_index=True)
             else:
-                st.success(f"Excelente! Todas as faturas carregadas de {mes_auditoria} já foram enviadas.")
+                st.success(f"Excelente! Todas as faturas cadastradas para o mês {mes_auditoria} já foram carregadas no sistema.")
                     
         # --- SUB-ABA 3: VENCIMENTOS (TABELA QUE FORMATAMOS ANTES) ---
         with tab_vencimentos:
@@ -1543,22 +1600,23 @@ with aba_config:
     if uc_busca:
         conexao = obter_conexao()
         c = conexao.cursor()
-        c.execute("SELECT nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status FROM cadastro_uc WHERE unidade_consumidora = %s", (uc_busca,))
+        # Modificado para extrair também o dia do vencimento cadastrado
+        c.execute("SELECT nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status, dia_vencimento FROM cadastro_uc WHERE unidade_consumidora = %s", (uc_busca,))
         dados_uc = c.fetchone()
         conexao.close()
     else:
         dados_uc = None
     
     if dados_uc:
-        v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = dados_uc
+        v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status, v_dia_venc = dados_uc
     else:
-        v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status = ("", None, None, 0.0, 0.0, None)
+        v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status, v_dia_venc = ("", None, None, 0.0, 0.0, None, 10)
         
     with st.form("form_uc"):
         nome_input = st.text_input("Nome da Instalação/Unidade", value=v_nome, placeholder="Ex: Poço 15 - Geisel")
         
-        # --- LINHA 1: Dividindo os 3 menus suspensos em 3 colunas iguais ---
-        col_ativ, col_class, col_status = st.columns(3)
+        # --- LINHA 1: Dividindo as caixas de seleção ---
+        col_ativ, col_class, col_status, col_dia = st.columns(4)
         
         with col_ativ:
             lista_atividades = ["Administrativa", "Água", "Esgoto"]
@@ -1574,6 +1632,9 @@ with aba_config:
             lista_status = ["ATIVA", "INATIVA"]
             idx_status = lista_status.index(v_status) if v_status in lista_status else None
             status_input = st.selectbox("Status de Operação", lista_status, index=idx_status, placeholder="Selecione...")
+            
+        with col_dia:
+            dia_venc_input = st.number_input("Dia Previsto de Vencimento", min_value=1, max_value=31, step=1, value=int(v_dia_venc) if v_dia_venc else 10)
         
         # --- AVISOS ---
         if classif_input and "Verde" in classif_input:
@@ -1612,16 +1673,17 @@ with aba_config:
                     c = conexao.cursor()
                     
                     c.execute('''
-                        INSERT INTO cadastro_uc (unidade_consumidora, nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        INSERT INTO cadastro_uc (unidade_consumidora, nome_unidade, atividade, classificacao, demanda_contratada_ponta, demanda_contratada_fponta, status, dia_vencimento)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (unidade_consumidora) DO UPDATE SET 
                         nome_unidade = EXCLUDED.nome_unidade,
                         atividade = EXCLUDED.atividade,
                         classificacao = EXCLUDED.classificacao,
                         demanda_contratada_ponta = EXCLUDED.demanda_contratada_ponta,
                         demanda_contratada_fponta = EXCLUDED.demanda_contratada_fponta,
-                        status = EXCLUDED.status;
-                    ''', (uc_busca, nome_input, ativ_input, classif_input, dc_p, dc_fp, status_input))
+                        status = EXCLUDED.status,
+                        dia_vencimento = EXCLUDED.dia_vencimento;
+                    ''', (uc_busca, nome_input, ativ_input, classif_input, dc_p, dc_fp, status_input, dia_venc_input))
                     
                     c.execute('''
                         UPDATE faturas_cpfl 

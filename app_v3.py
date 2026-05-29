@@ -1035,19 +1035,22 @@ with aba_controle:
                     mes_venc = 1
                     ano_venc += 1
                 
-                hoje = datetime.now().date()
-                
                 # Calcula a data prevista exata considerando dias impossíveis (ex: 31 de fev)
                 def calcular_vencimento_seguro(dia_cadastrado):
                     dia = int(dia_cadastrado) if pd.notna(dia_cadastrado) else 10
                     ultimo_dia = calendar.monthrange(ano_venc, mes_venc)[1]
                     if dia > ultimo_dia:
                         dia = ultimo_dia
-                    return datetime(ano_venc, mes_venc, dia).date()
+                    # Retorna como string no formato YYYY-MM-DD para o Pandas entender perfeitamente
+                    return f"{ano_venc}-{mes_venc:02d}-{dia:02d}"
 
-                df_faltantes['Vencimento Previsto (Data)'] = df_faltantes['dia_vencimento'].apply(calcular_vencimento_seguro)
+                # Aplica a função e FORÇA a conversão para o formato de data nativo do Pandas
+                df_faltantes['Vencimento Previsto (Data)'] = pd.to_datetime(df_faltantes['dia_vencimento'].apply(calcular_vencimento_seguro))
                 
-                # Conta a distância em dias para calcular o Semáforo
+                # Pega o dia de hoje também no formato nativo do Pandas, zerando as horas
+                hoje = pd.Timestamp.today().normalize() 
+                
+                # Conta a distância em dias para calcular o Semáforo (Agora o .dt.days funciona!)
                 df_faltantes['Dias Restantes'] = (df_faltantes['Vencimento Previsto (Data)'] - hoje).dt.days
                 
                 def semaforo_urgencia(dias):
@@ -1064,7 +1067,7 @@ with aba_controle:
                 df_faltantes = df_faltantes.sort_values('Dias Restantes', ascending=True)
                 
                 # Formata a data e renomeia as colunas finais
-                df_faltantes['Vencimento Previsto'] = pd.to_datetime(df_faltantes['Vencimento Previsto (Data)']).dt.strftime('%d/%m/%Y')
+                df_faltantes['Vencimento Previsto'] = df_faltantes['Vencimento Previsto (Data)'].dt.strftime('%d/%m/%Y')
                 
                 df_exibir_pendencias = df_faltantes[['Sinal', 'unidade_consumidora', 'nome_unidade', 'Vencimento Previsto']].rename(columns={
                     'Sinal': 'Urgência',

@@ -1727,3 +1727,54 @@ with aba_config:
                 st.success(f"✅ Sincronização concluída! {linhas_afetadas} faturas foram atualizadas.")
             except Exception as e:
                 st.error(f"Erro ao sincronizar: {e}")
+    
+    # =========================================================
+    # CÓDIGO NOVO: EXPORTAÇÃO DO CADASTRO DE UNIDADES
+    # =========================================================
+    st.divider()
+    st.markdown("###### 📤 Exportar Cadastro de Unidades")
+    st.info("Baixe a lista completa de Unidades Consumidoras cadastradas no sistema com status, demandas e vencimentos.")
+    
+    @st.cache_data(show_spinner=False, ttl=60)
+    def gerar_excel_cadastro():
+        # Conecta no banco e puxa a tabela cadastro_uc inteira
+        conn = obter_conexao()
+        df_cad = pd.read_sql_query("SELECT * FROM cadastro_uc", conn)
+        conn.close()
+        
+        # Renomeia as colunas para a planilha ficar amigável e bonita
+        if not df_cad.empty:
+            df_cad = df_cad.rename(columns={
+                'unidade_consumidora': 'UC',
+                'nome_unidade': 'Nome da Unidade',
+                'atividade': 'Atividade',
+                'classificacao': 'Classificação',
+                'demanda_contratada_ponta': 'Demanda Contr. Ponta (kW)',
+                'demanda_contratada_fponta': 'Demanda Contr. F.Ponta (kW)',
+                'status': 'Status',
+                'dia_vencimento': 'Dia Previsto de Vencimento'
+            })
+            
+        # Gera o arquivo Excel em memória
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df_cad.to_excel(writer, index=False, sheet_name='Cadastro_UCs')
+            
+            # Ajuste automático da largura das colunas
+            worksheet = writer.sheets['Cadastro_UCs']
+            for i, col in enumerate(df_cad.columns):
+                tamanho_maximo = max(df_cad[col].astype(str).map(len).max(), len(col))
+                worksheet.column_dimensions[chr(65 + i)].width = tamanho_maximo + 2
+
+        return buffer.getvalue()
+
+    col_btn_exportar, _, _ = st.columns([1, 3, 3])
+    with col_btn_exportar:
+        arquivo_excel_cad = gerar_excel_cadastro()
+        st.download_button(
+            label="📥 Baixar Planilha de Cadastros", 
+            data=arquivo_excel_cad, 
+            file_name="Cadastro_Unidades_DAE.xlsx", 
+            type="secondary",
+            use_container_width=True
+        )

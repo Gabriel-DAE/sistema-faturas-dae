@@ -1616,7 +1616,8 @@ with aba_config:
         v_nome, v_ativ, v_class, v_dc_p, v_dc_fp, v_status, v_dia_venc = ("", None, None, 0.0, 0.0, None, 10)
         
     with st.form("form_uc"):
-        nome_input = st.text_input("Nome da Instalação/Unidade", value=v_nome, placeholder="Ex: Poço 15 - Geisel")
+        # Inserindo a key amarrada a uc_busca
+        nome_input = st.text_input("Nome da Instalação/Unidade", value=v_nome, placeholder="Ex: Poço 15 - Geisel", key=f"nome_{uc_busca}")
         
         # --- LINHA 1: Dividindo as caixas de seleção ---
         col_ativ, col_class, col_status, col_dia = st.columns(4)
@@ -1624,20 +1625,21 @@ with aba_config:
         with col_ativ:
             lista_atividades = ["Administrativa", "Água", "Esgoto"]
             idx_ativ = lista_atividades.index(v_ativ) if v_ativ in lista_atividades else None
-            ativ_input = st.selectbox("Atividade", lista_atividades, index=idx_ativ, placeholder="Selecione...")
+            ativ_input = st.selectbox("Atividade", lista_atividades, index=idx_ativ, placeholder="Selecione...", key=f"ativ_{uc_busca}")
             
         with col_class:
             lista_classes = ["Tarifa Azul-A4", "Tarifa Verde-A4", "Convencional B3"]
             idx_class = lista_classes.index(v_class) if v_class in lista_classes else None
-            classif_input = st.selectbox("Classificação", lista_classes, index=idx_class, placeholder="Selecione...")
+            classif_input = st.selectbox("Classificação", lista_classes, index=idx_class, placeholder="Selecione...", key=f"class_{uc_busca}")
 
         with col_status:
             lista_status = ["ATIVA", "INATIVA"]
             idx_status = lista_status.index(v_status) if v_status in lista_status else None
-            status_input = st.selectbox("Status de Operação", lista_status, index=idx_status, placeholder="Selecione...")
+            status_input = st.selectbox("Status de Operação", lista_status, index=idx_status, placeholder="Selecione...", key=f"status_{uc_busca}")
             
         with col_dia:
-            dia_venc_input = st.number_input("Dia Previsto de Vencimento", min_value=1, max_value=31, step=1, value=int(v_dia_venc) if v_dia_venc else 10)
+            # O segredo para resolver o seu problema está aqui (key=f"dia_{uc_busca}")
+            dia_venc_input = st.number_input("Dia Previsto de Vencimento", min_value=1, max_value=31, step=1, value=int(v_dia_venc) if v_dia_venc else 10, key=f"dia_{uc_busca}")
         
         # --- AVISOS ---
         if classif_input and "Verde" in classif_input:
@@ -1650,9 +1652,9 @@ with aba_config:
         is_b3 = True if classif_input and "B3" in classif_input else False
         
         with col_dem1:
-            dc_p = st.number_input("Demanda Contratada Ponta (kW)", value=float(v_dc_p), format="%.2f", disabled=is_b3)
+            dc_p = st.number_input("Demanda Contratada Ponta (kW)", value=float(v_dc_p), format="%.2f", disabled=is_b3, key=f"dcp_{uc_busca}")
         with col_dem2:
-            dc_fp = st.number_input("Demanda Contratada Fora Ponta (kW)", value=float(v_dc_fp), format="%.2f", disabled=is_b3)
+            dc_fp = st.number_input("Demanda Contratada Fora Ponta (kW)", value=float(v_dc_fp), format="%.2f", disabled=is_b3, key=f"dcfp_{uc_busca}")
         
         st.write("")
         if 'msg_uc' in st.session_state:

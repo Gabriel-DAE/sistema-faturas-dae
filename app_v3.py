@@ -1082,13 +1082,14 @@ with aba_controle:
                 # Conta a distância em dias para calcular o Semáforo
                 df_faltantes['Dias Restantes'] = (df_faltantes['Vencimento Previsto (Data)'] - hoje).dt.days
                 
+                # 1. Adicionamos um rótulo junto à bolinha para ficar mais legível
                 def semaforo_urgencia(dias):
                     if dias <= 10:
-                        return '🔴'
+                        return '🔴 Crítico'
                     elif dias <= 20:
-                        return '🟠'
+                        return '🟠 Atenção'
                     else:
-                        return '🟢'
+                        return '🟢 No Prazo'
                         
                 df_faltantes['Sinal'] = df_faltantes['Dias Restantes'].apply(semaforo_urgencia)
                 
@@ -1104,7 +1105,32 @@ with aba_controle:
                     'nome_unidade': 'Nome da Unidade'
                 })
                 
-                st.dataframe(df_exibir_pendencias, use_container_width=True, hide_index=True)
+                # ==========================================
+                # 2. A MÁGICA DAS CORES NA TABELA
+                # ==========================================
+                def colorir_celulas(valor):
+                    if 'Crítico' in str(valor):
+                        # Fundo vermelho claro, texto vermelho escuro
+                        return 'background-color: #FFCDD2; color: #B71C1C; font-weight: bold;'
+                    elif 'Atenção' in str(valor):
+                        # Fundo laranja claro, texto laranja escuro
+                        return 'background-color: #FFE0B2; color: #E65100; font-weight: bold;'
+                    elif 'No Prazo' in str(valor):
+                        # Fundo verde claro, texto verde escuro
+                        return 'background-color: #C8E6C9; color: #1B5E20; font-weight: bold;'
+                    return ''
+                
+                # Aplica a função de cor APENAS na coluna "Urgência"
+                try:
+                    # Para Pandas mais novos (versão 2.1+)
+                    tabela_colorida = df_exibir_pendencias.style.map(colorir_celulas, subset=['Urgência'])
+                except AttributeError:
+                    # Para versões mais antigas do Pandas
+                    tabela_colorida = df_exibir_pendencias.style.applymap(colorir_celulas, subset=['Urgência'])
+                
+                # Exibe a tabela estilizada no Streamlit
+                st.dataframe(tabela_colorida, use_container_width=True, hide_index=True)
+                
             else:
                 st.success(f"Excelente! Todas as faturas cadastradas para o mês {mes_auditoria} já foram carregadas no sistema.")
                     

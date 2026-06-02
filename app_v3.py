@@ -1778,3 +1778,61 @@ with aba_config:
             type="secondary",
             use_container_width=True
         )
+        
+    # =========================================================
+    # CÓDIGO NOVO: ATUALIZAÇÃO EM LOTE DO CADASTRO VIA EXCEL
+    # =========================================================
+    st.divider()
+    st.markdown("###### 📥 Importação em Lote de Cadastros (Atualização)")
+    st.info("💡 **Dica:** Baixe a planilha no botão acima, altere os valores da coluna **'Dia Previsto de Vencimento'**, salve e faça o upload dela aqui para atualizar todas as unidades de uma só vez.")
+    
+    arquivo_up_cad = st.file_uploader("Selecione a planilha de Cadastro modificada (.xlsx)", type=["xlsx"], key="up_cad_lote")
+    
+    if arquivo_up_cad is not None:
+        if st.button("🚀 Processar Atualização em Lote", type="primary"):
+            try:
+                # Lê a planilha enviada
+                df_up = pd.read_excel(arquivo_up_cad)
+                
+                # Verifica se as colunas cruciais existem na planilha
+                if 'UC' in df_up.columns and 'Dia Previsto de Vencimento' in df_up.columns:
+                    conn = obter_conexao()
+                    cursor = conn.cursor()
+                    
+                    atualizadas = 0
+                    
+                    # Percorre linha por linha da planilha
+                    for index, row in df_up.iterrows():
+                        uc_val = str(row['UC']).strip()
+                        dia_val = row['Dia Previsto de Vencimento']
+                        
+                        # Limpa a variável do dia (garante que seja número)
+                        if pd.isna(dia_val) or str(dia_val).strip() == '':
+                            dia_num = 10 # Padrão caso deixem em branco
+                        else:
+                            try:
+                                dia_num = int(dia_val)
+                            except:
+                                dia_num = 10
+                                
+                        # Atualiza no banco de dados
+                        if uc_val and uc_val != 'nan':
+                            cursor.execute('''
+                                UPDATE cadastro_uc 
+                                SET dia_vencimento = %s
+                                WHERE unidade_consumidora = %s
+                            ''', (dia_num, uc_val))
+                            
+                            # Incrementa nosso contador se realmente alterou alguma linha
+                            if cursor.rowcount > 0:
+                                atualizadas += 1
+                                
+                    conn.commit()
+                    conn.close()
+                    
+                    st.success(f"✅ Atualização em lote concluída com sucesso! **{atualizadas}** UCs tiveram seus dias de vencimento atualizados no banco de dados.")
+                    st.balloons()
+                else:
+                    st.error("⚠️ A planilha não possui as colunas 'UC' e/ou 'Dia Previsto de Vencimento'. Por favor, use exatamente a planilha exportada pelo sistema.")
+            except Exception as e:
+                st.error(f"Erro ao processar o arquivo. Detalhe técnico: {e}")

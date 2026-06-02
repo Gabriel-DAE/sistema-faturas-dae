@@ -1020,37 +1020,66 @@ with aba_controle:
             if not df_faltantes.empty:
                 st.warning(f"🚨 Faltam carregar {len(df_faltantes)} faturas de unidades ATIVAS referentes a {mes_auditoria}.")
                 
-                # Desmembramento da competência para descobrir o mês de vencimento (subsequente)
+                # Desmembramento da competência em data para cálculos
                 mes_str, ano_str = mes_auditoria.split('/')
                 mes_map_num = {'JAN': 1, 'FEV': 2, 'MAR': 3, 'ABR': 4, 'MAI': 5, 'JUN': 6, 
                                'JUL': 7, 'AGO': 8, 'SET': 9, 'OUT': 10, 'NOV': 11, 'DEZ': 12}
                 
-                mes_num = mes_map_num.get(mes_str.upper(), 1)
-                ano_num = int(ano_str)
+                mes_num_auditoria = mes_map_num.get(mes_str.upper(), 1)
+                ano_num_auditoria = int(ano_str)
+                data_auditoria = pd.Timestamp(year=ano_num_auditoria, month=mes_num_auditoria, day=1)
                 
-                # O vencimento é sempre no mês seguinte ao da referência
-                mes_venc = mes_num + 1
-                ano_venc = ano_num
-                if mes_venc > 12:
-                    mes_venc = 1
-                    ano_venc += 1
-                
-                # Calcula a data prevista exata considerando dias impossíveis (ex: 31 de fev)
-                def calcular_vencimento_seguro(dia_cadastrado):
-                    dia = int(dia_cadastrado) if pd.notna(dia_cadastrado) else 10
-                    ultimo_dia = calendar.monthrange(ano_venc, mes_venc)[1]
-                    if dia > ultimo_dia:
-                        dia = ultimo_dia
-                    # Retorna como string no formato YYYY-MM-DD para o Pandas entender perfeitamente
-                    return f"{ano_venc}-{mes_venc:02d}-{dia:02d}"
+                # Função inteligente para buscar o último vencimento e calcular a projeção
+                def calcular_vencimento_inteligente(row):
+                    uc = row['unidade_consumidora']
+                    dia_cadastrado = int(row['dia_vencimento']) if pd.notna(row['dia_vencimento']) else 10
+                    
+                    # Filtra todas as faturas dessa UC que sejam de meses ANTERIORES ao mês da auditoria
+                    faturas_anteriores = df_faturas[(df_faturas['UC'] == uc) & (df_faturas['Data Referência Oculta'] < data_auditoria)]
+                    
+                    if not faturas_anteriores.empty:
+                        # Pega a fatura mais recente dentre as anteriores
+                        fatura_recente = faturas_anteriores.sort_values('Data Referência Oculta', ascending=False).iloc[0]
+                        data_ref_anterior = fatura_recente['Data Referência Oculta']
+                        venc_anterior_str = fatura_recente['Vencimento']
+                        
+                        try:
+                            venc_anterior_dt = pd.to_datetime(venc_anterior_str, format='%d/%m/%Y')
+                            
+                            # Diferença em meses entre a referência que estamos auditando e a referência da última fatura lida
+                            diff_meses = (data_auditoria.year - data_ref_anterior.year) * 12 + (data_auditoria.month - data_ref_anterior.month)
+                            
+                            # Soma a diferença de meses ao mês do último vencimento real
+                            novo_mes_venc = venc_anterior_dt.month + diff_meses
+                            novo_ano_venc = venc_anterior_dt.year + (novo_mes_venc - 1) // 12
+                            novo_mes_venc = ((novo_mes_venc - 1) % 12) + 1
+                            
+                            # Ajusta o dia para a regra cadastrada (evitando dias impossíveis como 31 de fevereiro)
+                            ultimo_dia = calendar.monthrange(novo_ano_venc, novo_mes_venc)[1]
+                            dia_seguro = min(dia_cadastrado, ultimo_dia)
+                            
+                            return pd.Timestamp(year=novo_ano_venc, month=novo_mes_venc, day=dia_seguro)
+                        except:
+                            pass # Se a data anterior tiver erro de digitação, ele cai para o Fallback abaixo
+                            
+                    # FALLBACK: Se a UC for nova e não tiver histórico nenhum, apenas soma 1 mês à competência da auditoria
+                    novo_mes_venc = mes_num_auditoria + 1
+                    novo_ano_venc = ano_num_auditoria
+                    if novo_mes_venc > 12:
+                        novo_mes_venc = 1
+                        novo_ano_venc += 1
+                        
+                    ultimo_dia = calendar.monthrange(novo_ano_venc, novo_mes_venc)[1]
+                    dia_seguro = min(dia_cadastrado, ultimo_dia)
+                    return pd.Timestamp(year=novo_ano_venc, month=novo_mes_venc, day=dia_seguro)
 
-                # Aplica a função e FORÇA a conversão para o formato de data nativo do Pandas
-                df_faltantes['Vencimento Previsto (Data)'] = pd.to_datetime(df_faltantes['dia_vencimento'].apply(calcular_vencimento_seguro))
+                # Aplica a função cruzada para cada unidade pendente
+                df_faltantes['Vencimento Previsto (Data)'] = df_faltantes.apply(calcular_vencimento_inteligente, axis=1)
                 
                 # Pega o dia de hoje também no formato nativo do Pandas, zerando as horas
                 hoje = pd.Timestamp.today().normalize() 
                 
-                # Conta a distância em dias para calcular o Semáforo (Agora o .dt.days funciona!)
+                # Conta a distância em dias para calcular o Semáforo
                 df_faltantes['Dias Restantes'] = (df_faltantes['Vencimento Previsto (Data)'] - hoje).dt.days
                 
                 def semaforo_urgencia(dias):

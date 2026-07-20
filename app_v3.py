@@ -489,23 +489,49 @@ def processar_pdf(arquivo_pdf):
     return dados
 
 def processar_pdf_cemig(arquivo_pdf):
+    """Extrai os dados específicos da fatura da Comercializadora (CEMIG) no ACL."""
     with pdfplumber.open(arquivo_pdf) as pdf:
         texto = pdf.pages[0].extract_text()
         
-    # Inicializa o dicionário com as chaves padrão para não quebrar a inserção
-    # (Pode reaproveitar as chaves numéricas existentes e adicionar as novas)
-    dados = {k: 0.0 for k in chaves_numericas} # Garante que as chaves da CPFL fiquem zeradas
+    # 1. SOLUÇÃO DO ERRO: Declaramos a lista de chaves numéricas DENTRO da função
+    chaves_numericas = [
+        'demanda_contratada_ponta', 'demanda_contratada_fponta',
+        'consumo_ponta', 'tarifa_aneel_cons_ponta_tusd', 'tarifa_trib_cons_ponta_tusd', 'valor_cons_ponta_tusd',
+        'consumo_fora_ponta', 'tarifa_aneel_cons_fponta_tusd', 'tarifa_trib_cons_fponta_tusd', 'valor_cons_fponta_tusd',
+        'tarifa_aneel_cons_ponta_te', 'tarifa_trib_cons_ponta_te', 'valor_cons_ponta_te',
+        'tarifa_aneel_cons_fponta_te', 'tarifa_trib_cons_fponta_te', 'valor_cons_fponta_te',
+        'demanda_registrada_ponta', 'tarifa_aneel_dem_ponta', 'tarifa_trib_dem_ponta', 'valor_dem_ponta',
+        'demanda_isenta_ponta', 'tarifa_aneel_dem_isenta_ponta', 'tarifa_trib_dem_isenta_ponta', 'valor_dem_isenta_ponta',
+        'demanda_registrada_fora_ponta', 'tarifa_aneel_dem_fponta', 'tarifa_trib_dem_fponta', 'valor_dem_fponta',
+        'demanda_isenta_fora_ponta', 'tarifa_aneel_dem_isenta_fponta', 'tarifa_trib_dem_isenta_fponta', 'valor_dem_isenta_fponta',
+        'consumo_reativo_ponta', 'tarifa_aneel_cons_reativo_ponta', 'tarifa_trib_cons_reativo_ponta', 'valor_cons_reativo_ponta',
+        'consumo_reativo_fora_ponta', 'tarifa_aneel_cons_reativo_fponta', 'tarifa_trib_cons_reativo_fponta', 'valor_cons_reativo_fponta',
+        'demanda_ultrapassagem_ponta', 'tarifa_aneel_dem_ultrap_ponta', 'tarifa_trib_dem_ultrap_ponta', 'valor_dem_ultrap_ponta',
+        'demanda_ultrapassagem_fora_ponta', 'tarifa_aneel_dem_ultrap_fponta', 'tarifa_trib_dem_ultrap_fponta', 'valor_dem_ultrap_fponta',
+        'demanda_reativa_ponta', 'tarifa_aneel_dem_reativa_ponta', 'tarifa_trib_dem_reativa_ponta', 'valor_dem_reativa_ponta',
+        'demanda_reativa_fora_ponta', 'tarifa_aneel_dem_reativa_fponta', 'tarifa_trib_dem_reativa_fponta', 'valor_dem_reativa_fponta', 
+        'subtotal_fatura', 'cip', 'retencao_consumo_irrf', 'retencao_demanda_irrf', 'valor_total_pis', 'valor_total_cofins', 'valor_total_icms'
+    ]
     
-    # 1. Identificação Básica
+    dados = {k: 0.0 for k in chaves_numericas} 
+    
+    # 2. Inicialização de Textos Padrão (Evita erros de inserção)
+    dados['periodo_leitura_inicio'] = ""
+    dados['periodo_leitura_fim'] = ""
+    dados['data_proxima_leitura'] = ""
+    dados['tipo_bandeira'] = "VERDE"
+    dados['adicional_bandeira'] = 0.0
+    
+    # 3. Identificação Básica
     dados['unidade_consumidora'] = extrair_texto_regex(r"N.º DA UNIDADE CONSUMIDORA\s*(\d+)", texto)
     dados['mes_referencia'] = extrair_texto_regex(r"Referente a\s*([A-Z]{3}/\d{4})", texto)
     
     vencimento_bruto = extrair_texto_regex(r"Vencimento\s*(\d{2}/\d{2}/\d{4})", texto)
-    dados['data_vencimento'] = vencimento_bruto if vencimento_bruto else extrair_texto_regex(r"(\d{2}/\d{2}/\d{4})", texto) # Fallback
+    dados['data_vencimento'] = vencimento_bruto if vencimento_bruto else extrair_texto_regex(r"(\d{2}/\d{2}/\d{4})", texto) 
     
     dados['classificacao'] = "Mercado Livre - ACL"
     
-    # 2. Busca Cadastro da UC no Banco
+    # 4. Busca Cadastro da UC no Banco
     conexao_pdf = obter_conexao()
     c_pdf = conexao_pdf.cursor()
     c_pdf.execute("SELECT nome_unidade, atividade FROM cadastro_uc WHERE unidade_consumidora = %s", (dados['unidade_consumidora'],))
@@ -515,12 +541,10 @@ def processar_pdf_cemig(arquivo_pdf):
     dados['nome_unidade'] = res_uc[0] if res_uc else "Não Cadastrada"
     dados['atividade'] = res_uc[1] if res_uc else "Administrativa" 
     
-    # 3. Extração de Valores ACL
-    # Extrai Quantidade (kWh), Preço Unitário e Valor da Energia
+    # 5. Extração de Valores ACL
     linha_energia = re.search(r"Energia Ativa HFP.*?(?:kWh)\s+([\d\.]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
     if linha_energia:
         dados['consumo_energia_acl_kwh'] = limpar_numero(linha_energia.group(1))
-        # Para a tarifa, a substituição da vírgula precisa manter as casas decimais corretas
         dados['tarifa_energia_acl'] = float(linha_energia.group(2).replace(',', '.')) 
     else:
         dados['consumo_energia_acl_kwh'] = 0.0
@@ -528,7 +552,7 @@ def processar_pdf_cemig(arquivo_pdf):
 
     # Valor Total a Pagar
     dados['valor_total_acl'] = extrair_valor_regex(r"Total a pagar\s*R\$\s*([\d\.,]+)", texto)
-    dados['valor_total_fatura'] = dados['valor_total_acl'] # Espelha para os gráficos gerais
+    dados['valor_total_fatura'] = dados['valor_total_acl'] 
     
     return dados
 

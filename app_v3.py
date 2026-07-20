@@ -167,6 +167,9 @@ def inicializar_banco():
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'ATIVA';''')
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS dia_vencimento INTEGER DEFAULT 10;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS subtotal_fatura REAL DEFAULT 0.0;''')
+        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS consumo_energia_acl_kwh REAL DEFAULT 0.0;''')
+        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS tarifa_energia_acl DOUBLE PRECISION DEFAULT 0.0;''')
+        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS valor_total_acl REAL DEFAULT 0.0;''')
     except:
         pass
         
@@ -485,6 +488,49 @@ def processar_pdf(arquivo_pdf):
         
     return dados
 
+def processar_pdf_cemig(arquivo_pdf):
+    with pdfplumber.open(arquivo_pdf) as pdf:
+        texto = pdf.pages[0].extract_text()
+        
+    # Inicializa o dicionário com as chaves padrão para não quebrar a inserção
+    # (Pode reaproveitar as chaves numéricas existentes e adicionar as novas)
+    dados = {k: 0.0 for k in chaves_numericas} # Garante que as chaves da CPFL fiquem zeradas
+    
+    # 1. Identificação Básica
+    dados['unidade_consumidora'] = extrair_texto_regex(r"N.º DA UNIDADE CONSUMIDORA\s*(\d+)", texto)
+    dados['mes_referencia'] = extrair_texto_regex(r"Referente a\s*([A-Z]{3}/\d{4})", texto)
+    
+    vencimento_bruto = extrair_texto_regex(r"Vencimento\s*(\d{2}/\d{2}/\d{4})", texto)
+    dados['data_vencimento'] = vencimento_bruto if vencimento_bruto else extrair_texto_regex(r"(\d{2}/\d{2}/\d{4})", texto) # Fallback
+    
+    dados['classificacao'] = "Mercado Livre - ACL"
+    
+    # 2. Busca Cadastro da UC no Banco
+    conexao_pdf = obter_conexao()
+    c_pdf = conexao_pdf.cursor()
+    c_pdf.execute("SELECT nome_unidade, atividade FROM cadastro_uc WHERE unidade_consumidora = %s", (dados['unidade_consumidora'],))
+    res_uc = c_pdf.fetchone()
+    conexao_pdf.close()
+    
+    dados['nome_unidade'] = res_uc[0] if res_uc else "Não Cadastrada"
+    dados['atividade'] = res_uc[1] if res_uc else "Administrativa" 
+    
+    # 3. Extração de Valores ACL
+    # Extrai Quantidade (kWh), Preço Unitário e Valor da Energia
+    linha_energia = re.search(r"Energia Ativa HFP.*?(?:kWh)\s+([\d\.]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    if linha_energia:
+        dados['consumo_energia_acl_kwh'] = limpar_numero(linha_energia.group(1))
+        # Para a tarifa, a substituição da vírgula precisa manter as casas decimais corretas
+        dados['tarifa_energia_acl'] = float(linha_energia.group(2).replace(',', '.')) 
+    else:
+        dados['consumo_energia_acl_kwh'] = 0.0
+        dados['tarifa_energia_acl'] = 0.0
+
+    # Valor Total a Pagar
+    dados['valor_total_acl'] = extrair_valor_regex(r"Total a pagar\s*R\$\s*([\d\.,]+)", texto)
+    dados['valor_total_fatura'] = dados['valor_total_acl'] # Espelha para os gráficos gerais
+    
+    return dados
 
 # --- 4. INTERFACE ---
 aba_dash, aba_controle, aba_dados, aba_espelho, aba_pdf, aba_config = st.tabs(["📈 Dashboard", "💰 Controle Financeiro", "📊 Banco de Dados", "📑 Espelho de Fatura", "📄 Upload de Fatura", "⚙️ Configurações"])
@@ -1530,18 +1576,39 @@ with aba_pdf:
                     barra_progresso = st.progress(0)
                     total_arquivos = len(arquivos_upload)
                     
-                    # Tudo daqui para baixo foi empurrado para a direita (dentro do if st.button)
                     for i, arquivo in enumerate(arquivos_upload):
                         try:
-                            d = processar_pdf(arquivo)
+                            # Lê rapidamente a primeira página para identificar a concessionária/comercializadora
+                            with pdfplumber.open(arquivo) as pdf_temp:
+                                texto_identificacao = pdf_temp.pages[0].extract_text()
                             
-                            c.execute("SELECT id FROM faturas_cpfl WHERE unidade_consumidora = %s AND mes_referencia = %s", (d['unidade_consumidora'], d['mes_referencia']))
-                            if c.fetchone():
-                                duplicadas += 1
-                            else:
+                            # Roteamento inteligente
+                            if "CEMIG" in texto_identificacao.upper() or "VAREJISTA" in texto_identificacao.upper():
+                                d = processar_pdf_cemig(arquivo)
+                                
+                                # Adaptação rápida para não quebrar a Query SQL existente da CPFL
+                                # (Garante que as colunas novas existam no dicionário que vai para o banco)
                                 colunas = ', '.join(d.keys())
                                 placeholders = ', '.join(['%s'] * len(d))
                                 valores = tuple(d.values())
+                                
+                                # Verifica duplicidade
+                                c.execute("SELECT id FROM faturas_cpfl WHERE unidade_consumidora = %s AND mes_referencia = %s AND classificacao = 'Mercado Livre - ACL'", (d['unidade_consumidora'], d['mes_referencia']))
+                            
+                            else:
+                                # Processamento normal da CPFL
+                                d = processar_pdf(arquivo)
+                                
+                                colunas = ', '.join(d.keys())
+                                placeholders = ', '.join(['%s'] * len(d))
+                                valores = tuple(d.values())
+                                
+                                # Verifica duplicidade
+                                c.execute("SELECT id FROM faturas_cpfl WHERE unidade_consumidora = %s AND mes_referencia = %s AND classificacao != 'Mercado Livre - ACL'", (d['unidade_consumidora'], d['mes_referencia']))
+                            
+                            if c.fetchone():
+                                duplicadas += 1
+                            else:
                                 c.execute(f"INSERT INTO faturas_cpfl ({colunas}) VALUES ({placeholders})", valores)
                                 sucessos += 1
                                 
@@ -1550,7 +1617,7 @@ with aba_pdf:
                             st.error(f"Erro ao processar o arquivo '{arquivo.name}': {e}")
                         
                         barra_progresso.progress((i + 1) / total_arquivos)
-                        gc.collect() # Limpeza de RAM que adicionamos anteriormente
+                        gc.collect()
 
                     conexao.commit()
                     carregar_dados.clear()

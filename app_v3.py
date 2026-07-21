@@ -1922,10 +1922,17 @@ with aba_config:
             df_cad.to_excel(writer, index=False, sheet_name='Cadastro_UCs')
             
             # Ajuste automático da largura das colunas
+            from openpyxl.utils import get_column_letter # Importamos o conversor seguro de letras
+            
             worksheet = writer.sheets['Cadastro_UCs']
-            for i, col in enumerate(df_cad.columns):
-                tamanho_maximo = max(df_cad[col].astype(str).map(len).max(), len(col))
-                worksheet.column_dimensions[chr(65 + i)].width = tamanho_maximo + 2
+            
+            for i, col in enumerate(df_cad.columns, 1): # Começa a contar do 1
+                # Usamos uma lista de compressão nativa do Python para converter tudo em string e medir
+                tamanhos = [len(str(valor)) for valor in df_cad[col].values]
+                tamanho_maximo = max(tamanhos + [len(str(col))]) # Compara os dados com o tamanho do cabeçalho
+                
+                col_letter = get_column_letter(i) # Transforma 1 em A, 27 em AA, etc.
+                worksheet.column_dimensions[col_letter].width = tamanho_maximo + 2
 
         return buffer.getvalue()
 

@@ -969,9 +969,15 @@ with aba_controle:
                         
                         # --- 3. Linhas de Dados do Setor ---
                         for _, r in df_ativ.iterrows():
-                            ws.cell(row=row_idx, column=1, value=int(r['UC']))
-                            ws.cell(row=row_idx, column=2, value=r['Nome da Unidade'])
-                            ws.cell(row=row_idx, column=3, value=r['Mês Referência'])
+                            # Conversão segura da UC para evitar ValueError (Trata decimais, espaços ou textos)
+                            try:
+                                uc_segura = int(float(r['UC']))
+                            except (ValueError, TypeError):
+                                uc_segura = str(r['UC']).strip()
+
+                            ws.cell(row=row_idx, column=1, value=uc_segura)
+                            ws.cell(row=row_idx, column=2, value=str(r['Nome da Unidade']))
+                            ws.cell(row=row_idx, column=3, value=str(r['Mês Referência']))
                             
                             c_venc = ws.cell(row=row_idx, column=4, value=pd.to_datetime(r['Vencimento'], format='%d/%m/%Y'))
                             c_venc.number_format = 'DD/MM/YYYY'

@@ -170,6 +170,9 @@ def inicializar_banco():
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS consumo_energia_acl_kwh REAL DEFAULT 0.0;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS tarifa_energia_acl DOUBLE PRECISION DEFAULT 0.0;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS valor_total_acl REAL DEFAULT 0.0;''')
+        cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS uc_cemig TEXT;''')
+        cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS uc_antiga TEXT;''')
+        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS uc_original TEXT;''')
     except:
         pass
         
@@ -531,15 +534,27 @@ def processar_pdf_cemig(arquivo_pdf):
     
     dados['classificacao'] = "Mercado Livre - ACL"
     
-    # 4. Busca Cadastro da UC no Banco
+    # 4. Busca Cadastro da UC no Banco usando a UC da CEMIG
     conexao_pdf = obter_conexao()
     c_pdf = conexao_pdf.cursor()
-    c_pdf.execute("SELECT nome_unidade, atividade FROM cadastro_uc WHERE unidade_consumidora = %s", (dados['unidade_consumidora'],))
+    # Procuramos pela uc_cemig e trazemos a UC Principal (CPFL Nova)
+    c_pdf.execute("SELECT unidade_consumidora, nome_unidade, atividade FROM cadastro_uc WHERE uc_cemig = %s", (dados['unidade_consumidora'],))
     res_uc = c_pdf.fetchone()
     conexao_pdf.close()
     
-    dados['nome_unidade'] = res_uc[0] if res_uc else "Não Cadastrada"
-    dados['atividade'] = res_uc[1] if res_uc else "Administrativa" 
+    if res_uc:
+        # 🌟 O SEGREDO: Salva a UC da CEMIG na coluna de memória antes de substituir!
+        dados['uc_original'] = dados['unidade_consumidora']
+        
+        # Substitui a UC da CEMIG pela UC Master (Nova CPFL) para unificar os gráficos!
+        dados['unidade_consumidora'] = res_uc[0] 
+        dados['nome_unidade'] = res_uc[1]
+        dados['atividade'] = res_uc[2]
+    else:
+        # Se não achar o cadastro, salva a memória também por segurança
+        dados['uc_original'] = dados['unidade_consumidora']
+        dados['nome_unidade'] = "Não Cadastrada"
+        dados['atividade'] = "Administrativa" 
     
     # 5. Extração de Valores ACL
     linha_energia = re.search(r"Energia Ativa HFP.*?(?:kWh)\s+([\d\.]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
@@ -1925,3 +1940,64 @@ with aba_config:
             use_container_width=True
         )
         
+    # =========================================================
+    # ATUALIZAÇÃO EM LOTE DE UCs (DE / PARA)
+    # =========================================================
+    st.divider()
+    st.markdown("###### 🔄 Migração de UCs em Lote (De/Para)")
+    st.info("Faça o upload de uma planilha Excel com as colunas exatas: **UC Antiga**, **Nova UC CPFL** e **UC CEMIG**. O sistema irá atualizar todo o histórico.")
+    
+    arquivo_migracao = st.file_uploader("Planilha de Migração (.xlsx)", type=["xlsx"], key="up_migracao")
+    
+    if arquivo_migracao is not None:
+        if st.button("🚀 Executar Migração Massiva", type="primary"):
+            try:
+                df_migracao = pd.read_excel(arquivo_migracao)
+                
+                # Validação simples das colunas
+                colunas_necessarias = ['UC Antiga', 'Nova UC CPFL', 'UC CEMIG']
+                if not all(col in df_migracao.columns for col in colunas_necessarias):
+                    st.error(f"A planilha deve conter exatamente estas colunas: {', '.join(colunas_necessarias)}")
+                else:
+                    conexao = obter_conexao()
+                    c = conexao.cursor()
+                    
+                    ucs_atualizadas = 0
+                    
+                    for index, row in df_migracao.iterrows():
+                        uc_antiga = str(row['UC Antiga']).strip()
+                        uc_nova = str(row['Nova UC CPFL']).strip()
+                        uc_cemig = str(row['UC CEMIG']).strip() if pd.notna(row['UC CEMIG']) else ""
+                        
+                        if uc_antiga and uc_nova:
+                            # 1. Atualiza a Tabela de Cadastro (Muda a Chave Primária e adiciona a da CEMIG)
+                            c.execute('''
+                                UPDATE cadastro_uc 
+                                SET unidade_consumidora = %s, uc_cemig = %s 
+                                WHERE unidade_consumidora = %s
+                            ''', (uc_nova, uc_cemig, uc_antiga))
+                            
+                            # 2. Atualiza o Histórico de Faturas
+                            c.execute('''
+                                UPDATE faturas_cpfl 
+                                SET unidade_consumidora = %s 
+                                WHERE unidade_consumidora = %s
+                            ''', (uc_nova, uc_antiga))
+                            
+                            # 3. Atualiza o Histórico Financeiro
+                            c.execute('''
+                                UPDATE historico_financeiro 
+                                SET unidade_consumidora = %s 
+                                WHERE unidade_consumidora = %s
+                            ''', (uc_nova, uc_antiga))
+                            
+                            ucs_atualizadas += 1
+                    
+                    conexao.commit()
+                    conexao.close()
+                    carregar_dados.clear() # Limpa a cache para atualizar os gráficos
+                    
+                    st.success(f"✅ Migração concluída com sucesso! Todo o histórico de {ucs_atualizadas} instalações foi atualizado.")
+                    st.balloons()
+            except Exception as e:
+                st.error(f"Ocorreu um erro durante a migração: {e}")

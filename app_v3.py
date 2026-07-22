@@ -889,11 +889,11 @@ with aba_controle:
                 df_pendente_envio['Lançamentos Diversos'] = df_pendente_envio['Lançamentos Diversos'].apply(lambda x: 0.0 if abs(x) <= 0.05 else x)
                 
                 # Ordenação cronológica para a visualização
-                df_pendente_envio['Data_Ord'] = pd.to_datetime(df_pendente_envio['Vencimento'], format='%d/%m/%Y')
+                df_pendente_envio['Data_Ord'] = pd.to_datetime(df_pendente_envio['Vencimento CPFL'], format='%d/%m/%Y')
                 df_pendente_envio = df_pendente_envio.sort_values('Data_Ord')
 
                 st.info(f"Existem **{len(df_pendente_envio)}** faturas prontas para envio.")
-                colunas_fin = ['UC', 'Nome da Unidade', 'Mês Referência', 'Vencimento', 'CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura']
+                colunas_fin = ['UC', 'Nome da Unidade', 'Mês Referência', 'Vencimento CPFL', 'CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura']
 
                 # --- EXIBIÇÃO NA TELA ---
                 for atividade in sorted(df_pendente_envio['Atividade'].unique()):
@@ -909,8 +909,8 @@ with aba_controle:
                         st.dataframe(df_detalhe, hide_index=True, use_container_width=True)
                         
                         st.markdown("##### 📊 Resumo de pagamentos por data")
-                        df_resumo = df_ativ.groupby('Vencimento')['Valor Total Fatura'].sum().reset_index()
-                        df_resumo['D_Ord'] = pd.to_datetime(df_resumo['Vencimento'], format='%d/%m/%Y')
+                        df_resumo = df_ativ.groupby('Vencimento CPFL')['Valor Total Fatura'].sum().reset_index()
+                        df_resumo['D_Ord'] = pd.to_datetime(df_resumo['Vencimento CPFL'], format='%d/%m/%Y')
                         df_resumo = df_resumo.sort_values('D_Ord').drop(columns=['D_Ord'])
                         df_res_show = df_resumo.copy()
                         df_res_show.columns = ['Data de Vencimento', 'Valor Total']
@@ -926,7 +926,7 @@ with aba_controle:
                     for _, row in dados.iterrows():
                         cursor.execute(
                             "INSERT INTO historico_financeiro (unidade_consumidora, mes_referencia, valor_fatura, vencimento) VALUES (%s, %s, %s, %s)",
-                            (row['UC'], row['Mês Referência'], row['Valor Total Fatura'], row['Vencimento'])
+                            (row['UC'], row['Mês Referência'], row['Valor Total Fatura'], row['Vencimento CPFL'])
                         )
                     conn.commit()
                     conn.close()
@@ -978,7 +978,7 @@ with aba_controle:
                             ws.cell(row=row_idx, column=2, value=str(r['Nome da Unidade']))
                             ws.cell(row=row_idx, column=3, value=str(r['Mês Referência']))
                             
-                            c_venc = ws.cell(row=row_idx, column=4, value=pd.to_datetime(r['Vencimento'], format='%d/%m/%Y'))
+                            c_venc = ws.cell(row=row_idx, column=4, value=pd.to_datetime(r['Vencimento CPFL'], format='%d/%m/%Y'))
                             c_venc.number_format = 'DD/MM/YYYY'
                             
                             for i, col_name in enumerate(['CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura'], 5):
@@ -1006,10 +1006,10 @@ with aba_controle:
                         row_idx += 1
                         
                         # --- 6. Dados do Resumo do Setor ---
-                        df_res = df_ativ.groupby('Vencimento')['Valor Total Fatura'].sum().reset_index()
-                        df_res['D_Ord'] = pd.to_datetime(df_res['Vencimento'], format='%d/%m/%Y')
+                        df_res = df_ativ.groupby('Vencimento CPFL')['Valor Total Fatura'].sum().reset_index()
+                        df_res['D_Ord'] = pd.to_datetime(df_res['Vencimento CPFL'], format='%d/%m/%Y')
                         for _, rs in df_res.sort_values('D_Ord').iterrows():
-                            c_rv = ws.cell(row=row_idx, column=1, value=pd.to_datetime(rs['Vencimento'], format='%d/%m/%Y'))
+                            c_rv = ws.cell(row=row_idx, column=1, value=pd.to_datetime(rs['Vencimento CPFL'], format='%d/%m/%Y'))
                             c_rv.number_format = 'DD/MM/YYYY'
                             
                             c_rt = ws.cell(row=row_idx, column=2, value=float(rs['Valor Total Fatura']))
@@ -1036,10 +1036,10 @@ with aba_controle:
                     row_idx += 1
                     
                     # Dados do Resumo Geral
-                    df_g = df_pendente_envio.groupby('Vencimento')['Valor Total Fatura'].sum().reset_index()
-                    df_g['D'] = pd.to_datetime(df_g['Vencimento'], format='%d/%m/%Y')
+                    df_g = df_pendente_envio.groupby('Vencimento CPFL')['Valor Total Fatura'].sum().reset_index()
+                    df_g['D'] = pd.to_datetime(df_g['Vencimento CPFL'], format='%d/%m/%Y')
                     for _, res_g in df_g.sort_values('D').iterrows():
-                        c_gv = ws.cell(row=row_idx, column=1, value=pd.to_datetime(res_g['Vencimento'], format='%d/%m/%Y'))
+                        c_gv = ws.cell(row=row_idx, column=1, value=pd.to_datetime(res_g['Vencimento CPFL'], format='%d/%m/%Y'))
                         c_gv.number_format = 'DD/MM/YYYY'
                         
                         c_gt = ws.cell(row=row_idx, column=2, value=float(res_g['Valor Total Fatura']))
@@ -1131,7 +1131,7 @@ with aba_controle:
                         # Pega a fatura mais recente dentre as anteriores
                         fatura_recente = faturas_anteriores.sort_values('Data Referência Oculta', ascending=False).iloc[0]
                         data_ref_anterior = fatura_recente['Data Referência Oculta']
-                        venc_anterior_str = fatura_recente['Vencimento']
+                        venc_anterior_str = fatura_recente['Vencimento CPFL']
                         
                         try:
                             venc_anterior_dt = pd.to_datetime(venc_anterior_str, format='%d/%m/%Y')
@@ -1226,7 +1226,7 @@ with aba_controle:
                     
         # --- SUB-ABA 3: VENCIMENTOS (TABELA QUE FORMATAMOS ANTES) ---
         with tab_vencimentos:
-            df_venc = df_mes.groupby('Vencimento')['Valor Total Fatura'].agg(['count', 'sum']).reset_index()
+            df_venc = df_mes.groupby('Vencimento CPFL')['Valor Total Fatura'].agg(['count', 'sum']).reset_index()
             df_venc.columns = ['Data de Vencimento', 'Quantidade Faturas', 'Valor Total']
             df_venc['Data_Ord'] = pd.to_datetime(df_venc['Data de Vencimento'], format='%d/%m/%Y')
             df_venc = df_venc.sort_values('Data_Ord').drop(columns=['Data_Ord'])
@@ -1391,7 +1391,7 @@ with aba_espelho:
                 col_info1, col_info2, col_info3 = st.columns(3)
                 col_info1.markdown(f"**Unidade:** {f['Nome da Unidade']}")
                 col_info2.markdown(f"**Classificação:** {classe}")
-                col_info3.markdown(f"**Vencimento:** {f['Vencimento']}")
+                col_info3.markdown(f"**Vencimento:** {f['Vencimento CPFL']}")
                 
                 ed_cons_p = ed_val_p = ed_cons_fp = ed_val_fp = 0.0
                 ed_dc_p = ed_dc_fp = ed_dr_p = ed_val_dr_p = ed_dr_fp = ed_val_dr_fp = 0.0

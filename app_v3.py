@@ -836,11 +836,11 @@ with aba_dash:
 with aba_controle:
     st.markdown("##### 🔍 Painel de Controle Financeiro")
     
-    # 1. Carregar dados básicos
+    # 1. Carregar dados básicos e cadastros ativos
     df_faturas = carregar_dados()
     conexao = obter_conexao()
-    # Adicionado puxar o dia_vencimento
-    df_cadastro = pd.read_sql_query("SELECT unidade_consumidora, nome_unidade, status, dia_vencimento FROM cadastro_uc WHERE status = 'ATIVA'", conexao)
+    # Puxa a coluna uc_cemig para podermos identificar quem migrou para o ACL
+    df_cadastro = pd.read_sql_query("SELECT unidade_consumidora, nome_unidade, status, dia_vencimento, uc_cemig FROM cadastro_uc WHERE status = 'ATIVA'", conexao)
     
     if df_faturas.empty:
         st.info("Nenhuma fatura carregada para auditoria.")
@@ -852,6 +852,7 @@ with aba_controle:
         with col_filtro:
             mes_auditoria = st.selectbox("📅 Selecione o Mês:", meses_disponiveis)
         
+        # Filtra todas as faturas dadas daquela competência de referência
         df_mes = df_faturas[df_faturas['Mês Referência'] == mes_auditoria]
         
         c1, c2, c3 = st.columns(3)
@@ -860,40 +861,42 @@ with aba_controle:
         
         st.divider()
 
-        # Criamos sub-abas internas para organizar a bagunça
-        tab_relatorio, tab_pendencias, tab_vencimentos = st.tabs(["📝 Gerar Relatório Financeiro", "🚨 Pendências de Carga", "🗓️ Fluxo de Vencimentos"])
+        # Criação das sub-abas internas (Sub-aba Fluxo de Vencimentos excluída com sucesso!)
+        tab_relatorio, tab_pendencias = st.tabs(["📝 Gerar Relatório Financeiro", "🚨 Pendências de Carga"])
 
         # --- SUB-ABA 1: GERADOR DE RELATÓRIO ---
         with tab_relatorio:
+            # Filtro de segurança: Isola estritamente as faturas da CPFL para o fechamento financeiro
+            df_mes_cpfl = df_mes[df_mes['Classificação'] != 'Mercado Livre - ACL'].copy()
             
-            # 1. Busca faturas já enviadas para filtrar a visualização
+            # Busca faturas já enviadas para filtrar a visualização
             df_enviados = pd.read_sql_query(f"SELECT id, unidade_consumidora, data_envio, valor_fatura FROM historico_financeiro WHERE mes_referencia = '{mes_auditoria}'", conexao)
             ucs_enviadas = df_enviados['unidade_consumidora'].tolist()
             
-            # 2. Filtra apenas as faturas que ainda não foram enviadas
-            df_pendente_envio = df_mes[~df_mes['UC'].isin(ucs_enviadas)].copy()
+            # Filtra apenas as faturas da distribuidora que ainda não foram enviadas
+            df_pendente_envio = df_mes_cpfl[~df_mes_cpfl['UC'].isin(ucs_enviadas)].copy()
             
             if not df_pendente_envio.empty:
                 # --- CÁLCULOS FINANCEIROS ---
                 df_pendente_envio['Valor IRRF (-)'] = df_pendente_envio['Retenção Cons. IRRF'] + df_pendente_envio['Retenção Dem. IRRF']
                 cols_energia = ['Valor Total Consumo', 'Valor Total Dem.', 'Valor Total Dem. Isenta', 'Valor Total Dem. Ultrap.', 'Valor Total Reativo', 'Adicional Bandeira']
                 
-                # Prioriza o Subtotal do PDF se existir
                 if 'Subtotal PDF' in df_pendente_envio.columns:
                     df_pendente_envio['Subtotal'] = df_pendente_envio.apply(lambda r: r['Subtotal PDF'] if r['Subtotal PDF'] > 0 else r[cols_energia].sum(), axis=1)
                 else:
                     df_pendente_envio['Subtotal'] = df_pendente_envio[cols_energia].sum(axis=1)
                 
-                # Fórmula: Diversos = Total - Subtotal - CIP + IRRF
                 df_pendente_envio['Lançamentos Diversos'] = (df_pendente_envio['Valor Total Fatura'] - df_pendente_envio['Subtotal'] - df_pendente_envio['CIP'] + df_pendente_envio['Valor IRRF (-)']).round(2)
                 df_pendente_envio['Lançamentos Diversos'] = df_pendente_envio['Lançamentos Diversos'].apply(lambda x: 0.0 if abs(x) <= 0.05 else x)
                 
-                # Ordenação cronológica para a visualização
-                df_pendente_envio['Data_Ord'] = pd.to_datetime(df_pendente_envio['Vencimento CPFL'], format='%d/%m/%Y')
+                # Mapeamento dinâmico inteligente para suportar tanto 'Vencimento' como 'Vencimento CPFL'
+                col_venc_ativa = 'Vencimento CPFL' if 'Vencimento CPFL' in df_pendente_envio.columns else 'Vencimento'
+                
+                df_pendente_envio['Data_Ord'] = pd.to_datetime(df_pendente_envio[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
                 df_pendente_envio = df_pendente_envio.sort_values('Data_Ord')
 
-                st.info(f"Existem **{len(df_pendente_envio)}** faturas prontas para envio.")
-                colunas_fin = ['UC', 'Nome da Unidade', 'Mês Referência', 'Vencimento CPFL', 'CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura']
+                st.info(f"Existem **{len(df_pendente_envio)}** faturas da CPFL prontas para fechamento de lote.")
+                colunas_fin = ['UC', 'Nome da Unidade', 'Mês Referência', col_venc_ativa, 'CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura']
 
                 # --- EXIBIÇÃO NA TELA ---
                 for atividade in sorted(df_pendente_envio['Atividade'].unique()):
@@ -905,40 +908,34 @@ with aba_controle:
                         for col in ['CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura']:
                             df_detalhe[col] = df_detalhe[col].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
                         
-                        # Removendo a coluna de índices com hide_index=True
                         st.dataframe(df_detalhe, hide_index=True, use_container_width=True)
                         
                         st.markdown("##### 📊 Resumo de pagamentos por data")
-                        df_resumo = df_ativ.groupby('Vencimento CPFL')['Valor Total Fatura'].sum().reset_index()
-                        df_resumo['D_Ord'] = pd.to_datetime(df_resumo['Vencimento CPFL'], format='%d/%m/%Y')
+                        df_resumo = df_ativ.groupby(col_venc_ativa)['Valor Total Fatura'].sum().reset_index()
+                        df_resumo['D_Ord'] = pd.to_datetime(df_resumo[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
                         df_resumo = df_resumo.sort_values('D_Ord').drop(columns=['D_Ord'])
                         df_res_show = df_resumo.copy()
                         df_res_show.columns = ['Data de Vencimento', 'Valor Total']
                         df_res_show['Valor Total'] = df_res_show['Valor Total'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
                         st.dataframe(df_res_show, hide_index=True, use_container_width=True)
 
-                # --- LÓGICA DO BOTÃO ÚNICO E GERAÇÃO DO EXCEL ---
-                
-                # Função interna para salvar no banco apenas no clique
-                def finalizar_lote_db(dados, mes):
+                # --- GERAÇÃO DO EXCEL EM MEMÓRIA ---
+                def finalizar_lote_db(dados, mes, col_venc):
                     conn = obter_conexao()
                     cursor = conn.cursor()
                     for _, row in dados.iterrows():
                         cursor.execute(
                             "INSERT INTO historico_financeiro (unidade_consumidora, mes_referencia, valor_fatura, vencimento) VALUES (%s, %s, %s, %s)",
-                            (row['UC'], row['Mês Referência'], row['Valor Total Fatura'], row['Vencimento CPFL'])
+                            (row['UC'], row['Mês Referência'], row['Valor Total Fatura'], row[col_venc])
                         )
                     conn.commit()
                     conn.close()
 
-                # Construção da planilha em memória antes de exibir o botão
                 buffer = io.BytesIO()
                 with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                    # Criamos uma aba vazia para preencher e formatar tudo manualmente
                     pd.DataFrame().to_excel(writer, index=False, header=False, sheet_name='Relatorio_Financeiro')
                     ws = writer.sheets['Relatorio_Financeiro']
                     
-                    # Estilos Excel (Azul escuro para cabeçalhos, Azul claro para setores)
                     header_fill = PatternFill(start_color="002060", fill_type="solid")
                     sector_fill = PatternFill(start_color="D9E1F2", fill_type="solid")
                     font_white = Font(bold=True, color="FFFFFF")
@@ -950,119 +947,99 @@ with aba_controle:
                     for atividade in sorted(df_pendente_envio['Atividade'].unique()):
                         df_ativ = df_pendente_envio[df_pendente_envio['Atividade'] == atividade].copy()
                         
-                        # --- 1. Título do Setor ---
                         ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=9)
                         c_setor = ws.cell(row=row_idx, column=1, value=f"SETOR: {atividade.upper()}")
-                        c_setor.fill = sector_fill
-                        c_setor.font = font_bold
-                        c_setor.alignment = center_align
+                        c_setor.fill = sector_fill; c_setor.font = font_bold; c_setor.alignment = center_align
                         row_idx += 1
                         
-                        # --- 2. Cabeçalhos das Colunas ---
                         for col_num, col_name in enumerate(colunas_fin, 1):
                             c_head = ws.cell(row=row_idx, column=col_num, value=col_name)
-                            c_head.fill = header_fill
-                            c_head.font = font_white
-                            c_head.alignment = center_align
+                            c_head.fill = header_fill; c_head.font = font_white; c_head.alignment = center_align
                         row_idx += 1
                         
-                        # --- 3. Linhas de Dados do Setor ---
                         for _, r in df_ativ.iterrows():
-                            # Conversão segura da UC para evitar ValueError (Trata decimais, espaços ou textos)
                             try:
                                 uc_segura = int(float(r['UC']))
                             except (ValueError, TypeError):
                                 uc_segura = str(r['UC']).strip()
-
+                                
                             ws.cell(row=row_idx, column=1, value=uc_segura)
                             ws.cell(row=row_idx, column=2, value=str(r['Nome da Unidade']))
                             ws.cell(row=row_idx, column=3, value=str(r['Mês Referência']))
                             
-                            c_venc = ws.cell(row=row_idx, column=4, value=pd.to_datetime(r['Vencimento CPFL'], format='%d/%m/%Y'))
-                            c_venc.number_format = 'DD/MM/YYYY'
+                            try:
+                                c_venc = ws.cell(row=row_idx, column=4, value=pd.to_datetime(r[col_venc_ativa], format='%d/%m/%Y'))
+                                c_venc.number_format = 'DD/MM/YYYY'
+                            except:
+                                ws.cell(row=row_idx, column=4, value=str(r[col_venc_ativa]))
                             
                             for i, col_name in enumerate(['CIP', 'Subtotal', 'Valor IRRF (-)', 'Lançamentos Diversos', 'Valor Total Fatura'], 5):
                                 c_val = ws.cell(row=row_idx, column=i, value=float(r[col_name]))
                                 c_val.number_format = 'R$ #,##0.00'
                             row_idx += 1
                         
-                        row_idx += 1 # Espaço em branco
-                        
-                        # --- 4. Título do Resumo do Setor ---
-                        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
-                        c_res = ws.cell(row=row_idx, column=1, value=f"RESUMO: {atividade.upper()}")
-                        c_res.fill = sector_fill
-                        c_res.font = font_bold
-                        c_res.alignment = center_align
                         row_idx += 1
                         
-                        # --- 5. Cabeçalhos do Resumo ---
+                        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
+                        c_res = ws.cell(row=row_idx, column=1, value=f"RESUMO: {atividade.upper()}")
+                        c_res.fill = sector_fill; c_res.font = font_bold; c_res.alignment = center_align
+                        row_idx += 1
+                        
                         c_rh1 = ws.cell(row=row_idx, column=1, value="Data de Vencimento")
                         c_rh2 = ws.cell(row=row_idx, column=2, value="Valor Total")
                         for cell in [c_rh1, c_rh2]:
-                            cell.fill = header_fill
-                            cell.font = font_white
-                            cell.alignment = center_align
+                            cell.fill = header_fill; cell.font = font_white; cell.alignment = center_align
                         row_idx += 1
                         
-                        # --- 6. Dados do Resumo do Setor ---
-                        df_res = df_ativ.groupby('Vencimento CPFL')['Valor Total Fatura'].sum().reset_index()
-                        df_res['D_Ord'] = pd.to_datetime(df_res['Vencimento CPFL'], format='%d/%m/%Y')
+                        df_res = df_ativ.groupby(col_venc_ativa)['Valor Total Fatura'].sum().reset_index()
+                        df_res['D_Ord'] = pd.to_datetime(df_res[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
                         for _, rs in df_res.sort_values('D_Ord').iterrows():
-                            c_rv = ws.cell(row=row_idx, column=1, value=pd.to_datetime(rs['Vencimento CPFL'], format='%d/%m/%Y'))
-                            c_rv.number_format = 'DD/MM/YYYY'
+                            try:
+                                c_rv = ws.cell(row=row_idx, column=1, value=pd.to_datetime(rs[col_venc_ativa], format='%d/%m/%Y'))
+                                c_rv.number_format = 'DD/MM/YYYY'
+                            except:
+                                ws.cell(row=row_idx, column=1, value=str(rs[col_venc_ativa]))
                             
                             c_rt = ws.cell(row=row_idx, column=2, value=float(rs['Valor Total Fatura']))
                             c_rt.number_format = 'R$ #,##0.00'
                             row_idx += 1
                             
-                        row_idx += 2 # Espaço antes do próximo setor
+                        row_idx += 2
                     
-                    # --- RESUMO GERAL FINAL ---
                     ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
                     c_rg = ws.cell(row=row_idx, column=1, value="RESUMO GERAL (TODOS OS SETORES)")
-                    c_rg.fill = sector_fill
-                    c_rg.font = font_bold
-                    c_rg.alignment = center_align
+                    c_rg.fill = sector_fill; c_rg.font = font_bold; c_rg.alignment = center_align
                     row_idx += 1
                     
-                    # Cabeçalhos do Resumo Geral
                     c_gh1 = ws.cell(row=row_idx, column=1, value="Data de Vencimento")
                     c_gh2 = ws.cell(row=row_idx, column=2, value="Valor Total")
                     for cell in [c_gh1, c_gh2]:
-                        cell.fill = header_fill
-                        cell.font = font_white
-                        cell.alignment = center_align
+                        cell.fill = header_fill; cell.font = font_white; cell.alignment = center_align
                     row_idx += 1
                     
-                    # Dados do Resumo Geral
-                    df_g = df_pendente_envio.groupby('Vencimento CPFL')['Valor Total Fatura'].sum().reset_index()
-                    df_g['D'] = pd.to_datetime(df_g['Vencimento CPFL'], format='%d/%m/%Y')
+                    df_g = df_pendente_envio.groupby(col_venc_ativa)['Valor Total Fatura'].sum().reset_index()
+                    df_g['D'] = pd.to_datetime(df_g[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
                     for _, res_g in df_g.sort_values('D').iterrows():
-                        c_gv = ws.cell(row=row_idx, column=1, value=pd.to_datetime(res_g['Vencimento CPFL'], format='%d/%m/%Y'))
-                        c_gv.number_format = 'DD/MM/YYYY'
+                        try:
+                            c_gv = ws.cell(row=row_idx, column=1, value=pd.to_datetime(res_g[col_venc_ativa], format='%d/%m/%Y'))
+                            c_gv.number_format = 'DD/MM/YYYY'
+                        except:
+                            ws.cell(row=row_idx, column=1, value=str(res_g[col_venc_ativa]))
                         
                         c_gt = ws.cell(row=row_idx, column=2, value=float(res_g['Valor Total Fatura']))
                         c_gt.number_format = 'R$ #,##0.00'
                         row_idx += 1
 
-                    # --- Ajuste automático da largura das colunas ---
-                    from openpyxl.utils import get_column_letter # Importamos o conversor seguro
-                    
+                    from openpyxl.utils import get_column_letter
                     for i, col in enumerate(ws.columns, 1):
                         max_l = 0
-                        col_letter = get_column_letter(i) # Pega a letra (A, B, C...) com base no número
-                        
+                        col_letter = get_column_letter(i)
                         for cell in col:
-                            try: 
-                                if cell.value:
-                                    max_l = max(max_l, len(str(cell.value)))
-                            except: 
-                                pass
-                                
+                            try:
+                                if cell.value: max_l = max(max_l, len(str(cell.value)))
+                            except: pass
                         ws.column_dimensions[col_letter].width = max_l + 4
 
-                # BOTÃO ÚNICO QUE FAZ TUDO
                 col_btn_gerar, col_vazia1, col_vazia2 = st.columns([1, 2, 2])
                 with col_btn_gerar:
                     st.download_button(
@@ -1072,13 +1049,12 @@ with aba_controle:
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         type="primary",
                         on_click=finalizar_lote_db,
-                        args=(df_pendente_envio, mes_auditoria),
-                        use_container_width=True # Agora ele usa a largura total APENAS da coluna 1
+                        args=(df_pendente_envio, mes_auditoria, col_venc_ativa),
+                        use_container_width=True
                     )
             else:
-                st.success(f"✅ Não existe pendência de envio das faturas carregadas do mês {mes_auditoria}.")
+                st.success(f"✅ Não existe pendência de envio para as faturas da CPFL do mês {mes_auditoria}.")
 
-            # --- GESTÃO DE ENVIOS (REVERSÃO) ---
             st.divider()
             with st.expander("📜 Gestão de Envios (Visualizar ou Reverter)"):
                 if not df_enviados.empty:
@@ -1101,137 +1077,124 @@ with aba_controle:
                             conexao.commit(); st.rerun()
                 else:
                     st.info("Nenhum envio registrado para este mês.")
-                
-        # --- SUB-ABA 2: PENDÊNCIAS DE CARGA (AUDITORIA ANTERIOR + INTELIGÊNCIA DE VENCIMENTO) ---
+
+        # --- SUB-ABA 2: PENDÊNCIAS DE CARGA (LOGICA ATUALIZADA ACL DUAL) ---
         with tab_pendencias:
-            ucs_carregadas = df_mes['UC'].unique()
-            df_faltantes = df_cadastro[~df_cadastro['unidade_consumidora'].isin(ucs_carregadas)].copy()
+            linhas_pendentes = []
+            hoje = pd.Timestamp.today().normalize()
             
-            if not df_faltantes.empty:
-                st.warning(f"🚨 Faltam carregar {len(df_faltantes)} faturas de unidades ATIVAS referentes a {mes_auditoria}.")
+            mes_str, ano_str = mes_auditoria.split('/')
+            mes_map_num = {'JAN': 1, 'FEV': 2, 'MAR': 3, 'ABR': 4, 'MAI': 5, 'JUN': 6, 
+                           'JUL': 7, 'AGO': 8, 'SET': 9, 'OUT': 10, 'NOV': 11, 'DEZ': 12}
+            mes_num_auditoria = mes_map_num.get(mes_str.upper(), 1)
+            ano_num_auditoria = int(ano_str)
+            data_auditoria = pd.Timestamp(year=ano_num_auditoria, month=mes_num_auditoria, day=1)
+
+            for _, row in df_cadastro.iterrows():
+                uc = str(row['unidade_consumidora']).strip()
+                nome = row['nome_unidade']
+                dia_cadastrado = int(row['dia_vencimento']) if pd.notna(row['dia_vencimento']) else 10
                 
-                # Desmembramento da competência em data para cálculos
-                mes_str, ano_str = mes_auditoria.split('/')
-                mes_map_num = {'JAN': 1, 'FEV': 2, 'MAR': 3, 'ABR': 4, 'MAI': 5, 'JUN': 6, 
-                               'JUL': 7, 'AGO': 8, 'SET': 9, 'OUT': 10, 'NOV': 11, 'DEZ': 12}
+                # Descobre se a UC está no Mercado Livre (Verifica se possui uc_cemig preenchida)
+                is_acl = pd.notna(row.get('uc_cemig')) and str(row.get('uc_cemig')).strip() != "" and str(row.get('uc_cemig')).strip().upper() != "NONE"
                 
-                mes_num_auditoria = mes_map_num.get(mes_str.upper(), 1)
-                ano_num_auditoria = int(ano_str)
-                data_auditoria = pd.Timestamp(year=ano_num_auditoria, month=mes_num_auditoria, day=1)
+                # Filtra os registros salvos dessa unidade na competência avaliada
+                faturas_uc_mes = df_mes[df_mes['UC'] == uc]
                 
-                # Função inteligente para buscar o último vencimento e calcular a projeção
-                def calcular_vencimento_inteligente(row):
-                    uc = row['unidade_consumidora']
-                    dia_cadastrado = int(row['dia_vencimento']) if pd.notna(row['dia_vencimento']) else 10
-                    
-                    # Filtra todas as faturas dessa UC que sejam de meses ANTERIORES ao mês da auditoria
+                # No ACL, separamos as faturas pela coluna 'Classificação'
+                tem_cpfl = not faturas_uc_mes[faturas_uc_mes['Classificação'] != 'Mercado Livre - ACL'].empty
+                tem_cemig = not faturas_uc_mes[faturas_uc_mes['Classificação'] == 'Mercado Livre - ACL'].empty
+                
+                # LÓGICA DE AUDITORIA DE CARGA
+                status_pendencia = ""
+                if is_acl:
+                    if not tem_cpfl and not tem_cemig:
+                        status_pendencia = "❌ Faltam Ambas (CPFL + CEMIG)"
+                    elif not tem_cpfl:
+                        status_pendencia = "⚠️ Falta Distribuidora (CPFL)"
+                    elif not tem_cemig:
+                        status_pendencia = "⚡ Falta Comercializadora (CEMIG)"
+                else:
+                    if not tem_cpfl:
+                        status_pendencia = "❌ Falta Fatura (CPFL)"
+                
+                # Se faltar qualquer um dos documentos, a UC entra na lista de pendências
+                if status_pendencia:
                     faturas_anteriores = df_faturas[(df_faturas['UC'] == uc) & (df_faturas['Data Referência Oculta'] < data_auditoria)]
+                    venc_previsto_data = None
                     
                     if not faturas_anteriores.empty:
-                        # Pega a fatura mais recente dentre as anteriores
                         fatura_recente = faturas_anteriores.sort_values('Data Referência Oculta', ascending=False).iloc[0]
                         data_ref_anterior = fatura_recente['Data Referência Oculta']
-                        venc_anterior_str = fatura_recente['Vencimento CPFL']
+                        
+                        col_v_act = 'Vencimento CPFL' if 'Vencimento CPFL' in fatura_recente else 'Vencimento'
+                        venc_anterior_str = fatura_recente[col_v_act]
                         
                         try:
                             venc_anterior_dt = pd.to_datetime(venc_anterior_str, format='%d/%m/%Y')
-                            
-                            # Diferença em meses entre a referência que estamos auditando e a referência da última fatura lida
                             diff_meses = (data_auditoria.year - data_ref_anterior.year) * 12 + (data_auditoria.month - data_ref_anterior.month)
                             
-                            # Soma a diferença de meses ao mês do último vencimento real
                             novo_mes_venc = venc_anterior_dt.month + diff_meses
                             novo_ano_venc = venc_anterior_dt.year + (novo_mes_venc - 1) // 12
                             novo_mes_venc = ((novo_mes_venc - 1) % 12) + 1
                             
-                            # Ajusta o dia para a regra cadastrada (evitando dias impossíveis como 31 de fevereiro)
                             ultimo_dia = calendar.monthrange(novo_ano_venc, novo_mes_venc)[1]
                             dia_seguro = min(dia_cadastrado, ultimo_dia)
-                            
-                            return pd.Timestamp(year=novo_ano_venc, month=novo_mes_venc, day=dia_seguro)
+                            venc_previsto_data = pd.Timestamp(year=novo_ano_venc, month=novo_mes_venc, day=dia_seguro)
                         except:
-                            pass # Se a data anterior tiver erro de digitação, ele cai para o Fallback abaixo
+                            pass
                             
-                    # FALLBACK: Se a UC for nova e não tiver histórico nenhum, apenas soma 1 mês à competência da auditoria
-                    novo_mes_venc = mes_num_auditoria + 1
-                    novo_ano_venc = ano_num_auditoria
-                    if novo_mes_venc > 12:
-                        novo_mes_venc = 1
-                        novo_ano_venc += 1
+                    if venc_previsto_data is None:
+                        novo_mes_venc = mes_num_auditoria + 1
+                        novo_ano_venc = ano_num_auditoria
+                        if novo_mes_venc > 12:
+                            novo_mes_venc = 1
+                            novo_ano_venc += 1
+                        ultimo_dia = calendar.monthrange(novo_ano_venc, novo_mes_venc)[1]
+                        dia_seguro = min(dia_cadastrado, ultimo_dia)
+                        venc_previsto_data = pd.Timestamp(year=novo_ano_venc, month=novo_mes_venc, day=dia_seguro)
+                    
+                    dias_restantes = (venc_previsto_data - hoje).days
+                    
+                    def semaforo_urgencia(dias):
+                        if dias <= 10: return '🔴 Crítico'
+                        elif dias <= 20: return '🟠 Atenção'
+                        else: return '🟢 No Prazo'
                         
-                    ultimo_dia = calendar.monthrange(novo_ano_venc, novo_mes_venc)[1]
-                    dia_seguro = min(dia_cadastrado, ultimo_dia)
-                    return pd.Timestamp(year=novo_ano_venc, month=novo_mes_venc, day=dia_seguro)
-
-                # Aplica a função cruzada para cada unidade pendente
-                df_faltantes['Vencimento Previsto (Data)'] = df_faltantes.apply(calcular_vencimento_inteligente, axis=1)
+                    linhas_pendentes.append({
+                        'Urgência': semaforo_urgencia(dias_restantes),
+                        'UC CPFL': uc,
+                        'Nome da Unidade': nome,
+                        'Ambiente': 'Mercado Livre (ACL)' if is_acl else 'Cativo (ACR)',
+                        'Status da Carga': status_pendencia,
+                        'Vencimento Previsto': venc_previsto_data.strftime('%d/%m/%Y'),
+                        'Dias_Num': dias_restantes
+                    })
+            
+            # Exibição dos dados estruturados
+            if linhas_pendentes:
+                df_exibir_pendencias = pd.DataFrame(linhas_pendentes)
+                df_exibir_pendencias = df_exibir_pendencias.sort_values('Dias_Num', ascending=True).drop(columns=['Dias_Num'])
                 
-                # Pega o dia de hoje também no formato nativo do Pandas, zerando as horas
-                hoje = pd.Timestamp.today().normalize() 
+                st.warning(f"🚨 Existem **{len(df_exibir_pendencias)}** unidades com pendências de carga para {mes_auditoria}.")
                 
-                # Conta a distância em dias para calcular o Semáforo
-                df_faltantes['Dias Restantes'] = (df_faltantes['Vencimento Previsto (Data)'] - hoje).dt.days
-                
-                # 1. Adicionamos um rótulo junto à bolinha para ficar mais legível
-                def semaforo_urgencia(dias):
-                    if dias <= 10:
-                        return '🔴 Crítico'
-                    elif dias <= 20:
-                        return '🟠 Atenção'
-                    else:
-                        return '🟢 No Prazo'
-                        
-                df_faltantes['Sinal'] = df_faltantes['Dias Restantes'].apply(semaforo_urgencia)
-                
-                # Ordenação pelas mais atrasadas/próximas ao vencimento (Dias Restantes)
-                df_faltantes = df_faltantes.sort_values('Dias Restantes', ascending=True)
-                
-                # Formata a data e renomeia as colunas finais
-                df_faltantes['Vencimento Previsto'] = df_faltantes['Vencimento Previsto (Data)'].dt.strftime('%d/%m/%Y')
-                
-                df_exibir_pendencias = df_faltantes[['Sinal', 'unidade_consumidora', 'nome_unidade', 'Vencimento Previsto']].rename(columns={
-                    'Sinal': 'Urgência',
-                    'unidade_consumidora': 'UC',
-                    'nome_unidade': 'Nome da Unidade'
-                })
-                
-                # ==========================================
-                # 2. A MÁGICA DAS CORES NA TABELA
-                # ==========================================
                 def colorir_celulas(valor):
                     if 'Crítico' in str(valor):
-                        # Fundo vermelho claro, texto vermelho escuro
                         return 'background-color: #FFCDD2; color: #B71C1C; font-weight: bold;'
                     elif 'Atenção' in str(valor):
-                        # Fundo laranja claro, texto laranja escuro
                         return 'background-color: #FFE0B2; color: #E65100; font-weight: bold;'
                     elif 'No Prazo' in str(valor):
-                        # Fundo verde claro, texto verde escuro
                         return 'background-color: #C8E6C9; color: #1B5E20; font-weight: bold;'
                     return ''
                 
-                # Aplica a função de cor APENAS na coluna "Urgência"
                 try:
-                    # Para Pandas mais novos (versão 2.1+)
                     tabela_colorida = df_exibir_pendencias.style.map(colorir_celulas, subset=['Urgência'])
                 except AttributeError:
-                    # Para versões mais antigas do Pandas
                     tabela_colorida = df_exibir_pendencias.style.applymap(colorir_celulas, subset=['Urgência'])
-                
-                # Exibe a tabela estilizada no Streamlit
-                st.dataframe(tabela_colorida, use_container_width=True, hide_index=True)
-                
-            else:
-                st.success(f"Excelente! Todas as faturas cadastradas para o mês {mes_auditoria} já foram carregadas no sistema.")
                     
-        # --- SUB-ABA 3: VENCIMENTOS (TABELA QUE FORMATAMOS ANTES) ---
-        with tab_vencimentos:
-            df_venc = df_mes.groupby('Vencimento CPFL')['Valor Total Fatura'].agg(['count', 'sum']).reset_index()
-            df_venc.columns = ['Data de Vencimento', 'Quantidade Faturas', 'Valor Total']
-            df_venc['Data_Ord'] = pd.to_datetime(df_venc['Data de Vencimento'], format='%d/%m/%Y')
-            df_venc = df_venc.sort_values('Data_Ord').drop(columns=['Data_Ord'])
-            df_venc['Valor Total'] = df_venc['Valor Total'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-            st.dataframe(df_venc, use_container_width=True, hide_index=True)
+                st.dataframe(tabela_colorida, use_container_width=True, hide_index=True)
+            else:
+                st.success(f"Excelente! Todas as faturas (CPFL e Comercializadoras ACL) para o mês {mes_auditoria} já foram carregadas no sistema.")
 
         conexao.close()
 

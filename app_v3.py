@@ -1980,3 +1980,75 @@ with aba_config:
                     st.balloons()
             except Exception as e:
                 st.error(f"Ocorreu um erro durante a migração: {e}")
+
+# =========================================================
+# MÓDULO DE TESTE: EXTRATOR DE FATURAS CPFL (ACL / CLIENTE LIVRE)
+# =========================================================
+st.divider()
+st.markdown("##### 🧪 Teste de Extração - Novo Layout CPFL (ACL)")
+st.info("Faça o upload de uma fatura da CPFL do Mercado Livre para validar a leitura dos novos campos.")
+
+# Uploader de teste isolado
+arquivo_teste_pdf = st.file_uploader("Selecione um PDF da CPFL (ACL) para teste", type=["pdf"], key="teste_extrator_acl")
+
+if arquivo_teste_pdf is not None:
+    if st.button("🔍 Executar Extração de Teste", type="primary"):
+        try:
+            with pdfplumber.open(arquivo_teste_pdf) as pdf:
+                texto_teste = pdf.pages[0].extract_text()
+            
+            # Dicionário de extração estruturado para o novo formato ACL
+            dados_teste = {}
+            
+            # 1. Classificação (Ex: Cliente Livre-A4)
+            classif_match = re.search(r"Classificação\.?\s*([^\n]+)", texto_teste, re.IGNORECASE)
+            dados_teste['Classificação'] = classif_match.group(1).strip() if classif_match else "Não encontrada"
+            
+            # 2. Número da UC (Novo formato exigido pela ANEEL)
+            uc_match = re.search(r"Número da UC\s*([^\n]+)\s*(\d{5,15})", texto_teste, re.IGNORECASE)
+            if uc_match:
+                dados_teste['Unidade Consumidora (UC)'] = uc_match.group(2).strip()
+            else:
+                # Fallback alternativo focando nos dígitos isolados após o rótulo
+                uc_alt = re.search(r"Número da UC\s*\n\s*([^\n]+)\s*\n\s*(\d+)", texto_teste)
+                dados_teste['Unidade Consumidora (UC)'] = uc_alt.group(2).strip() if uc_alt else "Não encontrada"
+
+            # 3. Mês de Referência e Vencimento
+            mes_match = re.search(r"Referente a\s*([A-Z]{3}/\d{4})", texto_teste, re.IGNORECASE)
+            dados_teste['Mês Referência'] = mes_match.group(1).strip() if mes_match else "Não encontrado"
+            
+            venc_match = re.search(r"Data de Vencimento\s*(\d{2}/\d{2}/\d{4})", texto_teste, re.IGNORECASE)
+            dados_teste['Vencimento'] = venc_match.group(1).strip() if venc_match else "Não encontrado"
+
+            # 4. Consumo Fora de Ponta (TUSD Fio)
+            cons_fp = re.search(r"Consumo Fora de Ponta\s*-\s*\[kWh\]\s*([A-Z]{3}\s*\d{2})\s*([\d\.,]+)", texto_teste, re.IGNORECASE)
+            if cons_fp:
+                dados_teste['Consumo Fora Ponta (kWh)'] = limpar_numero(cons_fp.group(2))
+            else:
+                dados_teste['Consumo Fora Ponta (kWh)'] = 0.0
+
+            # 5. Demandas Registradas no Novo Formato
+            dem_p = re.search(r"Demanda Ponta\s*-\s*\[kW\]\s*([A-Z]{3}\s*\d{2})\s*([\d\.,]+)", texto_teste, re.IGNORECASE)
+            dados_teste['Demanda Registrada Ponta (kW)'] = limpar_numero(dem_p.group(2)) if dem_p else 0.0
+
+            dem_fp = re.search(r"Demanda Fora de Ponta[^\n]*\s*([A-Z]{3}\s*\d{2})\s*([\d\.,]+)", texto_teste, re.IGNORECASE)
+            dados_teste['Demanda Registrada F.Ponta (kW)'] = limpar_numero(dem_fp.group(2)) if dem_fp else 0.0
+
+            # 6. Valor Total a Pagar
+            total_match = re.search(r"Total a pagar.*?R\$\s*([\d\.,]+)", texto_teste, re.IGNORECASE)
+            if total_match:
+                dados_teste['Valor Total Fatura (R$)'] = limpar_numero(total_match.group(1))
+            else:
+                dados_teste['Valor Total Fatura (R$)'] = 0.0
+
+            # Exibe os resultados de forma limpa na tela para conferência
+            st.success("✅ Extração de teste concluída com sucesso!")
+            st.markdown("##### 📋 Dados Brutos Extraídos:")
+            st.json(dados_teste)
+            
+            # Transforma em DataFrame para conferência visual em tabela
+            df_teste_res = pd.DataFrame(list(dados_teste.items()), columns=['Campo', 'Valor Extraído'])
+            st.dataframe(df_teste_res, hide_index=True, use_container_width=True)
+
+        except Exception as e:
+            st.error(f"❌ Erro ao processar o PDF de teste: {e}")

@@ -173,6 +173,7 @@ def inicializar_banco():
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS uc_cemig TEXT;''')
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS uc_antiga TEXT;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS uc_original TEXT;''')
+        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS data_vencimento_acl TEXT;''')
     except:
         pass
         
@@ -218,7 +219,7 @@ def carregar_dados():
     dicionario_nomes = {
         'classificacao': 'Classificação', 'unidade_consumidora': 'UC', 'nome_unidade': 'Nome da Unidade',
         'atividade': 'Atividade', 'periodo_leitura_inicio': 'Leitura Anterior', 'periodo_leitura_fim': 'Leitura Atual',
-        'data_proxima_leitura': 'Próxima Leitura', 'mes_referencia': 'Mês Referência', 'data_vencimento': 'Vencimento',
+        'data_proxima_leitura': 'Próxima Leitura', 'mes_referencia': 'Mês Referência', 'data_vencimento': 'Vencimento CPFL',
         'demanda_contratada_ponta': 'Dem. Contr. Ponta', 'demanda_contratada_fponta': 'Dem. Contr. F.Ponta',
         'consumo_ponta': 'Consumo Ponta', 'tarifa_aneel_cons_ponta_tusd': 'Tarifa Cons. Ponta TUSD',
         'tarifa_trib_cons_ponta_tusd': 'Tarifa Trib. Cons. Ponta TUSD', 'valor_cons_ponta_tusd': 'Valor Cons. Ponta TUSD',
@@ -249,22 +250,19 @@ def carregar_dados():
         'tarifa_aneel_dem_reativa_fponta': 'Tarifa Dem. Reat. F.Ponta', 'tarifa_trib_dem_reativa_fponta': 'Tarifa Trib. Dem. Reat. F.Ponta',
         'valor_dem_reativa_fponta': 'Valor Dem. Reat. F.Ponta', 'subtotal_fatura': 'Subtotal PDF', 'cip': 'CIP', 'retencao_consumo_irrf': 'Retenção Cons. IRRF',
         'retencao_demanda_irrf': 'Retenção Dem. IRRF', 'valor_total_pis': 'Valor PIS', 'valor_total_cofins': 'Valor COFINS',
-        'valor_total_icms': 'Valor ICMS', 'valor_total_fatura': 'Valor Total Fatura', 'data_insercao': 'Data Cadastro'
+        'valor_total_icms': 'Valor ICMS', 'valor_total_fatura': 'Valor Total Fatura', 'data_insercao': 'Data Cadastro',
+        'data_vencimento_acl': 'Vencimento ACL'
     }
     
     df = df.rename(columns=dicionario_nomes)
-    
     df['Total Consumo'] = df['Consumo Ponta'] + df['Consumo F.Ponta']
     df['Valor Total Consumo'] = df['Valor Cons. Ponta TUSD'] + df['Valor Cons. Ponta TE'] + df['Valor Cons. F.Ponta TUSD'] + df['Valor Cons. F.Ponta TE']
     df['Valor Total Dem. Isenta'] = df['Valor Dem. Isenta Ponta'] + df['Valor Dem. Isenta F.Ponta']
     df['Valor Total Dem. Ultrap.'] = df['Valor Dem. Ultrap. Ponta'] + df['Valor Dem. Ultrap. F.Ponta']
-    
     df['Valor Total Desv. Dem.'] = df['Valor Dem. Isenta F.Ponta']+df['Valor Dem. Isenta Ponta']+df['Valor Dem. Ultrap. F.Ponta']+df['Valor Dem. Ultrap. Ponta']
-    
     df['Total Cons. Reat.'] = df['Cons. Reat. Ponta'] + df['Cons. Reat. F.Ponta']
     df['Valor Total Cons. Reat.'] = df['Valor Cons. Reat. Ponta'] + df['Valor Cons. Reat. F.Ponta']
     df['Valor Total Dem. Reat.'] = df['Valor Dem. Reat. Ponta'] + df['Valor Dem. Reat. F.Ponta']
-
     df['Valor Total Dem.'] = df['Valor Dem. Ponta'] + df['Valor Dem. F.Ponta']
     df['Valor Total Reativo'] = df['Valor Total Cons. Reat.'] + df['Valor Total Dem. Reat.']
 
@@ -282,7 +280,7 @@ def carregar_dados():
     df = df.sort_values(by=['Data Referência Oculta', 'UC'], ascending=[False, True])
 
     ordem_colunas = [
-        'id', 'Data Referência Oculta', 'UC', 'Nome da Unidade', 'Atividade', 'Classificação', 'Mês Referência', 'Vencimento', 
+        'id', 'Data Referência Oculta', 'UC', 'Nome da Unidade', 'Atividade', 'Classificação', 'Mês Referência', 'Vencimento CPFL', 'Vencimento ACL',
         'Leitura Anterior', 'Leitura Atual', 'Próxima Leitura', 'Consumo Ponta', 'Tarifa Cons. Ponta TUSD', 'Tarifa Trib. Cons. Ponta TUSD', 'Valor Cons. Ponta TUSD', 
         'Tarifa Cons. Ponta TE', 'Tarifa Trib. Cons. Ponta TE', 'Valor Cons. Ponta TE', 'Consumo F.Ponta', 'Tarifa Cons. F.Ponta TUSD', 'Tarifa Trib. Cons. F.Ponta TUSD', 'Valor Cons. F.Ponta TUSD', 
         'Tarifa Cons. F.Ponta TE', 'Tarifa Trib. Cons. F.Ponta TE', 'Valor Cons. F.Ponta TE', 'Bandeira', 'Adicional Bandeira', 
@@ -531,6 +529,7 @@ def processar_pdf_cemig(arquivo_pdf):
     
     vencimento_bruto = extrair_texto_regex(r"Vencimento\s*(\d{2}/\d{2}/\d{4})", texto)
     dados['data_vencimento'] = vencimento_bruto if vencimento_bruto else extrair_texto_regex(r"(\d{2}/\d{2}/\d{4})", texto) 
+    dados['data_vencimento_acl'] = dados['data_vencimento']
     
     dados['classificacao'] = "Mercado Livre - ACL"
     
@@ -1399,6 +1398,7 @@ with aba_espelho:
                 ed_di_p = ed_v_di_p = ed_di_fp = ed_v_di_fp = 0.0
                 ed_ult_p = ed_v_ult_p = ed_ult_fp = ed_v_ult_fp = 0.0
                 ed_reat_p = ed_v_reat_p = ed_reat_fp = ed_v_reat_fp = 0.0
+                ed_venc_acl = ""
 
                 # --- LÓGICA TARIFA AZUL ---
                 if "Azul" in str(classe):
@@ -1519,6 +1519,8 @@ with aba_espelho:
                         ed_bandeira = st.selectbox("Bandeira", lista_bandeiras, index=lista_bandeiras.index(bandeira_atual), key=f"band_{id_fatura}")
                         ed_val_band = st.number_input("Valor Bandeira (R$)", value=float(f['Adicional Bandeira']), format="%.2f", key=f"valband_{id_fatura}")
                         ed_total = st.number_input("TOTAL DA FATURA (R$)", value=float(f['Valor Total Fatura']), format="%.2f", key=f"total_{id_fatura}")
+                        venc_acl_banco = str(f.get('Vencimento ACL', '')) if pd.notna(f.get('Vencimento ACL', '')) else ""
+                        ed_venc_acl = st.text_input("Vencimento Comercializadora (ACL)", value=venc_acl_banco, key=f"venc_acl_input_{id_fatura}")
 
                 # --- BOTÃO SALVAR CENTRALIZADO ---
                 st.write("")
@@ -1543,7 +1545,8 @@ with aba_espelho:
                                     demanda_reativa_ponta=%s, valor_dem_reativa_ponta=%s,
                                     demanda_reativa_fora_ponta=%s, valor_dem_reativa_fponta=%s,
                                     cip=%s, valor_total_pis=%s, valor_total_cofins=%s, valor_total_icms=%s,
-                                    tipo_bandeira=%s, adicional_bandeira=%s, valor_total_fatura=%s
+                                    tipo_bandeira=%s, adicional_bandeira=%s, valor_total_fatura=%s,
+                                    data_vencimento_acl=%s
                                 WHERE id = %s
                             """
                             valores = (ed_cons_p, ed_val_p, ed_cons_fp, ed_val_fp, ed_dc_p, ed_dc_fp,
@@ -1552,7 +1555,7 @@ with aba_espelho:
                                        ed_ult_p, ed_v_ult_p, ed_ult_fp, ed_v_ult_fp,
                                        ed_reat_p, ed_v_reat_p, ed_reat_fp, ed_v_reat_fp,
                                        ed_cip, ed_pis, ed_cofins, ed_icms,
-                                       ed_bandeira, ed_val_band, ed_total, id_fatura)
+                                       ed_bandeira, ed_val_band, ed_total, ed_venc_acl, id_fatura)
                             
                             cursor.execute(sql_update, valores)
                             conexao.commit()

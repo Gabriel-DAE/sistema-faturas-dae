@@ -118,31 +118,22 @@ def inicializar_banco():
             classificacao TEXT, unidade_consumidora TEXT, nome_unidade TEXT, atividade TEXT,
             periodo_leitura_inicio TEXT, periodo_leitura_fim TEXT, data_proxima_leitura TEXT,
             mes_referencia TEXT, data_vencimento TEXT,
-            
             demanda_contratada_ponta REAL, demanda_contratada_fponta REAL,
-            
             consumo_ponta REAL, tarifa_aneel_cons_ponta_tusd REAL, tarifa_trib_cons_ponta_tusd REAL, valor_cons_ponta_tusd REAL,
             consumo_fora_ponta REAL, tarifa_aneel_cons_fponta_tusd REAL, tarifa_trib_cons_fponta_tusd REAL, valor_cons_fponta_tusd REAL,
-            
             tarifa_aneel_cons_ponta_te REAL, tarifa_trib_cons_ponta_te REAL, valor_cons_ponta_te REAL,
             tarifa_aneel_cons_fponta_te REAL, tarifa_trib_cons_fponta_te REAL, valor_cons_fponta_te REAL,
-            
             tipo_bandeira TEXT, adicional_bandeira REAL,
-            
             demanda_registrada_ponta REAL, tarifa_aneel_dem_ponta REAL, tarifa_trib_dem_ponta REAL, valor_dem_ponta REAL,
             demanda_isenta_ponta REAL, tarifa_aneel_dem_isenta_ponta REAL, tarifa_trib_dem_isenta_ponta REAL, valor_dem_isenta_ponta REAL,
             demanda_registrada_fora_ponta REAL, tarifa_aneel_dem_fponta REAL, tarifa_trib_dem_fponta REAL, valor_dem_fponta REAL,
             demanda_isenta_fora_ponta REAL, tarifa_aneel_dem_isenta_fponta REAL, tarifa_trib_dem_isenta_fponta REAL, valor_dem_isenta_fponta REAL,
-            
             consumo_reativo_ponta REAL, tarifa_aneel_cons_reativo_ponta REAL, tarifa_trib_cons_reativo_ponta REAL, valor_cons_reativo_ponta REAL,
             consumo_reativo_fora_ponta REAL, tarifa_aneel_cons_reativo_fponta REAL, tarifa_trib_cons_reativo_fponta REAL, valor_cons_reativo_fponta REAL,
-            
             demanda_ultrapassagem_ponta REAL, tarifa_aneel_dem_ultrap_ponta REAL, tarifa_trib_dem_ultrap_ponta REAL, valor_dem_ultrap_ponta REAL,
             demanda_ultrapassagem_fora_ponta REAL, tarifa_aneel_dem_ultrap_fponta REAL, tarifa_trib_dem_ultrap_fponta REAL, valor_dem_ultrap_fponta REAL,
-            
             demanda_reativa_ponta REAL, tarifa_aneel_dem_reativa_ponta REAL, tarifa_trib_dem_reativa_ponta REAL, valor_dem_reativa_ponta REAL,
             demanda_reativa_fora_ponta REAL, tarifa_aneel_dem_reativa_fponta REAL, tarifa_trib_dem_reativa_fponta REAL, valor_dem_reativa_fponta REAL,
-            
             cip REAL, retencao_consumo_irrf REAL, retencao_demanda_irrf REAL,
             valor_total_pis REAL, valor_total_cofins REAL, valor_total_icms REAL, valor_total_fatura REAL,
             data_insercao TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -152,13 +143,9 @@ def inicializar_banco():
     # 2. Cria a tabela de Cadastro de UCs (Agora com STATUS e DIA VENCIMENTO)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS cadastro_uc (
-            unidade_consumidora TEXT PRIMARY KEY, 
-            nome_unidade TEXT, 
-            atividade TEXT, 
-            classificacao TEXT, 
-            demanda_contratada_ponta REAL, 
-            demanda_contratada_fponta REAL,
-            status TEXT DEFAULT 'ATIVA',
+            unidade_consumidora TEXT PRIMARY KEY, nome_unidade TEXT, 
+            atividade TEXT, classificacao TEXT, demanda_contratada_ponta REAL, 
+            demanda_contratada_fponta REAL, status TEXT DEFAULT 'ATIVA',
             dia_vencimento INTEGER DEFAULT 10
         )
     ''')
@@ -180,11 +167,8 @@ def inicializar_banco():
     # 3. Cria a tabela de Histórico de Envios para o Financeiro
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS historico_financeiro (
-            id SERIAL PRIMARY KEY,
-            unidade_consumidora TEXT,
-            mes_referencia TEXT,
-            valor_fatura REAL,
-            vencimento TEXT,
+            id SERIAL PRIMARY KEY, unidade_consumidora TEXT,
+            mes_referencia TEXT, valor_fatura REAL, vencimento TEXT,
             data_envio TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
@@ -568,6 +552,171 @@ def processar_pdf_cemig(arquivo_pdf):
     dados['valor_total_acl'] = extrair_valor_regex(r"Total a pagar\s*R\$\s*([\d\.,]+)", texto)
     dados['valor_total_fatura'] = dados['valor_total_acl'] 
     
+    return dados
+
+def processar_pdf_cpfl_acl(arquivo_pdf):
+    """Extrai os dados exclusivos das faturas da CPFL para unidades migradas para o Mercado Livre (ACL)."""
+    with pdfplumber.open(arquivo_pdf) as pdf:
+        texto = ""
+        for page in pdf.pages:
+            texto += page.extract_text() + "\n"
+            
+    # Inicializa todas as colunas numéricas com 0.0 (Garante que o TE fique zerado)
+    chaves_numericas = [
+        'demanda_contratada_ponta', 'demanda_contratada_fponta',
+        'consumo_ponta', 'tarifa_aneel_cons_ponta_tusd', 'tarifa_trib_cons_ponta_tusd', 'valor_cons_ponta_tusd',
+        'consumo_fora_ponta', 'tarifa_aneel_cons_fponta_tusd', 'tarifa_trib_cons_fponta_tusd', 'valor_cons_fponta_tusd',
+        'tarifa_aneel_cons_ponta_te', 'tarifa_trib_cons_ponta_te', 'valor_cons_ponta_te',
+        'tarifa_aneel_cons_fponta_te', 'tarifa_trib_cons_fponta_te', 'valor_cons_fponta_te',
+        'demanda_registrada_ponta', 'tarifa_aneel_dem_ponta', 'tarifa_trib_dem_ponta', 'valor_dem_ponta',
+        'demanda_isenta_ponta', 'tarifa_aneel_dem_isenta_ponta', 'tarifa_trib_dem_isenta_ponta', 'valor_dem_isenta_ponta',
+        'demanda_registrada_fora_ponta', 'tarifa_aneel_dem_fponta', 'tarifa_trib_dem_fponta', 'valor_dem_fponta',
+        'demanda_isenta_fora_ponta', 'tarifa_aneel_dem_isenta_fponta', 'tarifa_trib_dem_isenta_fponta', 'valor_dem_isenta_fponta',
+        'consumo_reativo_ponta', 'tarifa_aneel_cons_reativo_ponta', 'tarifa_trib_cons_reativo_ponta', 'valor_cons_reativo_ponta',
+        'consumo_reativo_fora_ponta', 'tarifa_aneel_cons_reativo_fponta', 'tarifa_trib_cons_reativo_fponta', 'valor_cons_reativo_fponta',
+        'demanda_ultrapassagem_ponta', 'tarifa_aneel_dem_ultrap_ponta', 'tarifa_trib_dem_ultrap_ponta', 'valor_dem_ultrap_ponta',
+        'demanda_ultrapassagem_fora_ponta', 'tarifa_aneel_dem_ultrap_fponta', 'tarifa_trib_dem_ultrap_fponta', 'valor_dem_ultrap_fponta',
+        'demanda_reativa_ponta', 'tarifa_aneel_dem_reativa_ponta', 'tarifa_trib_dem_reativa_ponta', 'valor_dem_reativa_ponta',
+        'demanda_reativa_fora_ponta', 'tarifa_aneel_dem_reativa_fponta', 'tarifa_trib_dem_reativa_fponta', 'valor_dem_reativa_fponta',
+        'subtotal_fatura', 'cip', 'retencao_consumo_irrf', 'retencao_demanda_irrf', 'valor_total_pis', 'valor_total_cofins', 'valor_total_icms',
+        'consumo_energia_acl_kwh', 'tarifa_energia_acl', 'valor_total_acl'
+    ]
+    dados = {k: 0.0 for k in chaves_numericas}
+    
+    dados['periodo_leitura_inicio'] = ""
+    dados['periodo_leitura_fim'] = ""
+    dados['data_proxima_leitura'] = ""
+    dados['tipo_bandeira'] = "VERDE"
+    dados['adicional_bandeira'] = 0.0
+    dados['data_vencimento_acl'] = ""
+    
+    # 1. Identificação da Classificação (Azul Livre ou Verde Livre)
+    classif_match = re.search(r"Classificação(?:[:\.])?\s*(.*?)(?:\n|Serviço|Autarquia)", texto, re.IGNORECASE)
+    classificacao_bruta = classif_match.group(1).strip().upper() if classif_match else ""
+    
+    if "VERDE" in classificacao_bruta and "LIVRE" in classificacao_bruta:
+        dados['classificacao'] = "Tarifa Verde Livre-A4"
+    elif "AZUL" in classificacao_bruta and "LIVRE" in classificacao_bruta:
+        dados['classificacao'] = "Tarifa Azul Livre-A4"
+    elif "LIVRE" in classificacao_bruta:
+        # Se na fatura estiver apenas escrito "Cliente Livre-A4", o código verifica as demandas para deduzir corretamente
+        if re.search(r"Demanda Ponta", texto, re.IGNORECASE):
+            dados['classificacao'] = "Tarifa Azul Livre-A4"
+        else:
+            dados['classificacao'] = "Tarifa Verde Livre-A4"
+    else:
+        dados['classificacao'] = "Tarifa Verde Livre-A4" # Padrão de segurança
+
+    # 2. Número da UC (Lendo o novo formato da REN ANEEL 1095/24)
+    uc_match = re.search(r"Número da UC[\s\S]*?(\d{5,15})", texto, re.IGNORECASE)
+    dados['unidade_consumidora'] = uc_match.group(1).strip() if uc_match else ""
+    
+    # 3. Datas e Referências
+    m_linha_principal = re.search(r"Data de Apresentação.*?(\d{2}/\d{2}/\d{4}).*?(\d{2}/\d{2}/\d{4}).*?(\d{2}/\d{2}/\d{4})", texto, re.IGNORECASE | re.DOTALL)
+    if m_linha_principal:
+        dados['data_vencimento'] = m_linha_principal.group(3)
+    else:
+        dados['data_vencimento'] = extrair_texto_regex(r"Data de Vencimento\s*(\d{2}/\d{2}/\d{4})", texto)
+        
+    mes_ref = extrair_texto_regex(r"Referente a\s*([A-Z]{3}/\d{4})", texto)
+    if not mes_ref:
+        mes_ref = extrair_texto_regex(r"Consumo Fora de Ponta.*?\n\s*([A-Z]{3}\s*\d{2})", texto)
+        if mes_ref:
+            m, y = mes_ref.split()
+            mes_ref = f"{m}/20{y}"
+    dados['mes_referencia'] = mes_ref
+
+    leitura_ant = re.search(r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+\d{2,3}", texto)
+    if leitura_ant:
+        dados['periodo_leitura_inicio'] = leitura_ant.group(1)
+        dados['periodo_leitura_fim'] = leitura_ant.group(2)
+        
+    dados['data_proxima_leitura'] = extrair_texto_regex(r"Leitura Próximo Mês\s*(\d{2}/\d{2}/\d{4})", texto)
+
+    # 4. Busca Contratos no Banco
+    conexao_pdf = obter_conexao()
+    c_pdf = conexao_pdf.cursor()
+    c_pdf.execute("SELECT nome_unidade, atividade, demanda_contratada_ponta, demanda_contratada_fponta FROM cadastro_uc WHERE unidade_consumidora = %s", (dados['unidade_consumidora'],))
+    res_uc = c_pdf.fetchone()
+    conexao_pdf.close()
+    
+    dados['nome_unidade'] = res_uc[0] if res_uc else "Não Cadastrada"
+    dados['atividade'] = res_uc[1] if res_uc else "Administrativa" 
+    dados['demanda_contratada_ponta'] = res_uc[2] if res_uc else 0.0
+    dados['demanda_contratada_fponta'] = res_uc[3] if res_uc else 0.0
+
+    # 5. Lógica Flexível de TUSD e Demandas (Ignorando propositadamente o TE)
+    # TUSD Ponta
+    m_tusd_p = re.search(r"Consumo Ponta.*?\[kWh\][^\n]*\n.*?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    if not m_tusd_p: m_tusd_p = re.search(r"Consumo Ponta.*?kWh.*?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    if m_tusd_p: 
+        dados['consumo_ponta'], dados['tarifa_aneel_cons_ponta_tusd'], dados['tarifa_trib_cons_ponta_tusd'], dados['valor_cons_ponta_tusd'] = [limpar_numero(x) for x in m_tusd_p.groups()]
+    else:
+        cp = re.search(r"Consumo Ponta.*?\[kWh\]\s*[A-Z]{3}\s*\d{2}\s*([\d\.,]+)", texto, re.IGNORECASE)
+        if cp: dados['consumo_ponta'] = limpar_numero(cp.group(1))
+
+    # TUSD Fora Ponta
+    m_tusd_fp = re.search(r"Consumo Fora(?: de)? Ponta.*?\[kWh\][^\n]*\n.*?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    if not m_tusd_fp: m_tusd_fp = re.search(r"Consumo Fora(?: de)? Ponta.*?kWh.*?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    if m_tusd_fp: 
+        dados['consumo_fora_ponta'], dados['tarifa_aneel_cons_fponta_tusd'], dados['tarifa_trib_cons_fponta_tusd'], dados['valor_cons_fponta_tusd'] = [limpar_numero(x) for x in m_tusd_fp.groups()]
+    else:
+        cfp = re.search(r"Consumo Fora(?: de)? Ponta.*?\[kWh\]\s*[A-Z]{3}\s*\d{2}\s*([\d\.,]+)", texto, re.IGNORECASE)
+        if cfp: dados['consumo_fora_ponta'] = limpar_numero(cfp.group(1))
+
+    # Demanda Ponta
+    linhas_ponta = re.findall(r"Demanda Ponta.*?kW.*?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    if len(linhas_ponta) >= 2:
+        parsed = [[limpar_numero(x) for x in linha] for linha in linhas_ponta]
+        parsed.sort(key=lambda x: x[2]) 
+        dados['demanda_isenta_ponta'], dados['tarifa_aneel_dem_isenta_ponta'], dados['tarifa_trib_dem_isenta_ponta'], dados['valor_dem_isenta_ponta'] = parsed[0]
+        dados['demanda_registrada_ponta'], dados['tarifa_aneel_dem_ponta'], dados['tarifa_trib_dem_ponta'], dados['valor_dem_ponta'] = parsed[1]
+    elif len(linhas_ponta) == 1:
+        dados['demanda_registrada_ponta'], dados['tarifa_aneel_dem_ponta'], dados['tarifa_trib_dem_ponta'], dados['valor_dem_ponta'] = [limpar_numero(x) for x in linhas_ponta[0]]
+    else:
+        dp = re.search(r"Demanda Ponta.*?\[kW\]\s*[A-Z]{3}\s*\d{2}\s*([\d\.,]+)", texto, re.IGNORECASE)
+        if dp: dados['demanda_registrada_ponta'] = limpar_numero(dp.group(1))
+
+    # Demanda Fora Ponta
+    linhas_fponta = re.findall(r"Demanda(?: Fora(?: de)? Ponta)?.*?kW.*?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    if len(linhas_fponta) >= 2:
+        parsed = [[limpar_numero(x) for x in linha] for linha in linhas_fponta]
+        parsed.sort(key=lambda x: x[2])
+        dados['demanda_isenta_fora_ponta'], dados['tarifa_aneel_dem_isenta_fponta'], dados['tarifa_trib_dem_isenta_fponta'], dados['valor_dem_isenta_fponta'] = parsed[0]
+        dados['demanda_registrada_fora_ponta'], dados['tarifa_aneel_dem_fponta'], dados['tarifa_trib_dem_fponta'], dados['valor_dem_fponta'] = parsed[1]
+    elif len(linhas_fponta) == 1:
+        dados['demanda_registrada_fora_ponta'], dados['tarifa_aneel_dem_fponta'], dados['tarifa_trib_dem_fponta'], dados['valor_dem_fponta'] = [limpar_numero(x) for x in linhas_fponta[0]]
+    else:
+        dfp = re.search(r"Demanda Fora(?: de)? Ponta.*?\[kW\]\s*[A-Z]{3}\s*\d{2}\s*([\d\.,]+)", texto, re.IGNORECASE)
+        if dfp: dados['demanda_registrada_fora_ponta'] = limpar_numero(dfp.group(1))
+
+    # Reativos e Ultrapassagens
+    m_reat_p = re.search(r"Consumo Reativo.*?Ponta.*?kWh.*?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    if m_reat_p: dados['consumo_reativo_ponta'], dados['tarifa_aneel_cons_reativo_ponta'], dados['tarifa_trib_cons_reativo_ponta'], dados['valor_cons_reativo_ponta'] = [limpar_numero(x) for x in m_reat_p.groups()]
+
+    m_reat_fp = re.search(r"Consumo Reativo.*?Fora.*?kWh.*?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    if m_reat_fp: dados['consumo_reativo_fora_ponta'], dados['tarifa_aneel_cons_reativo_fponta'], dados['tarifa_trib_cons_reativo_fponta'], dados['valor_cons_reativo_fponta'] = [limpar_numero(x) for x in m_reat_fp.groups()]
+
+    m_ultrap_fp = re.search(r"Demanda Ultrap.*?Fora.*?kW.*?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    if m_ultrap_fp: dados['demanda_ultrapassagem_fora_ponta'], dados['tarifa_aneel_dem_ultrap_fponta'], dados['tarifa_trib_dem_ultrap_fponta'], dados['valor_dem_ultrap_fponta'] = [limpar_numero(x) for x in m_ultrap_fp.groups()]
+
+    # Impostos
+    dados['cip'] = extrair_valor_regex(r"Custeio IP-CIP.*?([\d\.,]+)", texto)
+    if dados['cip'] == 0.0: dados['cip'] = extrair_valor_regex(r"CIP-Ilum.*?([\d\.,]+)", texto)
+    
+    val_subtotal = extrair_valor_regex(r"Subtotal\s*([\d\.,]+)", texto)
+    if val_subtotal == 0.0: val_subtotal = extrair_valor_regex(r"Total Distribuidora\s*([\d\.,]+)", texto)  
+    dados['subtotal_fatura'] = val_subtotal
+    
+    dados['retencao_consumo_irrf'] = extrair_valor_regex(r"Retencao Consumo IRRF.*?([\d\.,]+)", texto)
+    dados['retencao_demanda_irrf'] = extrair_valor_regex(r"Retencao Demanda IRRF.*?([\d\.,]+)", texto)
+    dados['valor_total_pis'] = extrair_valor_regex(r"PIS/PASEP.*?\s([\d\.,]+)$", texto)
+    dados['valor_total_cofins'] = extrair_valor_regex(r"COFINS.*?\s([\d\.,]+)$", texto)
+    dados['valor_total_icms'] = extrair_valor_regex(r"ICMS.*?\s([\d\.,]+)$", texto)
+    
+    valor_pagar_fim = extrair_valor_regex(r"Total a Pagar[^\d]*?([\d\.,]+)", texto)
+    if valor_pagar_fim > 0: dados['valor_total_fatura'] = valor_pagar_fim
+        
     return dados
 
 # --- 4. INTERFACE ---
@@ -1589,37 +1738,36 @@ with aba_pdf:
                     
                     for i, arquivo in enumerate(arquivos_upload):
                         try:
-                            # Lê rapidamente a primeira página para identificar a concessionária/comercializadora
+                            # Lê a primeira página para rotear o arquivo
                             with pdfplumber.open(arquivo) as pdf_temp:
                                 texto_identificacao = pdf_temp.pages[0].extract_text()
                             
-                            # Roteamento inteligente
+                            # 1. Roteamento CEMIG
                             if "CEMIG" in texto_identificacao.upper() or "VAREJISTA" in texto_identificacao.upper():
                                 d = processar_pdf_cemig(arquivo)
-                                
-                                # Adaptação rápida para não quebrar a Query SQL existente da CPFL
-                                # (Garante que as colunas novas existam no dicionário que vai para o banco)
-                                colunas = ', '.join(d.keys())
-                                placeholders = ', '.join(['%s'] * len(d))
-                                valores = tuple(d.values())
-                                
-                                # Verifica duplicidade
-                                c.execute("SELECT id FROM faturas_cpfl WHERE unidade_consumidora = %s AND mes_referencia = %s AND classificacao = 'Mercado Livre - ACL'", (d['unidade_consumidora'], d['mes_referencia']))
+                                classificacao_tipo = 'Mercado Livre - ACL'
+                                c.execute("SELECT id FROM faturas_cpfl WHERE unidade_consumidora = %s AND mes_referencia = %s AND classificacao = %s", (d['unidade_consumidora'], d['mes_referencia'], classificacao_tipo))
                             
+                            # 2. Roteamento NOVO CPFL (Mercado Livre)
+                            elif "LIVRE-A4" in texto_identificacao.upper() or "CLIENTE LIVRE" in texto_identificacao.upper():
+                                d = processar_pdf_cpfl_acl(arquivo)
+                                classificacao_tipo = d['classificacao']
+                                # Verifica duplicidade tolerando qualquer uma das variantes Livres
+                                c.execute("SELECT id FROM faturas_cpfl WHERE unidade_consumidora = %s AND mes_referencia = %s AND classificacao LIKE '%%Livre-A4%%'", (d['unidade_consumidora'], d['mes_referencia']))
+                                
+                            # 3. Roteamento ANTIGO CPFL (Mercado Cativo ACR)
                             else:
-                                # Processamento normal da CPFL
                                 d = processar_pdf(arquivo)
-                                
-                                colunas = ', '.join(d.keys())
-                                placeholders = ', '.join(['%s'] * len(d))
-                                valores = tuple(d.values())
-                                
-                                # Verifica duplicidade
-                                c.execute("SELECT id FROM faturas_cpfl WHERE unidade_consumidora = %s AND mes_referencia = %s AND classificacao != 'Mercado Livre - ACL'", (d['unidade_consumidora'], d['mes_referencia']))
+                                classificacao_tipo = d['classificacao']
+                                # Verifica duplicidade garantindo que não colide com as faturas livres
+                                c.execute("SELECT id FROM faturas_cpfl WHERE unidade_consumidora = %s AND mes_referencia = %s AND classificacao NOT LIKE '%%Livre-A4%%' AND classificacao != 'Mercado Livre - ACL'", (d['unidade_consumidora'], d['mes_referencia']))
                             
                             if c.fetchone():
                                 duplicadas += 1
                             else:
+                                colunas = ', '.join(d.keys())
+                                placeholders = ', '.join(['%s'] * len(d))
+                                valores = tuple(d.values())
                                 c.execute(f"INSERT INTO faturas_cpfl ({colunas}) VALUES ({placeholders})", valores)
                                 sucessos += 1
                                 

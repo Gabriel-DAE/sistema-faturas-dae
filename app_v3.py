@@ -564,10 +564,12 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     """Extrai os dados exclusivos das faturas da CPFL para unidades migradas para o Mercado Livre (ACL)."""
     with pdfplumber.open(arquivo_pdf) as pdf:
         texto = ""
-        for page in pdf.pages:
-            texto += page.extract_text() + "\n"
+        for i in range(min(2, len(pdf.pages))):
+            texto_pagina = pdf.pages[i].extract_text()
+            if texto_pagina:
+                texto += texto_pagina + "\n"
             
-    # Inicializa todas as colunas numéricas com 0.0 (Garante que o TE fique zerado)
+    # Inicializa todas as colunas numéricas com 0.0
     chaves_numericas = [
         'demanda_contratada_ponta', 'demanda_contratada_fponta',
         'consumo_ponta', 'tarifa_aneel_cons_ponta_tusd', 'tarifa_trib_cons_ponta_tusd', 'valor_cons_ponta_tusd',
@@ -596,7 +598,7 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     dados['adicional_bandeira'] = 0.0
     dados['data_vencimento_acl'] = ""
     
-    # 1. Identificação da Classificação (Azul Livre ou Verde Livre)
+    # 1. Classificação
     classif_match = re.search(r"Classificação(?:[:\.])?\s*(.*?)(?:\n|Serviço|Autarquia)", texto, re.IGNORECASE)
     classificacao_bruta = classif_match.group(1).strip().upper() if classif_match else ""
     
@@ -605,41 +607,36 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     elif "AZUL" in classificacao_bruta and "LIVRE" in classificacao_bruta:
         dados['classificacao'] = "Tarifa Azul Livre-A4"
     elif "LIVRE" in classificacao_bruta:
-        # Se na fatura estiver apenas escrito "Cliente Livre-A4", o código verifica as demandas para deduzir corretamente
-        if re.search(r"Demanda Ponta", texto, re.IGNORECASE):
+        if re.search(r"Uso Sist Distr Ponta", texto, re.IGNORECASE):
             dados['classificacao'] = "Tarifa Azul Livre-A4"
         else:
             dados['classificacao'] = "Tarifa Verde Livre-A4"
     else:
-        dados['classificacao'] = "Tarifa Verde Livre-A4" # Padrão de segurança
+        dados['classificacao'] = "Tarifa Verde Livre-A4"
 
-    # 2. Número da UC (Lendo o novo formato da REN ANEEL 1095/24)
-    uc_match = re.search(r"Número da UC[\s\S]*?(\d{5,15})", texto, re.IGNORECASE)
+    # 2. Unidade Consumidora (UC Nova CPFL)
+    uc_match = re.search(r"DEPARTAMENTO DE AGUA E ESGOTO DAE\s*(\d{3}\.\d{3}\.\d{3}-\d{2})", texto)
+    if not uc_match:
+        uc_match = re.search(r"(\d{3}\.\d{3}\.\d{3}-\d{2})", texto)
     dados['unidade_consumidora'] = uc_match.group(1).strip() if uc_match else ""
     
-    # 3. Datas e Referências
-    m_linha_principal = re.search(r"Data de Apresentação.*?(\d{2}/\d{2}/\d{4}).*?(\d{2}/\d{2}/\d{4}).*?(\d{2}/\d{2}/\d{4})", texto, re.IGNORECASE | re.DOTALL)
-    if m_linha_principal:
-        dados['data_vencimento'] = m_linha_principal.group(3)
+    # 3. Datas
+    m_venc_ref = re.search(r"([A-Z]{3}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+R\$", texto)
+    if m_venc_ref:
+        dados['mes_referencia'] = m_venc_ref.group(1)
+        dados['data_vencimento'] = m_venc_ref.group(2)
     else:
         dados['data_vencimento'] = extrair_texto_regex(r"Data de Vencimento\s*(\d{2}/\d{2}/\d{4})", texto)
-        
-    mes_ref = extrair_texto_regex(r"Referente a\s*([A-Z]{3}/\d{4})", texto)
-    if not mes_ref:
-        mes_ref = extrair_texto_regex(r"Consumo Fora de Ponta.*?\n\s*([A-Z]{3}\s*\d{2})", texto)
-        if mes_ref:
-            m, y = mes_ref.split()
-            mes_ref = f"{m}/20{y}"
-    dados['mes_referencia'] = mes_ref
+        dados['mes_referencia'] = extrair_texto_regex(r"Referente a\s*([A-Z]{3}/\d{4})", texto)
 
     leitura_ant = re.search(r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+\d{2,3}", texto)
     if leitura_ant:
         dados['periodo_leitura_inicio'] = leitura_ant.group(1)
         dados['periodo_leitura_fim'] = leitura_ant.group(2)
         
-    dados['data_proxima_leitura'] = extrair_texto_regex(r"Leitura Próximo Mês\s*(\d{2}/\d{2}/\d{4})", texto)
+    dados['data_proxima_leitura'] = extrair_texto_regex(r"Próxima Leitura\s*(\d{2}/\d{2}/\d{4})", texto)
 
-    # 4. Busca Contratos no Banco
+    # 4. Busca Contratos
     conexao_pdf = obter_conexao()
     c_pdf = conexao_pdf.cursor()
     c_pdf.execute("SELECT nome_unidade, atividade, demanda_contratada_ponta, demanda_contratada_fponta FROM cadastro_uc WHERE unidade_consumidora = %s", (dados['unidade_consumidora'],))
@@ -651,76 +648,70 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     dados['demanda_contratada_ponta'] = res_uc[2] if res_uc else 0.0
     dados['demanda_contratada_fponta'] = res_uc[3] if res_uc else 0.0
 
-    # 5. Lógica Flexível de TUSD e Demandas (Ignorando propositadamente o TE)
-    # TUSD Ponta
-    m_tusd_p = re.search(r"Consumo Ponta.*?\[kWh\][^\n]*\n.*?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
-    if not m_tusd_p: m_tusd_p = re.search(r"Consumo Ponta.*?kWh.*?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    # 5. Extração Precisa Baseada no Texto Bruto
+    # Consumo Ponta
+    m_tusd_p = re.search(r"Tusd Enc Cons Ponta.*?kWh\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
     if m_tusd_p: 
         dados['consumo_ponta'], dados['tarifa_aneel_cons_ponta_tusd'], dados['tarifa_trib_cons_ponta_tusd'], dados['valor_cons_ponta_tusd'] = [limpar_numero(x) for x in m_tusd_p.groups()]
-    else:
-        cp = re.search(r"Consumo Ponta.*?\[kWh\]\s*[A-Z]{3}\s*\d{2}\s*([\d\.,]+)", texto, re.IGNORECASE)
-        if cp: dados['consumo_ponta'] = limpar_numero(cp.group(1))
 
-    # TUSD Fora Ponta
-    m_tusd_fp = re.search(r"Consumo Fora(?: de)? Ponta.*?\[kWh\][^\n]*\n.*?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
-    if not m_tusd_fp: m_tusd_fp = re.search(r"Consumo Fora(?: de)? Ponta.*?kWh.*?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    # Consumo Fora Ponta
+    m_tusd_fp = re.search(r"Tusd Enc Cons F Ponta.*?kWh\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
     if m_tusd_fp: 
         dados['consumo_fora_ponta'], dados['tarifa_aneel_cons_fponta_tusd'], dados['tarifa_trib_cons_fponta_tusd'], dados['valor_cons_fponta_tusd'] = [limpar_numero(x) for x in m_tusd_fp.groups()]
-    else:
-        cfp = re.search(r"Consumo Fora(?: de)? Ponta.*?\[kWh\]\s*[A-Z]{3}\s*\d{2}\s*([\d\.,]+)", texto, re.IGNORECASE)
-        if cfp: dados['consumo_fora_ponta'] = limpar_numero(cfp.group(1))
 
     # Demanda Ponta
-    linhas_ponta = re.findall(r"Demanda Ponta.*?kW.*?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    linhas_ponta = re.findall(r"Uso Sist Distr Ponta.*?kW\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
     if len(linhas_ponta) >= 2:
         parsed = [[limpar_numero(x) for x in linha] for linha in linhas_ponta]
-        parsed.sort(key=lambda x: x[2]) 
-        dados['demanda_isenta_ponta'], dados['tarifa_aneel_dem_isenta_ponta'], dados['tarifa_trib_dem_isenta_ponta'], dados['valor_dem_isenta_ponta'] = parsed[0]
-        dados['demanda_registrada_ponta'], dados['tarifa_aneel_dem_ponta'], dados['tarifa_trib_dem_ponta'], dados['valor_dem_ponta'] = parsed[1]
+        parsed.sort(key=lambda x: x[0], reverse=True) # A demanda isenta tem menos kW
+        dados['demanda_registrada_ponta'], dados['tarifa_aneel_dem_ponta'], dados['tarifa_trib_dem_ponta'], dados['valor_dem_ponta'] = parsed[0]
+        dados['demanda_isenta_ponta'], dados['tarifa_aneel_dem_isenta_ponta'], dados['tarifa_trib_dem_isenta_ponta'], dados['valor_dem_isenta_ponta'] = parsed[1]
     elif len(linhas_ponta) == 1:
         dados['demanda_registrada_ponta'], dados['tarifa_aneel_dem_ponta'], dados['tarifa_trib_dem_ponta'], dados['valor_dem_ponta'] = [limpar_numero(x) for x in linhas_ponta[0]]
-    else:
-        dp = re.search(r"Demanda Ponta.*?\[kW\]\s*[A-Z]{3}\s*\d{2}\s*([\d\.,]+)", texto, re.IGNORECASE)
-        if dp: dados['demanda_registrada_ponta'] = limpar_numero(dp.group(1))
 
     # Demanda Fora Ponta
-    linhas_fponta = re.findall(r"Demanda(?: Fora(?: de)? Ponta)?.*?kW.*?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    linhas_fponta = re.findall(r"Uso Sist Distr F Ponta.*?kW\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
     if len(linhas_fponta) >= 2:
         parsed = [[limpar_numero(x) for x in linha] for linha in linhas_fponta]
-        parsed.sort(key=lambda x: x[2])
-        dados['demanda_isenta_fora_ponta'], dados['tarifa_aneel_dem_isenta_fponta'], dados['tarifa_trib_dem_isenta_fponta'], dados['valor_dem_isenta_fponta'] = parsed[0]
-        dados['demanda_registrada_fora_ponta'], dados['tarifa_aneel_dem_fponta'], dados['tarifa_trib_dem_fponta'], dados['valor_dem_fponta'] = parsed[1]
+        parsed.sort(key=lambda x: x[0], reverse=True)
+        dados['demanda_registrada_fora_ponta'], dados['tarifa_aneel_dem_fponta'], dados['tarifa_trib_dem_fponta'], dados['valor_dem_fponta'] = parsed[0]
+        dados['demanda_isenta_fora_ponta'], dados['tarifa_aneel_dem_isenta_fponta'], dados['tarifa_trib_dem_isenta_fponta'], dados['valor_dem_isenta_fponta'] = parsed[1]
     elif len(linhas_fponta) == 1:
         dados['demanda_registrada_fora_ponta'], dados['tarifa_aneel_dem_fponta'], dados['tarifa_trib_dem_fponta'], dados['valor_dem_fponta'] = [limpar_numero(x) for x in linhas_fponta[0]]
-    else:
-        dfp = re.search(r"Demanda Fora(?: de)? Ponta.*?\[kW\]\s*[A-Z]{3}\s*\d{2}\s*([\d\.,]+)", texto, re.IGNORECASE)
-        if dfp: dados['demanda_registrada_fora_ponta'] = limpar_numero(dfp.group(1))
 
-    # Reativos e Ultrapassagens
-    m_reat_p = re.search(r"Consumo Reativo.*?Ponta.*?kWh.*?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    # Reativos
+    m_reat_p = re.search(r"USD Consumo Reativo Ponta.*?kWh\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
     if m_reat_p: dados['consumo_reativo_ponta'], dados['tarifa_aneel_cons_reativo_ponta'], dados['tarifa_trib_cons_reativo_ponta'], dados['valor_cons_reativo_ponta'] = [limpar_numero(x) for x in m_reat_p.groups()]
 
-    m_reat_fp = re.search(r"Consumo Reativo.*?Fora.*?kWh.*?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    m_reat_fp = re.search(r"USD Consumo Reativo Fora Ponta.*?kWh\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
     if m_reat_fp: dados['consumo_reativo_fora_ponta'], dados['tarifa_aneel_cons_reativo_fponta'], dados['tarifa_trib_cons_reativo_fponta'], dados['valor_cons_reativo_fponta'] = [limpar_numero(x) for x in m_reat_fp.groups()]
 
-    m_ultrap_fp = re.search(r"Demanda Ultrap.*?Fora.*?kW.*?([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
-    if m_ultrap_fp: dados['demanda_ultrapassagem_fora_ponta'], dados['tarifa_aneel_dem_ultrap_fponta'], dados['tarifa_trib_dem_ultrap_fponta'], dados['valor_dem_ultrap_fponta'] = [limpar_numero(x) for x in m_ultrap_fp.groups()]
+    m_dem_reat_p = re.search(r"Dem Reat Exc Ponta.*?kW\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    if m_dem_reat_p: dados['demanda_reativa_ponta'], dados['tarifa_aneel_dem_reativa_ponta'], dados['tarifa_trib_dem_reativa_ponta'], dados['valor_dem_reativa_ponta'] = [limpar_numero(x) for x in m_dem_reat_p.groups()]
 
-    # Impostos
-    dados['cip'] = extrair_valor_regex(r"Custeio IP-CIP.*?([\d\.,]+)", texto)
-    if dados['cip'] == 0.0: dados['cip'] = extrair_valor_regex(r"CIP-Ilum.*?([\d\.,]+)", texto)
+    m_dem_reat_fp = re.search(r"Dem Reat Exc FPonta.*?kW\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    if m_dem_reat_fp: dados['demanda_reativa_fora_ponta'], dados['tarifa_aneel_dem_reativa_fponta'], dados['tarifa_trib_dem_reativa_fponta'], dados['valor_dem_reativa_fponta'] = [limpar_numero(x) for x in m_dem_reat_fp.groups()]
+
+    # Bandeira (Caso Haja)
+    dados['tipo_bandeira'] = extrair_texto_regex(r"CDE Escassez Hídrica\s+(.*?)\s", texto, padrao_falha="VERDE").upper()
+    vp = extrair_valor_regex(r"CDE Escassez Hídrica Ponta.*?kWh\s+[\d\.,]+\s+[\d\.,]+\s+[\d\.,]+\s+([\d\.,]+)", texto)
+    vfp = extrair_valor_regex(r"CDE Escassez Hídrica F(?:ora)? Ponta.*?kWh\s+[\d\.,]+\s+[\d\.,]+\s+[\d\.,]+\s+([\d\.,]+)", texto)
+    dados['adicional_bandeira'] = vp + vfp
+
+    # Impostos e Totais
+    dados['cip'] = extrair_valor_regex(r"Contribuição Custeio IP-CIP.*?\s([\d\.,]+)", texto)
     
-    val_subtotal = extrair_valor_regex(r"Subtotal\s*([\d\.,]+)", texto)
-    if val_subtotal == 0.0: val_subtotal = extrair_valor_regex(r"Total Distribuidora\s*([\d\.,]+)", texto)  
+    val_subtotal = extrair_valor_regex(r"Total Distribuidora\s*([\d\.,]+)", texto)
+    if val_subtotal == 0.0: val_subtotal = extrair_valor_regex(r"Subtotal\s*([\d\.,]+)", texto)  
     dados['subtotal_fatura'] = val_subtotal
     
-    dados['retencao_consumo_irrf'] = extrair_valor_regex(r"Retencao Consumo IRRF.*?([\d\.,]+)", texto)
-    dados['retencao_demanda_irrf'] = extrair_valor_regex(r"Retencao Demanda IRRF.*?([\d\.,]+)", texto)
+    dados['retencao_consumo_irrf'] = extrair_valor_regex(r"Retencao Consumo IRRF.*?\s([\d\.,]+)-", texto)
+    dados['retencao_demanda_irrf'] = extrair_valor_regex(r"Retencao Demanda IRRF.*?\s([\d\.,]+)-", texto)
     dados['valor_total_pis'] = extrair_valor_regex(r"PIS/PASEP.*?\s([\d\.,]+)$", texto)
     dados['valor_total_cofins'] = extrair_valor_regex(r"COFINS.*?\s([\d\.,]+)$", texto)
     dados['valor_total_icms'] = extrair_valor_regex(r"ICMS.*?\s([\d\.,]+)$", texto)
     
-    valor_pagar_fim = extrair_valor_regex(r"Total a Pagar[^\d]*?([\d\.,]+)", texto)
+    valor_pagar_fim = extrair_valor_regex(r"Total a Pagar\s*([\d\.,]+)", texto)
     if valor_pagar_fim > 0: dados['valor_total_fatura'] = valor_pagar_fim
         
     return dados

@@ -349,7 +349,6 @@ def processar_pdf(arquivo_pdf):
     
     conexao_pdf = obter_conexao()
     c_pdf = conexao_pdf.cursor()
-    # Usando o padrão Postgres %s em vez de ?
     c_pdf.execute("SELECT nome_unidade, atividade, demanda_contratada_ponta, demanda_contratada_fponta FROM cadastro_uc WHERE unidade_consumidora = %s", (dados['unidade_consumidora'],))
     res_uc = c_pdf.fetchone()
     conexao_pdf.close()
@@ -2158,7 +2157,14 @@ with aba_config:
                     for index, row in df_migracao.iterrows():
                         uc_antiga = str(row['UC Antiga']).strip()
                         uc_nova = str(row['Nova UC CPFL']).strip()
-                        uc_cemig = str(row['UC CEMIG']).strip() if pd.notna(row['UC CEMIG']) else ""
+                        uc_cemig_bruta = row['UC CEMIG']
+                        if pd.notna(uc_cemig_bruta):
+                            try:
+                                uc_cemig = str(int(float(uc_cemig_bruta))).strip()
+                            except:
+                                uc_cemig = str(uc_cemig_bruta).strip()
+                        else:
+                            uc_cemig = ""
                         
                         if uc_antiga and uc_nova:
                             # 1. Atualiza a Tabela de Cadastro (Muda a Chave Primária e adiciona a da CEMIG)

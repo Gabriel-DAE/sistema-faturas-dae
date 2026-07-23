@@ -564,8 +564,9 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     """Extrai os dados exclusivos das faturas da CPFL para unidades migradas para o Mercado Livre (ACL)."""
     with pdfplumber.open(arquivo_pdf) as pdf:
         texto = ""
-        for i in range(min(2, len(pdf.pages))):
-            texto_pagina = pdf.pages[i].extract_text()
+        # 1. LÊ TODAS AS PÁGINAS DO PDF (Garante a captura da Bandeira nas páginas finais)
+        for page in pdf.pages:
+            texto_pagina = page.extract_text()
             if texto_pagina:
                 texto += texto_pagina + "\n"
             
@@ -598,7 +599,7 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     dados['adicional_bandeira'] = 0.0
     dados['data_vencimento_acl'] = ""
     
-    # 1. Classificação
+    # 2. Classificação (Verde Livre ou Azul Livre)
     classif_match = re.search(r"Classificação(?:[:\.])?\s*(.*?)(?:\n|Serviço|Autarquia)", texto, re.IGNORECASE)
     classificacao_bruta = classif_match.group(1).strip().upper() if classif_match else ""
     
@@ -614,13 +615,13 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     else:
         dados['classificacao'] = "Tarifa Verde Livre-A4"
 
-    # 2. Unidade Consumidora (UC Nova CPFL)
+    # 3. Unidade Consumidora (UC Nova CPFL)
     uc_match = re.search(r"DEPARTAMENTO DE AGUA E ESGOTO DAE\s*(\d{3}\.\d{3}\.\d{3}-\d{2})", texto)
     if not uc_match:
         uc_match = re.search(r"(\d{3}\.\d{3}\.\d{3}-\d{2})", texto)
     dados['unidade_consumidora'] = uc_match.group(1).strip() if uc_match else ""
     
-    # 3. Datas
+    # 4. Datas
     m_venc_ref = re.search(r"([A-Z]{3}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+R\$", texto)
     if m_venc_ref:
         dados['mes_referencia'] = m_venc_ref.group(1)
@@ -636,7 +637,7 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
         
     dados['data_proxima_leitura'] = extrair_texto_regex(r"Próxima Leitura\s*(\d{2}/\d{2}/\d{4})", texto)
 
-    # 4. Busca Contratos
+    # 5. Busca Contratos
     conexao_pdf = obter_conexao()
     c_pdf = conexao_pdf.cursor()
     c_pdf.execute("SELECT nome_unidade, atividade, demanda_contratada_ponta, demanda_contratada_fponta FROM cadastro_uc WHERE unidade_consumidora = %s", (dados['unidade_consumidora'],))
@@ -648,7 +649,7 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     dados['demanda_contratada_ponta'] = res_uc[2] if res_uc else 0.0
     dados['demanda_contratada_fponta'] = res_uc[3] if res_uc else 0.0
 
-    # 5. Extração Precisa Baseada no Texto Bruto
+    # 6. Extração de Itens Faturados (TUSD, Demandas e Reativos)
     # Consumo Ponta
     m_tusd_p = re.search(r"Tusd Enc Cons Ponta.*?kWh\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
     if m_tusd_p: 
@@ -663,7 +664,7 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     linhas_ponta = re.findall(r"Uso Sist Distr Ponta.*?kW\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
     if len(linhas_ponta) >= 2:
         parsed = [[limpar_numero(x) for x in linha] for linha in linhas_ponta]
-        parsed.sort(key=lambda x: x[0], reverse=True) # A demanda isenta tem menos kW
+        parsed.sort(key=lambda x: x[0], reverse=True)
         dados['demanda_registrada_ponta'], dados['tarifa_aneel_dem_ponta'], dados['tarifa_trib_dem_ponta'], dados['valor_dem_ponta'] = parsed[0]
         dados['demanda_isenta_ponta'], dados['tarifa_aneel_dem_isenta_ponta'], dados['tarifa_trib_dem_isenta_ponta'], dados['valor_dem_isenta_ponta'] = parsed[1]
     elif len(linhas_ponta) == 1:
@@ -692,13 +693,29 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     m_dem_reat_fp = re.search(r"Dem Reat Exc FPonta.*?kW\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
     if m_dem_reat_fp: dados['demanda_reativa_fora_ponta'], dados['tarifa_aneel_dem_reativa_fponta'], dados['tarifa_trib_dem_reativa_fponta'], dados['valor_dem_reativa_fponta'] = [limpar_numero(x) for x in m_dem_reat_fp.groups()]
 
-    # Bandeira (Caso Haja)
-    dados['tipo_bandeira'] = extrair_texto_regex(r"CDE Escassez Hídrica\s+(.*?)\s", texto, padrao_falha="VERDE").upper()
+    # 7. EXTRAÇÃO ATUALIZADA DA BANDEIRA TARIFÁRIA
+    match_bandeira = re.search(
+        r"Energia Ativa[^\n]*?\b(Verde|Amarela|Vermelha\s*I{1,2}|Vermelha|Escassez Hídrica)\b",
+        texto,
+        re.IGNORECASE
+    )
+    if not match_bandeira:
+        match_bandeira = re.search(
+            r"\b(Verde|Amarela|Vermelha\s*I{1,2}|Vermelha|Escassez Hídrica)\b\s*\d{1,3}\s*Dias",
+            texto,
+            re.IGNORECASE
+        )
+    
+    if match_bandeira:
+        dados['tipo_bandeira'] = match_bandeira.group(1).strip().upper()
+    else:
+        dados['tipo_bandeira'] = "VERDE"
+
     vp = extrair_valor_regex(r"CDE Escassez Hídrica Ponta.*?kWh\s+[\d\.,]+\s+[\d\.,]+\s+[\d\.,]+\s+([\d\.,]+)", texto)
     vfp = extrair_valor_regex(r"CDE Escassez Hídrica F(?:ora)? Ponta.*?kWh\s+[\d\.,]+\s+[\d\.,]+\s+[\d\.,]+\s+([\d\.,]+)", texto)
     dados['adicional_bandeira'] = vp + vfp
 
-    # Impostos e Totais
+    # 8. Impostos e Totais
     dados['cip'] = extrair_valor_regex(r"Contribuição Custeio IP-CIP.*?\s([\d\.,]+)", texto)
     
     val_subtotal = extrair_valor_regex(r"Total Distribuidora\s*([\d\.,]+)", texto)
@@ -715,7 +732,7 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     if valor_pagar_fim > 0: dados['valor_total_fatura'] = valor_pagar_fim
         
     return dados
-
+    
 # --- 4. INTERFACE ---
 aba_dash, aba_controle, aba_dados, aba_espelho, aba_pdf, aba_config = st.tabs(["📈 Dashboard", "💰 Controle Financeiro", "📊 Banco de Dados", "📑 Espelho de Fatura", "📄 Upload de Fatura", "⚙️ Configurações"])
 

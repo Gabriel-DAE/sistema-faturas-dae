@@ -306,8 +306,12 @@ def extrair_valor_regex(padrao, texto, grupo=1):
 
 def processar_pdf(arquivo_pdf):
     with pdfplumber.open(arquivo_pdf) as pdf:
-        texto = pdf.pages[0].extract_text()
-        
+        texto = ""
+        for i in range(min(2, len(pdf.pages))):
+            texto_pagina = pdf.pages[i].extract_text()
+            if texto_pagina:
+                texto += texto_pagina + "\n"
+    
     chaves_numericas = [
         'demanda_contratada_ponta', 'demanda_contratada_fponta',
         'consumo_ponta', 'tarifa_aneel_cons_ponta_tusd', 'tarifa_trib_cons_ponta_tusd', 'valor_cons_ponta_tusd',
@@ -474,11 +478,13 @@ def processar_pdf(arquivo_pdf):
     return dados
 
 def processar_pdf_cemig(arquivo_pdf):
-    """Extrai os dados específicos da fatura da Comercializadora (CEMIG) no ACL."""
     with pdfplumber.open(arquivo_pdf) as pdf:
-        texto = pdf.pages[0].extract_text()
+        texto = ""
+        for i in range(min(2, len(pdf.pages))):
+            texto_pagina = pdf.pages[i].extract_text()
+            if texto_pagina:
+                texto += texto_pagina + "\n"
         
-    # 1. SOLUÇÃO DO ERRO: Declaramos a lista de chaves numéricas DENTRO da função
     chaves_numericas = [
         'demanda_contratada_ponta', 'demanda_contratada_fponta',
         'consumo_ponta', 'tarifa_aneel_cons_ponta_tusd', 'tarifa_trib_cons_ponta_tusd', 'valor_cons_ponta_tusd',
@@ -2143,11 +2149,14 @@ if arquivo_teste_pdf is not None:
     if st.button("🔍 Executar Extração de Teste", type="primary"):
         try:
             with pdfplumber.open(arquivo_teste_pdf) as pdf:
-                texto_teste = pdf.pages[0].extract_text()
+                texto_teste = ""
+                for i in range(min(2, len(pdf.pages))):
+                    texto_pagina = pdf.pages[i].extract_text()
+                    if texto_pagina:
+                        texto += texto_pagina + "\n"
                 with st.expander("👀 Ver Texto Bruto (Para o Gemini)"):
                     st.text(texto_teste)
                 
-            
             # Dicionário de extração estruturado para o novo formato ACL
             dados_teste = {}
             

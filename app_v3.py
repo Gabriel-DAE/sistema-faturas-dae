@@ -491,28 +491,44 @@ def processar_pdf_cemig(arquivo_pdf):
         
     dados_cemig = {}
     
-    # 1. Identificação Básica no PDF da CEMIG
-    uc_cemig_lida = extrair_texto_regex(r"N.º DA UNIDADE CONSUMIDORA\s*(\d+)", texto)
-    dados_cemig['mes_referencia'] = extrair_texto_regex(r"Referente a\s*([A-Z]{3}/\d{4})", texto)
+    # 1. Identificação Básica no PDF da CEMIG (Busca Flexível)
+    match_uc = re.search(r"UNIDADE CONSUMIDORA[\s\S]*?(\d{10})", texto, re.IGNORECASE)
+    uc_cemig_lida = match_uc.group(1).strip() if match_uc else ""
+    
+    match_mes = re.search(r"Referente a[\s\S]*?([A-Z]{3}/\d{4})", texto, re.IGNORECASE)
+    dados_cemig['mes_referencia'] = match_mes.group(1).strip().upper() if match_mes else ""
     
     vencimento_bruto = extrair_texto_regex(r"Vencimento\s*(\d{2}/\d{2}/\d{4})", texto)
     dados_cemig['data_vencimento_acl'] = vencimento_bruto if vencimento_bruto else extrair_texto_regex(r"(\d{2}/\d{2}/\d{4})", texto) 
     
-    # 2. Busca a UC Principal (CPFL Nova) no Cadastro do DAE através da uc_cemig
+    # 2. BUSCA BLINDADA DA UC NO BANCO DE DADOS
     conexao_pdf = obter_conexao()
     c_pdf = conexao_pdf.cursor()
-    c_pdf.execute("SELECT unidade_consumidora, nome_unidade, atividade FROM cadastro_uc WHERE uc_cemig = %s", (uc_cemig_lida,))
-    res_uc = c_pdf.fetchone()
+    
+    if uc_cemig_lida:
+        # Usar o LIKE '%numero%' garante que o sistema acha a UC mesmo que tenha '.0' ou espaços escondidos
+        c_pdf.execute("""
+            SELECT unidade_consumidora, nome_unidade, atividade 
+            FROM cadastro_uc 
+            WHERE uc_cemig LIKE %s
+        """, (f"%{uc_cemig_lida}%",))
+        res_uc = c_pdf.fetchone()
+    else:
+        res_uc = None
+        
     conexao_pdf.close()
     
     if res_uc:
-        dados_cemig['unidade_consumidora'] = res_uc[0] # Associa à UC Master da CPFL!
+        dados_cemig['unidade_consumidora'] = res_uc[0] # Associa magicamente à UC Master da CPFL!
         dados_cemig['nome_unidade'] = res_uc[1]
         dados_cemig['atividade'] = res_uc[2]
+        dados_cemig['uc_original'] = uc_cemig_lida
     else:
+        # ALERTA VISUAL: Se não achar, não falha em silêncio. Avisa o utilizador!
         dados_cemig['unidade_consumidora'] = uc_cemig_lida
-        dados_cemig['nome_unidade'] = "Não Cadastrada"
+        dados_cemig['nome_unidade'] = "⚠️ VINCULAR UC CEMIG NO CADASTRO"
         dados_cemig['atividade'] = "Administrativa" 
+        dados_cemig['uc_original'] = uc_cemig_lida
     
     # 3. Extração de Valores ACL
     linha_energia = re.search(r"Energia Ativa HFP.*?(?:kWh)\s+([\d\.]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)

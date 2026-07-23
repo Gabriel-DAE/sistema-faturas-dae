@@ -2150,28 +2150,26 @@ if arquivo_teste_pdf is not None:
         try:
             with pdfplumber.open(arquivo_teste_pdf) as pdf:
                 texto_teste = ""
+                # Lê as 2 primeiras páginas do PDF para não perder nenhum dado
                 for i in range(min(2, len(pdf.pages))):
                     texto_pagina = pdf.pages[i].extract_text()
                     if texto_pagina:
-                        texto += texto_pagina + "\n"
-                with st.expander("👀 Ver Texto Bruto (Para o Gemini)"):
-                    st.text(texto_teste)
-                
-            # Dicionário de extração estruturado para o novo formato ACL
+                        texto_teste += texto_pagina + "\n"
+            
+            # --- EXIBE O TEXTO BRUTO PARA O GEMINI ---
+            with st.expander("👀 Ver Texto Bruto (Copie o conteúdo daqui e envie-me)"):
+                st.text(texto_teste)
+            
+            # Dicionário de extração de teste
             dados_teste = {}
             
             # 1. Classificação (Ex: Cliente Livre-A4)
-            classif_match = re.search(r"Classificação\.?\s*([^\n]+)", texto_teste, re.IGNORECASE)
+            classif_match = re.search(r"Classificação(?:[:\.])?\s*([^\n]+)", texto_teste, re.IGNORECASE)
             dados_teste['Classificação'] = classif_match.group(1).strip() if classif_match else "Não encontrada"
             
-            # 2. Número da UC (Novo formato exigido pela ANEEL)
-            uc_match = re.search(r"Número da UC\s*([^\n]+)\s*(\d{5,15})", texto_teste, re.IGNORECASE)
-            if uc_match:
-                dados_teste['Unidade Consumidora (UC)'] = uc_match.group(2).strip()
-            else:
-                # Fallback alternativo focando nos dígitos isolados após o rótulo
-                uc_alt = re.search(r"Número da UC\s*\n\s*([^\n]+)\s*\n\s*(\d+)", texto_teste)
-                dados_teste['Unidade Consumidora (UC)'] = uc_alt.group(2).strip() if uc_alt else "Não encontrada"
+            # 2. Número da UC
+            uc_match = re.search(r"Número da UC[\s\S]*?(\d{5,15})", texto_teste, re.IGNORECASE)
+            dados_teste['Unidade Consumidora (UC)'] = uc_match.group(1).strip() if uc_match else "Não encontrada"
 
             # 3. Mês de Referência e Vencimento
             mes_match = re.search(r"Referente a\s*([A-Z]{3}/\d{4})", texto_teste, re.IGNORECASE)
@@ -2181,32 +2179,24 @@ if arquivo_teste_pdf is not None:
             dados_teste['Vencimento'] = venc_match.group(1).strip() if venc_match else "Não encontrado"
 
             # 4. Consumo Fora de Ponta (TUSD Fio)
-            cons_fp = re.search(r"Consumo Fora de Ponta\s*-\s*\[kWh\]\s*([A-Z]{3}\s*\d{2})\s*([\d\.,]+)", texto_teste, re.IGNORECASE)
-            if cons_fp:
-                dados_teste['Consumo Fora Ponta (kWh)'] = limpar_numero(cons_fp.group(2))
-            else:
-                dados_teste['Consumo Fora Ponta (kWh)'] = 0.0
+            cons_fp = re.search(r"Consumo Fora(?: de)? Ponta[^\n]*\n.*?([\d\.,]+)", texto_teste, re.IGNORECASE)
+            dados_teste['Consumo Fora Ponta (kWh)'] = limpar_numero(cons_fp.group(1)) if cons_fp else 0.0
 
-            # 5. Demandas Registradas no Novo Formato
-            dem_p = re.search(r"Demanda Ponta\s*-\s*\[kW\]\s*([A-Z]{3}\s*\d{2})\s*([\d\.,]+)", texto_teste, re.IGNORECASE)
-            dados_teste['Demanda Registrada Ponta (kW)'] = limpar_numero(dem_p.group(2)) if dem_p else 0.0
+            # 5. Demandas Registradas
+            dem_p = re.search(r"Demanda Ponta[^\n]*\n.*?([\d\.,]+)", texto_teste, re.IGNORECASE)
+            dados_teste['Demanda Registrada Ponta (kW)'] = limpar_numero(dem_p.group(1)) if dem_p else 0.0
 
-            dem_fp = re.search(r"Demanda Fora de Ponta[^\n]*\s*([A-Z]{3}\s*\d{2})\s*([\d\.,]+)", texto_teste, re.IGNORECASE)
-            dados_teste['Demanda Registrada F.Ponta (kW)'] = limpar_numero(dem_fp.group(2)) if dem_fp else 0.0
+            dem_fp = re.search(r"Demanda Fora(?: de)? Ponta[^\n]*\n.*?([\d\.,]+)", texto_teste, re.IGNORECASE)
+            dados_teste['Demanda Registrada F.Ponta (kW)'] = limpar_numero(dem_fp.group(1)) if dem_fp else 0.0
 
             # 6. Valor Total a Pagar
-            total_match = re.search(r"Total a pagar.*?R\$\s*([\d\.,]+)", texto_teste, re.IGNORECASE)
-            if total_match:
-                dados_teste['Valor Total Fatura (R$)'] = limpar_numero(total_match.group(1))
-            else:
-                dados_teste['Valor Total Fatura (R$)'] = 0.0
+            total_match = re.search(r"Total a Pagar[^\d]*?([\d\.,]+)", texto_teste, re.IGNORECASE)
+            dados_teste['Valor Total Fatura (R$)'] = limpar_numero(total_match.group(1)) if total_match else 0.0
 
-            # Exibe os resultados de forma limpa na tela para conferência
+            # Exibe os resultados
             st.success("✅ Extração de teste concluída com sucesso!")
             st.markdown("##### 📋 Dados Brutos Extraídos:")
-            st.json(dados_teste)
             
-            # Transforma em DataFrame para conferência visual em tabela
             df_teste_res = pd.DataFrame(list(dados_teste.items()), columns=['Campo', 'Valor Extraído'])
             st.dataframe(df_teste_res, hide_index=True, use_container_width=True)
 

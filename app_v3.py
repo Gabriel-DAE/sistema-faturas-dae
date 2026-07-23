@@ -2143,9 +2143,10 @@ if arquivo_teste_pdf is not None:
     if st.button("🔍 Executar Extração de Teste", type="primary"):
         try:
             with pdfplumber.open(arquivo_teste_pdf) as pdf:
+                texto_teste = pdf.pages[0].extract_text()
                 with st.expander("👀 Ver Texto Bruto (Para o Gemini)"):
                     st.text(texto_teste)
-                texto_teste = pdf.pages[0].extract_text()
+                
             
             # Dicionário de extração estruturado para o novo formato ACL
             dados_teste = {}

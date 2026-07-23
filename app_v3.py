@@ -2066,3 +2066,64 @@ with aba_config:
                 st.success(f"✅ Sincronização concluída! {linhas_afetadas} faturas foram atualizadas.")
             except Exception as e:
                 st.error(f"Erro ao sincronizar: {e}")
+
+    # =========================================================
+    # ATUALIZAÇÃO EM LOTE DO CADASTRO (VIA EXCEL)
+    # =========================================================
+    st.divider()
+    st.markdown("###### 🚀 Atualização em Lote de UCs (CEMIG e Antigas)")
+    st.info("Baixe a planilha de cadastros acima, preencha as colunas **uc_antiga** ou **uc_cemig** no Excel e faça o upload aqui para atualizar todo o sistema de uma só vez.")
+
+    arquivo_atualizacao = st.file_uploader("Upload da Planilha de Cadastro Atualizada (.xlsx)", type=["xlsx"], key="up_cad_lote")
+
+    if arquivo_atualizacao is not None:
+        if st.button("🔄 Processar Atualização em Lote", type="primary"):
+            try:
+                df_cad_lote = pd.read_excel(arquivo_atualizacao)
+                
+                # Verifica se a coluna principal 'UC' existe na planilha
+                if 'UC' not in df_cad_lote.columns:
+                    st.error("A planilha precisa ter a coluna 'UC' para identificar as instalações.")
+                else:
+                    conexao = obter_conexao()
+                    c = conexao.cursor()
+                    
+                    ucs_atualizadas = 0
+                    
+                    for index, row in df_cad_lote.iterrows():
+                        # Identificador principal (UC da CPFL atual)
+                        uc_atual = str(row['UC']).strip()
+                        
+                        if not uc_atual or uc_atual == 'nan':
+                            continue
+                            
+                        # Função de limpeza inteligente para evitar o problema do ".0" do Excel
+                        def limpar_uc_excel(valor):
+                            if pd.isna(valor) or valor == "": return ""
+                            try:
+                                return str(int(float(valor))).strip()
+                            except:
+                                return str(valor).strip()
+                                
+                        # Extrai os dados das colunas (se existirem na planilha)
+                        uc_cemig_excel = limpar_uc_excel(row.get('uc_cemig', ''))
+                        uc_antiga_excel = limpar_uc_excel(row.get('uc_antiga', ''))
+                        
+                        # Faz o UPDATE apenas nos campos de vínculo para não estragar as demandas
+                        c.execute('''
+                            UPDATE cadastro_uc 
+                            SET uc_cemig = %s, uc_antiga = %s
+                            WHERE unidade_consumidora = %s
+                        ''', (uc_cemig_excel, uc_antiga_excel, uc_atual))
+                        
+                        ucs_atualizadas += 1
+                        
+                    conexao.commit()
+                    conexao.close()
+                    
+                    carregar_dados.clear() # Limpa a memória para atualizar os gráficos na hora
+                    
+                    st.success(f"✅ Sucesso! {ucs_atualizadas} unidades foram atualizadas com os vínculos antigos e da CEMIG.")
+                    st.balloons()
+            except Exception as e:
+                st.error(f"Ocorreu um erro ao ler a planilha: {e}")

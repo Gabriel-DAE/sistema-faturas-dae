@@ -2041,6 +2041,37 @@ with aba_config:
                 st.success(f"✅ Sincronização concluída! {linhas_afetadas} faturas foram atualizadas.")
             except Exception as e:
                 st.error(f"Erro ao sincronizar: {e}")
+                
+    # =========================================================
+    # BOTÃO TEMPORÁRIO: LIMPEZA DO ".0" NAS UCs DA CEMIG
+    # =========================================================
+    st.divider()
+    st.markdown("###### 🧹 Limpeza de Banco de Dados (Remover '.0')")
+    st.info("Use este botão uma única vez para limpar o '.0' que ficou gravado nas UCs da CEMIG devido a uploads antigos de planilhas.")
+    
+    col_btn_limpar, _, _ = st.columns([1, 3, 3])
+    with col_btn_limpar:
+        if st.button("🧹 Limpar UCs da CEMIG", type="primary", use_container_width=True):
+            try:
+                conexao = obter_conexao()
+                c = conexao.cursor()
+                
+                # O comando SQL REPLACE tira o '.0' de todas as linhas de uma vez!
+                c.execute("""
+                    UPDATE cadastro_uc 
+                    SET uc_cemig = REPLACE(uc_cemig, '.0', '') 
+                    WHERE uc_cemig LIKE '%.0';
+                """)
+                
+                linhas_corrigidas = c.rowcount
+                conexao.commit()
+                conexao.close()
+                
+                carregar_dados.clear() # Atualiza o cache
+                st.success(f"✅ Limpeza concluída! {linhas_corrigidas} UCs da CEMIG foram corrigidas no cadastro.")
+                st.balloons()
+            except Exception as e:
+                st.error(f"Erro ao limpar banco: {e}")
     
     # =========================================================
     # CÓDIGO NOVO: EXPORTAÇÃO DO CADASTRO DE UNIDADES

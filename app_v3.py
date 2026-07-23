@@ -2142,10 +2142,10 @@ if arquivo_teste_pdf is not None:
             with pdfplumber.open(arquivo_teste_pdf) as pdf:
                 texto_teste = ""
                 # Lê as 2 primeiras páginas do PDF para não perder nenhum dado
-                for i in range(min(2, len(pdf.pages))):
-                    texto_pagina = pdf.pages[i].extract_text()
+                for page in pdf.pages:
+                    texto_pagina = page.extract_text()
                     if texto_pagina:
-                        texto_teste += texto_pagina + "\n"
+                        texto += texto_pagina + "\n"
             
             # --- EXIBE O TEXTO BRUTO PARA O GEMINI ---
             with st.expander("👀 Ver Texto Bruto (Copie o conteúdo daqui e envie-me)"):

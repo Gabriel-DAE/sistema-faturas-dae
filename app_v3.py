@@ -154,15 +154,16 @@ def inicializar_banco():
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'ATIVA';''')
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS dia_vencimento INTEGER DEFAULT 10;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS subtotal_fatura REAL DEFAULT 0.0;''')
-        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS consumo_energia_acl_kwh REAL DEFAULT 0.0;''')
+        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS consumo_energia_acl_kwh DOUBLE PRECISION DEFAULT 0.0;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS tarifa_energia_acl DOUBLE PRECISION DEFAULT 0.0;''')
-        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS valor_total_acl REAL DEFAULT 0.0;''')
+        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS valor_energia_acl DOUBLE PRECISION DEFAULT 0.0;''')
+        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS valor_total_acl DOUBLE PRECISION DEFAULT 0.0;''')
+        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS data_vencimento_acl TEXT;''')
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS uc_cemig TEXT;''')
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS uc_antiga TEXT;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS uc_original TEXT;''')
-        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS data_vencimento_acl TEXT;''')
-    except:
-        pass
+    except Exception as e:
+        print("Aviso ao atualizar estrutura do banco:", e)
         
     # 3. Cria a tabela de Histórico de Envios para o Financeiro
     cursor.execute('''
@@ -235,7 +236,9 @@ def carregar_dados():
         'valor_dem_reativa_fponta': 'Valor Dem. Reat. F.Ponta', 'subtotal_fatura': 'Subtotal PDF', 'cip': 'CIP', 'retencao_consumo_irrf': 'Retenção Cons. IRRF',
         'retencao_demanda_irrf': 'Retenção Dem. IRRF', 'valor_total_pis': 'Valor PIS', 'valor_total_cofins': 'Valor COFINS',
         'valor_total_icms': 'Valor ICMS', 'valor_total_fatura': 'Valor Total Fatura', 'data_insercao': 'Data Cadastro',
-        'data_vencimento_acl': 'Vencimento ACL'
+        'data_vencimento_acl': 'Vencimento ACL', 'consumo_energia_acl_kwh': 'Consumo Energia ACL (kWh)',
+        'tarifa_energia_acl': 'Tarifa Energia ACL (R$/kWh)', 'valor_energia_acl': 'Valor Energia ACL (R$)',
+        'valor_total_acl': 'Valor Total ACL (R$)'
     }
     
     df = df.rename(columns=dicionario_nomes)
@@ -265,7 +268,8 @@ def carregar_dados():
 
     ordem_colunas = [
         'id', 'Data Referência Oculta', 'UC', 'Nome da Unidade', 'Atividade', 'Classificação', 'Mês Referência', 'Vencimento CPFL', 'Vencimento ACL',
-        'Leitura Anterior', 'Leitura Atual', 'Próxima Leitura', 'Consumo Ponta', 'Tarifa Cons. Ponta TUSD', 'Tarifa Trib. Cons. Ponta TUSD', 'Valor Cons. Ponta TUSD', 
+        'Leitura Anterior', 'Leitura Atual', 'Próxima Leitura', 'Consumo Energia ACL (kWh)', 'Tarifa Energia ACL (R$/kWh)', 'Valor Energia ACL (R$)', 'Valor Total ACL (R$)',
+        'Consumo Ponta', 'Tarifa Cons. Ponta TUSD', 'Tarifa Trib. Cons. Ponta TUSD', 'Valor Cons. Ponta TUSD', 
         'Tarifa Cons. Ponta TE', 'Tarifa Trib. Cons. Ponta TE', 'Valor Cons. Ponta TE', 'Consumo F.Ponta', 'Tarifa Cons. F.Ponta TUSD', 'Tarifa Trib. Cons. F.Ponta TUSD', 'Valor Cons. F.Ponta TUSD', 
         'Tarifa Cons. F.Ponta TE', 'Tarifa Trib. Cons. F.Ponta TE', 'Valor Cons. F.Ponta TE', 'Bandeira', 'Adicional Bandeira', 
         'Dem. Contr. Ponta', 'Dem. Reg. Ponta', 'Tarifa Dem. Ponta', 'Tarifa Trib. Dem. Ponta', 'Valor Dem. Ponta', 
@@ -478,6 +482,7 @@ def processar_pdf(arquivo_pdf):
     return dados
 
 def processar_pdf_cemig(arquivo_pdf):
+    """Extrai os dados específicos da fatura da Comercializadora (CEMIG) no ACL."""
     with pdfplumber.open(arquivo_pdf) as pdf:
         texto = ""
         for i in range(min(2, len(pdf.pages))):
@@ -485,86 +490,51 @@ def processar_pdf_cemig(arquivo_pdf):
             if texto_pagina:
                 texto += texto_pagina + "\n"
         
-    chaves_numericas = [
-        'demanda_contratada_ponta', 'demanda_contratada_fponta',
-        'consumo_ponta', 'tarifa_aneel_cons_ponta_tusd', 'tarifa_trib_cons_ponta_tusd', 'valor_cons_ponta_tusd',
-        'consumo_fora_ponta', 'tarifa_aneel_cons_fponta_tusd', 'tarifa_trib_cons_fponta_tusd', 'valor_cons_fponta_tusd',
-        'tarifa_aneel_cons_ponta_te', 'tarifa_trib_cons_ponta_te', 'valor_cons_ponta_te',
-        'tarifa_aneel_cons_fponta_te', 'tarifa_trib_cons_fponta_te', 'valor_cons_fponta_te',
-        'demanda_registrada_ponta', 'tarifa_aneel_dem_ponta', 'tarifa_trib_dem_ponta', 'valor_dem_ponta',
-        'demanda_isenta_ponta', 'tarifa_aneel_dem_isenta_ponta', 'tarifa_trib_dem_isenta_ponta', 'valor_dem_isenta_ponta',
-        'demanda_registrada_fora_ponta', 'tarifa_aneel_dem_fponta', 'tarifa_trib_dem_fponta', 'valor_dem_fponta',
-        'demanda_isenta_fora_ponta', 'tarifa_aneel_dem_isenta_fponta', 'tarifa_trib_dem_isenta_fponta', 'valor_dem_isenta_fponta',
-        'consumo_reativo_ponta', 'tarifa_aneel_cons_reativo_ponta', 'tarifa_trib_cons_reativo_ponta', 'valor_cons_reativo_ponta',
-        'consumo_reativo_fora_ponta', 'tarifa_aneel_cons_reativo_fponta', 'tarifa_trib_cons_reativo_fponta', 'valor_cons_reativo_fponta',
-        'demanda_ultrapassagem_ponta', 'tarifa_aneel_dem_ultrap_ponta', 'tarifa_trib_dem_ultrap_ponta', 'valor_dem_ultrap_ponta',
-        'demanda_ultrapassagem_fora_ponta', 'tarifa_aneel_dem_ultrap_fponta', 'tarifa_trib_dem_ultrap_fponta', 'valor_dem_ultrap_fponta',
-        'demanda_reativa_ponta', 'tarifa_aneel_dem_reativa_ponta', 'tarifa_trib_dem_reativa_ponta', 'valor_dem_reativa_ponta',
-        'demanda_reativa_fora_ponta', 'tarifa_aneel_dem_reativa_fponta', 'tarifa_trib_dem_reativa_fponta', 'valor_dem_reativa_fponta', 
-        'subtotal_fatura', 'cip', 'retencao_consumo_irrf', 'retencao_demanda_irrf', 'valor_total_pis', 'valor_total_cofins', 'valor_total_icms'
-    ]
+    dados_cemig = {}
     
-    dados = {k: 0.0 for k in chaves_numericas} 
-    
-    # 2. Inicialização de Textos Padrão (Evita erros de inserção)
-    dados['periodo_leitura_inicio'] = ""
-    dados['periodo_leitura_fim'] = ""
-    dados['data_proxima_leitura'] = ""
-    dados['tipo_bandeira'] = "VERDE"
-    dados['adicional_bandeira'] = 0.0
-    
-    # 3. Identificação Básica
-    dados['unidade_consumidora'] = extrair_texto_regex(r"N.º DA UNIDADE CONSUMIDORA\s*(\d+)", texto)
-    dados['mes_referencia'] = extrair_texto_regex(r"Referente a\s*([A-Z]{3}/\d{4})", texto)
+    # 1. Identificação Básica no PDF da CEMIG
+    uc_cemig_lida = extrair_texto_regex(r"N.º DA UNIDADE CONSUMIDORA\s*(\d+)", texto)
+    dados_cemig['mes_referencia'] = extrair_texto_regex(r"Referente a\s*([A-Z]{3}/\d{4})", texto)
     
     vencimento_bruto = extrair_texto_regex(r"Vencimento\s*(\d{2}/\d{2}/\d{4})", texto)
-    dados['data_vencimento'] = vencimento_bruto if vencimento_bruto else extrair_texto_regex(r"(\d{2}/\d{2}/\d{4})", texto) 
-    dados['data_vencimento_acl'] = dados['data_vencimento']
+    dados_cemig['data_vencimento_acl'] = vencimento_bruto if vencimento_bruto else extrair_texto_regex(r"(\d{2}/\d{2}/\d{4})", texto) 
     
-    dados['classificacao'] = "Mercado Livre - ACL"
-    
-    # 4. Busca Cadastro da UC no Banco usando a UC da CEMIG
+    # 2. Busca a UC Principal (CPFL Nova) no Cadastro do DAE através da uc_cemig
     conexao_pdf = obter_conexao()
     c_pdf = conexao_pdf.cursor()
-    # Procuramos pela uc_cemig e trazemos a UC Principal (CPFL Nova)
-    c_pdf.execute("SELECT unidade_consumidora, nome_unidade, atividade FROM cadastro_uc WHERE uc_cemig = %s", (dados['unidade_consumidora'],))
+    c_pdf.execute("SELECT unidade_consumidora, nome_unidade, atividade FROM cadastro_uc WHERE uc_cemig = %s", (uc_cemig_lida,))
     res_uc = c_pdf.fetchone()
     conexao_pdf.close()
     
     if res_uc:
-        # 🌟 O SEGREDO: Salva a UC da CEMIG na coluna de memória antes de substituir!
-        dados['uc_original'] = dados['unidade_consumidora']
-        
-        # Substitui a UC da CEMIG pela UC Master (Nova CPFL) para unificar os gráficos!
-        dados['unidade_consumidora'] = res_uc[0] 
-        dados['nome_unidade'] = res_uc[1]
-        dados['atividade'] = res_uc[2]
+        dados_cemig['unidade_consumidora'] = res_uc[0] # Associa à UC Master da CPFL!
+        dados_cemig['nome_unidade'] = res_uc[1]
+        dados_cemig['atividade'] = res_uc[2]
     else:
-        # Se não achar o cadastro, salva a memória também por segurança
-        dados['uc_original'] = dados['unidade_consumidora']
-        dados['nome_unidade'] = "Não Cadastrada"
-        dados['atividade'] = "Administrativa" 
+        dados_cemig['unidade_consumidora'] = uc_cemig_lida
+        dados_cemig['nome_unidade'] = "Não Cadastrada"
+        dados_cemig['atividade'] = "Administrativa" 
     
-    # 5. Extração de Valores ACL
+    # 3. Extração de Valores ACL
     linha_energia = re.search(r"Energia Ativa HFP.*?(?:kWh)\s+([\d\.]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
     if linha_energia:
-        dados['consumo_energia_acl_kwh'] = limpar_numero(linha_energia.group(1))
-        dados['tarifa_energia_acl'] = float(linha_energia.group(2).replace(',', '.')) 
+        dados_cemig['consumo_energia_acl_kwh'] = limpar_numero(linha_energia.group(1))
+        dados_cemig['tarifa_energia_acl'] = float(linha_energia.group(2).replace(',', '.'))
+        dados_cemig['valor_energia_acl'] = round(dados_cemig['consumo_energia_acl_kwh'] * dados_cemig['tarifa_energia_acl'], 2)
     else:
-        dados['consumo_energia_acl_kwh'] = 0.0
-        dados['tarifa_energia_acl'] = 0.0
+        dados_cemig['consumo_energia_acl_kwh'] = 0.0
+        dados_cemig['tarifa_energia_acl'] = 0.0
+        dados_cemig['valor_energia_acl'] = 0.0
 
-    # Valor Total a Pagar
-    dados['valor_total_acl'] = extrair_valor_regex(r"Total a pagar\s*R\$\s*([\d\.,]+)", texto)
-    dados['valor_total_fatura'] = dados['valor_total_acl'] 
+    # Valor Total a Pagar da Fatura CEMIG
+    dados_cemig['valor_total_acl'] = extrair_valor_regex(r"Total a pagar\s*R\$\s*([\d\.,]+)", texto)
     
-    return dados
+    return dados_cemig
 
 def processar_pdf_cpfl_acl(arquivo_pdf):
-    """Extrai os dados exclusivos das faturas da CPFL para unidades migradas para o Mercado Livre (ACL)."""
     with pdfplumber.open(arquivo_pdf) as pdf:
         texto = ""
-        # 1. LÊ TODAS AS PÁGINAS DO PDF (Garante a captura da Bandeira nas páginas finais)
+        # LÊ TODAS AS PÁGINAS DO PDF (Garante a captura da Bandeira nas páginas finais)
         for page in pdf.pages:
             texto_pagina = page.extract_text()
             if texto_pagina:
@@ -713,7 +683,6 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
 
     vp = extrair_valor_regex(r"CDE Escassez Hídrica Ponta.*?kWh\s+[\d\.,]+\s+[\d\.,]+\s+[\d\.,]+\s+([\d\.,]+)", texto)
     vfp = extrair_valor_regex(r"CDE Escassez Hídrica F(?:ora)? Ponta.*?kWh\s+[\d\.,]+\s+[\d\.,]+\s+[\d\.,]+\s+([\d\.,]+)", texto)
-    dados['adicional_bandeira'] = vp + vfp
 
     # 8. Impostos e Totais
     dados['cip'] = extrair_valor_regex(r"Contribuição Custeio IP-CIP.*?\s([\d\.,]+)", texto)
@@ -1756,34 +1725,84 @@ with aba_pdf:
                             with pdfplumber.open(arquivo) as pdf_temp:
                                 texto_identificacao = pdf_temp.pages[0].extract_text()
                             
-                            # 1. Roteamento CEMIG
+                            # ==========================================
+                            # 1. PROCESSAMENTO FATURA CEMIG (ACL)
+                            # ==========================================
                             if "CEMIG" in texto_identificacao.upper() or "VAREJISTA" in texto_identificacao.upper():
-                                d = processar_pdf_cemig(arquivo)
-                                classificacao_tipo = 'Mercado Livre - ACL'
-                                c.execute("SELECT id FROM faturas_cpfl WHERE unidade_consumidora = %s AND mes_referencia = %s AND classificacao = %s", (d['unidade_consumidora'], d['mes_referencia'], classificacao_tipo))
-                            
-                            # 2. Roteamento NOVO CPFL (Mercado Livre)
-                            elif "LIVRE-A4" in texto_identificacao.upper() or "CLIENTE LIVRE" in texto_identificacao.upper():
-                                d = processar_pdf_cpfl_acl(arquivo)
-                                classificacao_tipo = d['classificacao']
-                                # Verifica duplicidade tolerando qualquer uma das variantes Livres
-                                c.execute("SELECT id FROM faturas_cpfl WHERE unidade_consumidora = %s AND mes_referencia = %s AND classificacao LIKE '%%Livre-A4%%'", (d['unidade_consumidora'], d['mes_referencia']))
+                                d_cemig = processar_pdf_cemig(arquivo)
+                                uc_alvo = d_cemig['unidade_consumidora']
+                                mes_alvo = d_cemig['mes_referencia']
                                 
-                            # 3. Roteamento ANTIGO CPFL (Mercado Cativo ACR)
+                                # Verifica se a linha da CPFL para essa UC e Mês já existe
+                                c.execute("SELECT id FROM faturas_cpfl WHERE unidade_consumidora = %s AND mes_referencia = %s", (uc_alvo, mes_alvo))
+                                row_existente = c.fetchone()
+                                
+                                if row_existente:
+                                    # ATUALIZA A MESMA LINHA EXISTENTE
+                                    id_linha = row_existente[0]
+                                    c.execute("""
+                                        UPDATE faturas_cpfl SET
+                                            data_vencimento_acl = %s,
+                                            consumo_energia_acl_kwh = %s,
+                                            tarifa_energia_acl = %s,
+                                            valor_energia_acl = %s,
+                                            valor_total_acl = %s
+                                        WHERE id = %s
+                                    """, (
+                                        d_cemig['data_vencimento_acl'],
+                                        d_cemig['consumo_energia_acl_kwh'],
+                                        d_cemig['tarifa_energia_acl'],
+                                        d_cemig['valor_energia_acl'],
+                                        d_cemig['valor_total_acl'],
+                                        id_linha
+                                    ))
+                                    sucessos += 1
+                                else:
+                                    # Se a fatura da CPFL ainda não foi carregada, cria a linha inicial preenchendo os dados da CEMIG
+                                    c.execute("""
+                                        INSERT INTO faturas_cpfl (
+                                            unidade_consumidora, nome_unidade, atividade, mes_referencia, classificacao,
+                                            data_vencimento_acl, consumo_energia_acl_kwh, tarifa_energia_acl, valor_energia_acl, valor_total_acl
+                                        ) VALUES (%s, %s, %s, %s, 'Mercado Livre - ACL', %s, %s, %s, %s, %s)
+                                    """, (
+                                        uc_alvo, d_cemig['nome_unidade'], d_cemig['atividade'], mes_alvo,
+                                        d_cemig['data_vencimento_acl'], d_cemig['consumo_energia_acl_kwh'],
+                                        d_cemig['tarifa_energia_acl'], d_cemig['valor_energia_acl'], d_cemig['valor_total_acl']
+                                    ))
+                                    sucessos += 1
+
+                            # ==========================================
+                            # 2. PROCESSAMENTO FATURA CPFL (ACL OU ACR)
+                            # ==========================================
                             else:
-                                d = processar_pdf(arquivo)
-                                classificacao_tipo = d['classificacao']
-                                # Verifica duplicidade garantindo que não colide com as faturas livres
-                                c.execute("SELECT id FROM faturas_cpfl WHERE unidade_consumidora = %s AND mes_referencia = %s AND classificacao NOT LIKE '%%Livre-A4%%' AND classificacao != 'Mercado Livre - ACL'", (d['unidade_consumidora'], d['mes_referencia']))
-                            
-                            if c.fetchone():
-                                duplicadas += 1
-                            else:
-                                colunas = ', '.join(d.keys())
-                                placeholders = ', '.join(['%s'] * len(d))
-                                valores = tuple(d.values())
-                                c.execute(f"INSERT INTO faturas_cpfl ({colunas}) VALUES ({placeholders})", valores)
-                                sucessos += 1
+                                is_cpfl_acl = "LIVRE-A4" in texto_identificacao.upper() or "CLIENTE LIVRE" in texto_identificacao.upper()
+                                d_cpfl = processar_pdf_cpfl_acl(arquivo) if is_cpfl_acl else processar_pdf(arquivo)
+                                
+                                uc_alvo = d_cpfl['unidade_consumidora']
+                                mes_alvo = d_cpfl['mes_referencia']
+                                
+                                c.execute("SELECT id, valor_total_fatura FROM faturas_cpfl WHERE unidade_consumidora = %s AND mes_referencia = %s", (uc_alvo, mes_alvo))
+                                row_existente = c.fetchone()
+                                
+                                if row_existente:
+                                    id_linha, v_total_fatura = row_existente
+                                    # Se já tem valor da CPFL preenchido, trata como duplicada
+                                    if v_total_fatura > 0:
+                                        duplicadas += 1
+                                    else:
+                                        # Se a linha foi criada primeiro pela CEMIG, atualiza com os dados da CPFL
+                                        colunas_up = [f"{k} = %s" for k in d_cpfl.keys() if k not in ('id', 'consumo_energia_acl_kwh', 'tarifa_energia_acl', 'valor_energia_acl', 'valor_total_acl', 'data_vencimento_acl')]
+                                        valores_up = tuple(d_cpfl[k] for k in d_cpfl.keys() if k not in ('id', 'consumo_energia_acl_kwh', 'tarifa_energia_acl', 'valor_energia_acl', 'valor_total_acl', 'data_vencimento_acl'))
+                                        query_up = f"UPDATE faturas_cpfl SET {', '.join(colunas_up)} WHERE id = %s"
+                                        c.execute(query_up, valores_up + (id_linha,))
+                                        sucessos += 1
+                                else:
+                                    # Inserção normal da CPFL
+                                    colunas = ', '.join(d_cpfl.keys())
+                                    placeholders = ', '.join(['%s'] * len(d_cpfl))
+                                    valores = tuple(d_cpfl.values())
+                                    c.execute(f"INSERT INTO faturas_cpfl ({colunas}) VALUES ({placeholders})", valores)
+                                    sucessos += 1
                                 
                         except Exception as e:
                             erros += 1
@@ -1791,7 +1810,7 @@ with aba_pdf:
                         
                         barra_progresso.progress((i + 1) / total_arquivos)
                         gc.collect()
-
+                        
                     conexao.commit()
                     carregar_dados.clear()
                     conexao.close()

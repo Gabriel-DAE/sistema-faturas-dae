@@ -542,7 +542,17 @@ def processar_pdf_cemig(arquivo_pdf):
         dados_cemig['valor_energia_acl'] = 0.0
 
     # Valor Total a Pagar da Fatura CEMIG
-    dados_cemig['valor_total_acl'] = extrair_valor_regex(r"Total a pagar\s*R\$\s*([\d\.,]+)", texto)
+    match_total = re.search(r"Total a pagar[\s\S]*?R\$\s*([\d\.,]+)", texto, re.IGNORECASE)
+    
+    if not match_total:
+        # Plano B: Busca o valor no cabeçalho do PDF
+        match_total = re.search(r"Valor a pagar \(R\$\)[\s\S]*?\d{2}/\d{2}/\d{4}\s+([\d\.,]+)", texto, re.IGNORECASE)
+        
+    if not match_total:
+        # Plano C: Busca na linha de totalização dos itens
+        match_total = re.search(r"TOTAL\s+([\d\.,]+)", texto, re.IGNORECASE)
+        
+    dados_cemig['valor_total_acl'] = limpar_numero(match_total.group(1)) if match_total else 0.0
     
     return dados_cemig
 

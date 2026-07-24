@@ -1116,10 +1116,15 @@ with aba_controle:
                     conexao, 
                     params=tuple(meses_selecionados)
                 )
-                ucs_enviadas = df_enviados['unidade_consumidora'].tolist()
                 
-                # Filtra apenas as faturas que ainda não foram enviadas
-                df_pendente_envio = df_mes_cpfl[~df_mes_cpfl['UC'].isin(ucs_enviadas)].copy()
+                # 1. Criamos uma chave única juntando UC e Mês para que o envio de um mês não oculte o outro
+                df_mes_cpfl['Chave_Fatura'] = df_mes_cpfl['UC'].astype(str) + "_" + df_mes_cpfl['Mês Referência']
+                df_enviados['Chave_Fatura'] = df_enviados['unidade_consumidora'].astype(str) + "_" + df_enviados['mes_referencia']
+                
+                faturas_ja_enviadas = df_enviados['Chave_Fatura'].tolist()
+                
+                # 2. Filtra as faturas exatas (UC + Mês) que ainda não foram enviadas
+                df_pendente_envio = df_mes_cpfl[~df_mes_cpfl['Chave_Fatura'].isin(faturas_ja_enviadas)].copy()
                 
                 if not df_pendente_envio.empty:
                     # --- CÁLCULOS FINANCEIROS ---

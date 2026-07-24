@@ -345,32 +345,42 @@ def processar_pdf(arquivo_pdf):
     else:
         dados['classificacao'] = classificacao_bruta
 
-    dados['unidade_consumidora'] = extrair_texto_regex(r"(\d{7,12})\s+\d{2}/\d{2}/\d{4}\s+\d{2}/\d{2}/\d{4}\s+\d{1,3}", texto)
-    
+    # 1. Extrator Universal de UC (Aceita 11 e 12 dígitos, com ou sem pontuação)
+    match_uc = re.search(r"(\d{1,3}\.\d{3}\.\d{3}\.\d{3}-\d{2}|\d{3}\.\d{3}\.\d{3}-\d{2})", texto)
+    if match_uc:
+        dados['unidade_consumidora'] = match_uc.group(1).strip()
+    else:
+        # Fallback para busca perto do rótulo
+        match_uc_alt = re.search(r"(?:Número da UC|DAE)[\s\S]*?([\d\.-]{8,20})", texto, re.IGNORECASE)
+        dados['unidade_consumidora'] = match_uc_alt.group(1).strip() if match_uc_alt else ""
+
+    # 2. Limpa os dígitos para busca blindada no Banco de Dados
+    uc_apenas_digitos = re.sub(r'\D', '', dados['unidade_consumidora'])
+
     conexao_pdf = obter_conexao()
     c_pdf = conexao_pdf.cursor()
+    
+    # O regexp_replace compara APENAS OS NÚMEROS, ignorando pontos, traços e espaços
     c_pdf.execute("""
         SELECT unidade_consumidora, nome_unidade, atividade, demanda_contratada_ponta, demanda_contratada_fponta 
         FROM cadastro_uc 
-        WHERE unidade_consumidora = %s OR uc_antiga = %s
-    """, (dados['unidade_consumidora'], dados['unidade_consumidora']))
+        WHERE regexp_replace(unidade_consumidora, '\D', '', 'g') = %s 
+           OR regexp_replace(uc_antiga, '\D', '', 'g') = %s
+    """, (uc_apenas_digitos, uc_apenas_digitos))
+    
     res_uc = c_pdf.fetchone()
     conexao_pdf.close()
     
     if res_uc:
-        # Guarda o número velho (impresso no papel) para auditoria
         dados['uc_original'] = dados['unidade_consumidora']
-        
-        # Força o sistema a usar a UC Nova Principal (unifica os gráficos)
-        dados['unidade_consumidora'] = res_uc[0]
+        dados['unidade_consumidora'] = res_uc[0] # Padroniza para a UC cadastrada
         dados['nome_unidade'] = res_uc[1]
         dados['atividade'] = res_uc[2] 
         dados['demanda_contratada_ponta'] = res_uc[3]
         dados['demanda_contratada_fponta'] = res_uc[4]
     else:
-        # Se não achar nada, avisa que falta o vínculo
         dados['uc_original'] = dados['unidade_consumidora']
-        dados['nome_unidade'] = "⚠️ VINCULAR UC ANTIGA NO CADASTRO"
+        dados['nome_unidade'] = "Não Cadastrada"
         dados['atividade'] = "Administrativa" 
         dados['demanda_contratada_ponta'] = 0.0
         dados['demanda_contratada_fponta'] = 0.0
@@ -627,11 +637,45 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     else:
         dados['classificacao'] = "Tarifa Verde Livre-A4"
 
-    # 3. Unidade Consumidora (UC Nova CPFL)
-    uc_match = re.search(r"DEPARTAMENTO DE AGUA E ESGOTO DAE\s*(\d{3}\.\d{3}\.\d{3}-\d{2})", texto)
-    if not uc_match:
-        uc_match = re.search(r"(\d{3}\.\d{3}\.\d{3}-\d{2})", texto)
-    dados['unidade_consumidora'] = uc_match.group(1).strip() if uc_match else ""
+    # 1. Extrator Universal de UC (Aceita 11 e 12 dígitos, com ou sem pontuação)
+    match_uc = re.search(r"(\d{1,3}\.\d{3}\.\d{3}\.\d{3}-\d{2}|\d{3}\.\d{3}\.\d{3}-\d{2})", texto)
+    if match_uc:
+        dados['unidade_consumidora'] = match_uc.group(1).strip()
+    else:
+        # Fallback para busca perto do rótulo
+        match_uc_alt = re.search(r"(?:Número da UC|DAE)[\s\S]*?([\d\.-]{8,20})", texto, re.IGNORECASE)
+        dados['unidade_consumidora'] = match_uc_alt.group(1).strip() if match_uc_alt else ""
+
+    # 2. Limpa os dígitos para busca blindada no Banco de Dados
+    uc_apenas_digitos = re.sub(r'\D', '', dados['unidade_consumidora'])
+
+    conexao_pdf = obter_conexao()
+    c_pdf = conexao_pdf.cursor()
+    
+    # O regexp_replace compara APENAS OS NÚMEROS, ignorando pontos, traços e espaços
+    c_pdf.execute("""
+        SELECT unidade_consumidora, nome_unidade, atividade, demanda_contratada_ponta, demanda_contratada_fponta 
+        FROM cadastro_uc 
+        WHERE regexp_replace(unidade_consumidora, '\D', '', 'g') = %s 
+           OR regexp_replace(uc_antiga, '\D', '', 'g') = %s
+    """, (uc_apenas_digitos, uc_apenas_digitos))
+    
+    res_uc = c_pdf.fetchone()
+    conexao_pdf.close()
+    
+    if res_uc:
+        dados['uc_original'] = dados['unidade_consumidora']
+        dados['unidade_consumidora'] = res_uc[0] # Padroniza para a UC cadastrada
+        dados['nome_unidade'] = res_uc[1]
+        dados['atividade'] = res_uc[2] 
+        dados['demanda_contratada_ponta'] = res_uc[3]
+        dados['demanda_contratada_fponta'] = res_uc[4]
+    else:
+        dados['uc_original'] = dados['unidade_consumidora']
+        dados['nome_unidade'] = "Não Cadastrada"
+        dados['atividade'] = "Administrativa" 
+        dados['demanda_contratada_ponta'] = 0.0
+        dados['demanda_contratada_fponta'] = 0.0
     
     # 4. Datas
     m_venc_ref = re.search(r"([A-Z]{3}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+R\$", texto)
@@ -649,17 +693,31 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
         
     dados['data_proxima_leitura'] = extrair_texto_regex(r"Próxima Leitura\s*(\d{2}/\d{2}/\d{4})", texto)
 
-    # 5. Busca Contratos
+    # 5. Busca Contratos e padronização cega
+    uc_apenas_digitos = re.sub(r'\D', '', dados['unidade_consumidora'])
+
     conexao_pdf = obter_conexao()
     c_pdf = conexao_pdf.cursor()
-    c_pdf.execute("SELECT nome_unidade, atividade, demanda_contratada_ponta, demanda_contratada_fponta FROM cadastro_uc WHERE unidade_consumidora = %s", (dados['unidade_consumidora'],))
+    c_pdf.execute("""
+        SELECT nome_unidade, atividade, demanda_contratada_ponta, demanda_contratada_fponta, unidade_consumidora 
+        FROM cadastro_uc 
+        WHERE regexp_replace(unidade_consumidora, '\D', '', 'g') = %s 
+           OR regexp_replace(uc_antiga, '\D', '', 'g') = %s
+    """, (uc_apenas_digitos, uc_apenas_digitos))
     res_uc = c_pdf.fetchone()
     conexao_pdf.close()
     
-    dados['nome_unidade'] = res_uc[0] if res_uc else "Não Cadastrada"
-    dados['atividade'] = res_uc[1] if res_uc else "Administrativa" 
-    dados['demanda_contratada_ponta'] = res_uc[2] if res_uc else 0.0
-    dados['demanda_contratada_fponta'] = res_uc[3] if res_uc else 0.0
+    if res_uc:
+        dados['nome_unidade'] = res_uc[0]
+        dados['atividade'] = res_uc[1]
+        dados['demanda_contratada_ponta'] = res_uc[2]
+        dados['demanda_contratada_fponta'] = res_uc[3]
+        dados['unidade_consumidora'] = res_uc[4] # Força o número da UC igual ao do banco
+    else:
+        dados['nome_unidade'] = "Não Cadastrada"
+        dados['atividade'] = "Administrativa" 
+        dados['demanda_contratada_ponta'] = 0.0
+        dados['demanda_contratada_fponta'] = 0.0
 
     # 6. Extração de Itens Faturados (TUSD, Demandas e Reativos)
     # Consumo Ponta

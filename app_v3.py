@@ -349,14 +349,31 @@ def processar_pdf(arquivo_pdf):
     
     conexao_pdf = obter_conexao()
     c_pdf = conexao_pdf.cursor()
-    c_pdf.execute("SELECT nome_unidade, atividade, demanda_contratada_ponta, demanda_contratada_fponta FROM cadastro_uc WHERE unidade_consumidora = %s", (dados['unidade_consumidora'],))
+    c_pdf.execute("""
+        SELECT unidade_consumidora, nome_unidade, atividade, demanda_contratada_ponta, demanda_contratada_fponta 
+        FROM cadastro_uc 
+        WHERE unidade_consumidora = %s OR uc_antiga = %s
+    """, (dados['unidade_consumidora'], dados['unidade_consumidora']))
     res_uc = c_pdf.fetchone()
     conexao_pdf.close()
     
-    dados['nome_unidade'] = res_uc[0] if res_uc else "Não Cadastrada"
-    dados['atividade'] = res_uc[1] if res_uc else "Administrativa" 
-    dados['demanda_contratada_ponta'] = res_uc[2] if res_uc else 0.0
-    dados['demanda_contratada_fponta'] = res_uc[3] if res_uc else 0.0
+    if res_uc:
+        # Guarda o número velho (impresso no papel) para auditoria
+        dados['uc_original'] = dados['unidade_consumidora']
+        
+        # Força o sistema a usar a UC Nova Principal (unifica os gráficos)
+        dados['unidade_consumidora'] = res_uc[0]
+        dados['nome_unidade'] = res_uc[1]
+        dados['atividade'] = res_uc[2] 
+        dados['demanda_contratada_ponta'] = res_uc[3]
+        dados['demanda_contratada_fponta'] = res_uc[4]
+    else:
+        # Se não achar nada, avisa que falta o vínculo
+        dados['uc_original'] = dados['unidade_consumidora']
+        dados['nome_unidade'] = "⚠️ VINCULAR UC ANTIGA NO CADASTRO"
+        dados['atividade'] = "Administrativa" 
+        dados['demanda_contratada_ponta'] = 0.0
+        dados['demanda_contratada_fponta'] = 0.0
     
     dc_p_pdf = extrair_valor_regex(r"Demanda P\.? kW\s+([\d\.,]+)", texto)
     if dc_p_pdf > 0: dados['demanda_contratada_ponta'] = dc_p_pdf

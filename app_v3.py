@@ -1173,7 +1173,7 @@ with aba_controle:
                             df_resumo['D_Ord'] = pd.to_datetime(df_resumo[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
                             df_resumo = df_resumo.sort_values('D_Ord').drop(columns=['D_Ord'])
                             df_res_show = df_resumo.copy()
-                            df_res_show.columns = ['Data de Vencimento', 'Valor Total']
+                            df_res_show.columns = ['Vencimento', 'Valor Total']
                             df_res_show['Valor Total'] = df_res_show['Valor Total'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
                             st.dataframe(df_res_show, hide_index=True, use_container_width=True)
 
@@ -1244,7 +1244,7 @@ with aba_controle:
                             c_res.fill = sector_fill; c_res.font = font_bold; c_res.alignment = center_align
                             row_idx += 1
                             
-                            c_rh1 = ws.cell(row=row_idx, column=1, value="Data de Vencimento")
+                            c_rh1 = ws.cell(row=row_idx, column=1, value="Vencimento")
                             c_rh2 = ws.cell(row=row_idx, column=2, value="Valor Total")
                             for cell in [c_rh1, c_rh2]:
                                 cell.fill = header_fill; cell.font = font_white; cell.alignment = center_align
@@ -1270,7 +1270,7 @@ with aba_controle:
                         c_rg.fill = sector_fill; c_rg.font = font_bold; c_rg.alignment = center_align
                         row_idx += 1
                         
-                        c_gh1 = ws.cell(row=row_idx, column=1, value="Data de Vencimento")
+                        c_gh1 = ws.cell(row=row_idx, column=1, value="Vencimento")
                         c_gh2 = ws.cell(row=row_idx, column=2, value="Valor Total")
                         for cell in [c_gh1, c_gh2]:
                             cell.fill = header_fill; cell.font = font_white; cell.alignment = center_align

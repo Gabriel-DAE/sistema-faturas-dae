@@ -1302,11 +1302,17 @@ with aba_controle:
                     )
                     
                     if len(evento_hist.selection.rows) > 0:
-                        ids_reverter = [int(df_hist_nomes.iloc[i]['id']) for i in evento_hist.selection.rows]
-                        if st.button(f"🔄 Reverter {len(ids_reverter)} selecionada(s)", type="secondary"):
-                            cursor = conexao.cursor()
-                            cursor.execute(f"DELETE FROM historico_financeiro WHERE id IN ({','.join(['%s']*len(ids_reverter))})", tuple(ids_reverter))
-                            conexao.commit(); st.rerun()
+                        # CORREÇÃO: Filtra os "índices fantasmas" que o Streamlit guarda na memória após exclusões
+                        linhas_validas = [i for i in evento_hist.selection.rows if i < len(df_hist_nomes)]
+                        
+                        if len(linhas_validas) > 0:
+                            ids_reverter = [int(df_hist_nomes.iloc[i]['id']) for i in linhas_validas]
+                            
+                            if st.button(f"🔄 Reverter {len(ids_reverter)} selecionada(s)", type="secondary"):
+                                cursor = conexao.cursor()
+                                cursor.execute(f"DELETE FROM historico_financeiro WHERE id IN ({','.join(['%s']*len(ids_reverter))})", tuple(ids_reverter))
+                                conexao.commit() 
+                                st.rerun()
                 else:
                     st.info("Nenhum envio registrado para este mês.")
 

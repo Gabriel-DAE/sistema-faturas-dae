@@ -1078,7 +1078,7 @@ with aba_controle:
         conexao.close()
     else:
         # --- SEÇÃO 1: FILTRO MULTIMÊS E MÉTRICAS GERAIS ---
-        col_filtro, _ = st.columns([1, 3]) 
+        col_filtro, _ = st.columns([1, 4]) 
         meses_disponiveis = df_faturas.sort_values('Data Referência Oculta', ascending=False)['Mês Referência'].unique().tolist()
         
         with col_filtro:

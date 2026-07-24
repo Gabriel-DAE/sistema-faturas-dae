@@ -2089,7 +2089,7 @@ with aba_config:
     # =========================================================
     st.divider()
     st.markdown("###### 🚀 Atualização em Lote de UCs (CEMIG e Antigas)")
-    st.info("Baixe a planilha de cadastros acima, preencha as colunas **uc_antiga** ou **uc_cemig** no Excel e faça o upload aqui para atualizar todo o sistema de uma só vez.")
+    st.info("Baixe a planilha de cadastros acima, preencha as colunas **UC Antiga** ou **UC CEMIG** no Excel e faça o upload aqui para atualizar todo o sistema de uma só vez.")
 
     arquivo_atualizacao = st.file_uploader("Upload da Planilha de Cadastro Atualizada (.xlsx)", type=["xlsx"], key="up_cad_lote")
 
@@ -2122,9 +2122,9 @@ with aba_config:
                             except:
                                 return str(valor).strip()
                                 
-                        # Extrai os dados das colunas (se existirem na planilha)
-                        uc_cemig_excel = limpar_uc_excel(row.get('uc_cemig', ''))
-                        uc_antiga_excel = limpar_uc_excel(row.get('uc_antiga', ''))
+                        # AGORA PROCURA PELO NOME BONITO ("UC CEMIG") OU TÉCNICO ("uc_cemig")
+                        uc_cemig_excel = limpar_uc_excel(row.get('UC CEMIG', row.get('uc_cemig', '')))
+                        uc_antiga_excel = limpar_uc_excel(row.get('UC Antiga', row.get('uc_antiga', '')))
                         
                         # Faz o UPDATE apenas nos campos de vínculo para não estragar as demandas
                         c.execute('''
@@ -2138,7 +2138,9 @@ with aba_config:
                     conexao.commit()
                     conexao.close()
                     
-                    carregar_dados.clear() # Limpa a memória para atualizar os gráficos na hora
+                    # LIMPA OS CACHES PARA GARANTIR QUE A NOVA PLANILHA VENHA ATUALIZADA
+                    carregar_dados.clear()
+                    gerar_excel_cadastro.clear() 
                     
                     st.success(f"✅ Sucesso! {ucs_atualizadas} unidades foram atualizadas com os vínculos antigos e da CEMIG.")
                     st.balloons()

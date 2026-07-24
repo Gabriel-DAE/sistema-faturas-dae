@@ -1118,8 +1118,8 @@ with aba_controle:
                 )
                 
                 # 1. Criamos uma chave única juntando UC e Mês para que o envio de um mês não oculte o outro
-                df_mes_cpfl['Chave_Fatura'] = df_mes_cpfl['UC'].astype(str) + "_" + df_mes_cpfl['Mês Referência']
-                df_enviados['Chave_Fatura'] = df_enviados['unidade_consumidora'].astype(str) + "_" + df_enviados['mes_referencia']
+                df_mes_cpfl['Chave_Fatura'] = df_mes_cpfl['UC'].astype(str) + "_" + df_mes_cpfl['Mês Referência'].astype(str)
+                df_enviados['Chave_Fatura'] = df_enviados['unidade_consumidora'].astype(str) + "_" + df_enviados['mes_referencia'].astype(str)
                 
                 faturas_ja_enviadas = df_enviados['Chave_Fatura'].tolist()
                 

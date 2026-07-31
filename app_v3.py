@@ -162,6 +162,10 @@ def inicializar_banco():
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS uc_cemig TEXT;''')
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS uc_antiga TEXT;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS uc_original TEXT;''')
+        cursor.execute("ALTER TABLE faturas_cpfl ADD COLUMN nota_fiscal TEXT;")
+        cursor.execute("ALTER TABLE faturas_cpfl ADD COLUMN data_emissao TEXT;")
+        cursor.execute("ALTER TABLE faturas_cpfl ADD COLUMN desconto_acl REAL DEFAULT 0.0;")
+        cursor.execute("ALTER TABLE faturas_cpfl ADD COLUMN credito_subvencao REAL DEFAULT 0.0;")
     except Exception as e:
         print("Aviso ao atualizar estrutura do banco:", e)
         

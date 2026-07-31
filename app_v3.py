@@ -242,7 +242,8 @@ def carregar_dados():
         'valor_total_icms': 'Valor ICMS', 'valor_total_fatura': 'Valor Total Fatura', 'data_insercao': 'Data Cadastro',
         'data_vencimento_acl': 'Vencimento ACL', 'consumo_energia_acl_kwh': 'Consumo Energia ACL (kWh)',
         'tarifa_energia_acl': 'Tarifa Energia ACL (R$/kWh)', 'valor_energia_acl': 'Valor Energia ACL (R$)',
-        'valor_total_acl': 'Valor Total ACL (R$)'
+        'valor_total_acl': 'Valor Total ACL (R$)', 'nota_fiscal': 'Nota Fiscal', 'data_emissao': 'Data Emissão',
+        'desconto_acl': 'Desconto ACL (R$)', 'credito_subvencao': 'Crédito Subvenção (R$)'
     }
     
     df = df.rename(columns=dicionario_nomes)
@@ -336,6 +337,8 @@ def processar_pdf(arquivo_pdf):
         'demanda_ultrapassagem_fora_ponta', 'tarifa_aneel_dem_ultrap_fponta', 'tarifa_trib_dem_ultrap_fponta', 'valor_dem_ultrap_fponta',
         'demanda_reativa_ponta', 'tarifa_aneel_dem_reativa_ponta', 'tarifa_trib_dem_reativa_ponta', 'valor_dem_reativa_ponta',
         'demanda_reativa_fora_ponta', 'tarifa_aneel_dem_reativa_fponta', 'tarifa_trib_dem_reativa_fponta', 'valor_dem_reativa_fponta', 'subtotal_fatura'
+        'demanda_reativa_fora_ponta', 'tarifa_aneel_dem_reativa_fponta', 'tarifa_trib_dem_reativa_fponta', 'valor_dem_reativa_fponta', 'subtotal_fatura',
+        'desconto_acl', 'credito_subvencao'
     ]
     dados = {k: 0.0 for k in chaves_numericas}
     
@@ -504,6 +507,12 @@ def processar_pdf(arquivo_pdf):
     dados['valor_total_pis'] = extrair_valor_regex(r"PIS/PASEP.*?\s([\d\.]+,\d+)$", texto)
     dados['valor_total_cofins'] = extrair_valor_regex(r"COFINS.*?\s([\d\.]+,\d+)$", texto)
     dados['valor_total_icms'] = extrair_valor_regex(r"ICMS.*?\s([\d\.]+,\d+)$", texto)
+    dados['nota_fiscal'] = extrair_texto_regex(r"NOTA FISCAL Nº\s*(\d+)", texto)
+    dados['data_emissao'] = extrair_texto_regex(r"DATA DE EMISSÃO:\s*(\d{2}/\d{2}/\d{4})", texto)
+    desc_acl_p = extrair_valor_regex(r"Desc Energia ACL Ponta\s+([\d\.,]+)", texto)
+    desc_acl_fp = extrair_valor_regex(r"Desc Energia ACL Fora Ponta\s+([\d\.,]+)", texto)
+    dados['desconto_acl'] = desc_acl_p + desc_acl_fp
+    dados['credito_subvencao'] = extrair_valor_regex(r"Crédito Subvenção Tarifaria[^\d]*([\d\.,]+)", texto)
     
     valor_pagar_fim = extrair_valor_regex(r"Total a Pagar\s+([\d\.]+,\d{2})", texto)
     if valor_pagar_fim > 0:
@@ -614,7 +623,7 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
         'demanda_reativa_ponta', 'tarifa_aneel_dem_reativa_ponta', 'tarifa_trib_dem_reativa_ponta', 'valor_dem_reativa_ponta',
         'demanda_reativa_fora_ponta', 'tarifa_aneel_dem_reativa_fponta', 'tarifa_trib_dem_reativa_fponta', 'valor_dem_reativa_fponta',
         'subtotal_fatura', 'cip', 'retencao_consumo_irrf', 'retencao_demanda_irrf', 'valor_total_pis', 'valor_total_cofins', 'valor_total_icms',
-        'consumo_energia_acl_kwh', 'tarifa_energia_acl', 'valor_total_acl'
+        'consumo_energia_acl_kwh', 'tarifa_energia_acl', 'valor_total_acl', 'desconto_acl', 'credito_subvencao'
     ]
     dados = {k: 0.0 for k in chaves_numericas}
     
@@ -624,6 +633,9 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     dados['tipo_bandeira'] = "VERDE"
     dados['adicional_bandeira'] = 0.0
     dados['data_vencimento_acl'] = ""
+    dados['data_vencimento_acl'] = ""
+    dados['nota_fiscal'] = ""
+    dados['data_emissao'] = ""
     
     # 2. Classificação (Verde Livre ou Azul Livre)
     classif_match = re.search(r"Classificação(?:[:\.])?\s*(.*?)(?:\n|Serviço|Autarquia)", texto, re.IGNORECASE)
@@ -794,12 +806,18 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     val_subtotal = extrair_valor_regex(r"Total Distribuidora\s*([\d\.,]+)", texto)
     if val_subtotal == 0.0: val_subtotal = extrair_valor_regex(r"Subtotal\s*([\d\.,]+)", texto)  
     dados['subtotal_fatura'] = val_subtotal
-    
     dados['retencao_consumo_irrf'] = extrair_valor_regex(r"Retencao Consumo IRRF.*?\s([\d\.,]+)-", texto)
     dados['retencao_demanda_irrf'] = extrair_valor_regex(r"Retencao Demanda IRRF.*?\s([\d\.,]+)-", texto)
     dados['valor_total_pis'] = extrair_valor_regex(r"PIS/PASEP.*?\s([\d\.,]+)$", texto)
     dados['valor_total_cofins'] = extrair_valor_regex(r"COFINS.*?\s([\d\.,]+)$", texto)
     dados['valor_total_icms'] = extrair_valor_regex(r"ICMS.*?\s([\d\.,]+)$", texto)
+    dados['nota_fiscal'] = extrair_texto_regex(r"NOTA FISCAL Nº\s*(\d+)", texto)
+    dados['data_emissao'] = extrair_texto_regex(r"DATA DE EMISSÃO:\s*(\d{2}/\d{2}/\d{4})", texto)
+    desc_acl_p = extrair_valor_regex(r"Desc Energia ACL Ponta\s+([\d\.,]+)", texto)
+    desc_acl_fp = extrair_valor_regex(r"Desc Energia ACL Fora Ponta\s+([\d\.,]+)", texto)
+    dados['desconto_acl'] = desc_acl_p + desc_acl_fp
+    
+    dados['credito_subvencao'] = extrair_valor_regex(r"Crédito Subvenção Tarifaria[^\d]*([\d\.,]+)", texto)
     
     valor_pagar_fim = extrair_valor_regex(r"Total a Pagar\s*([\d\.,]+)", texto)
     if valor_pagar_fim > 0: dados['valor_total_fatura'] = valor_pagar_fim

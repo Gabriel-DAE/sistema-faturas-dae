@@ -272,25 +272,22 @@ def carregar_dados():
     df = df.sort_values(by=['Data Referência Oculta', 'UC'], ascending=[False, True])
 
     ordem_colunas = [
-        'id', 'Data Referência Oculta', 'UC', 'Nome da Unidade', 'Atividade', 'Classificação', 'Mês Referência', 'Vencimento CPFL', 'Vencimento ACL',
-        'Leitura Anterior', 'Leitura Atual', 'Próxima Leitura', 'Consumo Energia ACL (kWh)', 'Tarifa Energia ACL (R$/kWh)', 'Valor Energia ACL (R$)', 'Valor Total ACL (R$)',
-        'Consumo Ponta', 'Tarifa Cons. Ponta TUSD', 'Tarifa Trib. Cons. Ponta TUSD', 'Valor Cons. Ponta TUSD', 
-        'Tarifa Cons. Ponta TE', 'Tarifa Trib. Cons. Ponta TE', 'Valor Cons. Ponta TE', 'Consumo F.Ponta', 'Tarifa Cons. F.Ponta TUSD', 'Tarifa Trib. Cons. F.Ponta TUSD', 'Valor Cons. F.Ponta TUSD', 
-        'Tarifa Cons. F.Ponta TE', 'Tarifa Trib. Cons. F.Ponta TE', 'Valor Cons. F.Ponta TE', 'Bandeira', 'Adicional Bandeira', 
-        'Dem. Contr. Ponta', 'Dem. Reg. Ponta', 'Tarifa Dem. Ponta', 'Tarifa Trib. Dem. Ponta', 'Valor Dem. Ponta', 
-        'Dem. Isenta Ponta', 'Tarifa Dem. Isenta Ponta', 'Tarifa Trib. Dem. Isenta Ponta', 'Valor Dem. Isenta Ponta', 
-        'Dem. Ultrap. Ponta', 'Tarifa Dem. Ultrap. Ponta', 'Tarifa Trib. Dem. Ultrap. Ponta', 'Valor Dem. Ultrap. Ponta', 
-        'Dem. Contr. F.Ponta', 'Dem. Reg. F.Ponta', 'Tarifa Dem. F.Ponta', 'Tarifa Trib. Dem. F.Ponta', 'Valor Dem. F.Ponta', 
-        'Dem. Isenta F.Ponta', 'Tarifa Dem. Isenta F.Ponta', 'Tarifa Trib. Dem. Isenta F.Ponta', 'Valor Dem. Isenta F.Ponta', 
-        'Dem. Ultrap. F.Ponta', 'Tarifa Dem. Ultrap. F.Ponta', 'Tarifa Trib. Dem. Ultrap. F.Ponta', 'Valor Dem. Ultrap. F.Ponta', 
-        'Cons. Reat. Ponta', 'Tarifa Cons. Reat. Ponta', 'Tarifa Trib. Cons. Reat. Ponta', 'Valor Cons. Reat. Ponta', 
-        'Cons. Reat. F.Ponta', 'Tarifa Cons. Reat. F.Ponta', 'Tarifa Trib. Cons. Reat. F.Ponta', 'Valor Cons. Reat. F.Ponta', 
-        'Dem. Reat. Ponta', 'Tarifa Dem. Reat. Ponta', 'Tarifa Trib. Dem. Reat. Ponta', 'Valor Dem. Reat. Ponta', 
-        'Dem. Reat. F.Ponta', 'Tarifa Dem. Reat. F.Ponta', 'Tarifa Trib. Dem. Reat. F.Ponta', 'Valor Dem. Reat. F.Ponta', 
-        'Subtotal PDF', 'CIP', 'Retenção Cons. IRRF', 'Retenção Dem. IRRF', 'Valor PIS', 'Valor COFINS', 'Valor ICMS', 
-        'Total Consumo', 'Valor Total Consumo', 'Valor Total Dem.', 'Valor Total Dem. Isenta', 'Valor Total Dem. Ultrap.', 
-        'Valor Total Desv. Dem.', 'Total Cons. Reat.', 'Valor Total Cons. Reat.', 'Valor Total Dem. Reat.', 'Valor Total Reativo',
-        'Valor Total Fatura', 'Data Cadastro'
+        'id', 'Data Referência Oculta', 'UC', 'Nome da Unidade', 'Atividade', 'Classificação', 'Mês Referência', 'Vencimento CPFL', 'Vencimento ACL', 
+        'Nota Fiscal', 'Data Emissão', 'Leitura Anterior', 'Leitura Atual', 'Próxima Leitura', 'Consumo Energia ACL (kWh)', 'Tarifa Energia ACL (R$/kWh)', 
+        'Valor Energia ACL (R$)', 'Valor Total ACL (R$)', 'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Consumo Ponta', 'Tarifa Cons. Ponta TUSD', 
+        'Tarifa Trib. Cons. Ponta TUSD', 'Valor Cons. Ponta TUSD', 'Tarifa Cons. Ponta TE', 'Tarifa Trib. Cons. Ponta TE', 'Valor Cons. Ponta TE', 
+        'Consumo F.Ponta', 'Tarifa Cons. F.Ponta TUSD', 'Tarifa Trib. Cons. F.Ponta TUSD', 'Valor Cons. F.Ponta TUSD', 'Tarifa Cons. F.Ponta TE', 
+        'Tarifa Trib. Cons. F.Ponta TE', 'Valor Cons. F.Ponta TE', 'Bandeira', 'Adicional Bandeira', 'Dem. Contr. Ponta', 'Dem. Reg. Ponta', 
+        'Tarifa Dem. Ponta', 'Tarifa Trib. Dem. Ponta', 'Valor Dem. Ponta', 'Dem. Isenta Ponta', 'Tarifa Dem. Isenta Ponta', 'Tarifa Trib. Dem. Isenta Ponta', 
+        'Valor Dem. Isenta Ponta', 'Dem. Ultrap. Ponta', 'Tarifa Dem. Ultrap. Ponta', 'Tarifa Trib. Dem. Ultrap. Ponta', 'Valor Dem. Ultrap. Ponta', 
+        'Dem. Contr. F.Ponta', 'Dem. Reg. F.Ponta', 'Tarifa Dem. F.Ponta', 'Tarifa Trib. Dem. F.Ponta', 'Valor Dem. F.Ponta', 'Dem. Isenta F.Ponta', 
+        'Tarifa Dem. Isenta F.Ponta', 'Tarifa Trib. Dem. Isenta F.Ponta', 'Valor Dem. Isenta F.Ponta', 'Dem. Ultrap. F.Ponta', 'Tarifa Dem. Ultrap. F.Ponta', 
+        'Tarifa Trib. Dem. Ultrap. F.Ponta', 'Valor Dem. Ultrap. F.Ponta', 'Cons. Reat. Ponta', 'Tarifa Cons. Reat. Ponta', 'Tarifa Trib. Cons. Reat. Ponta', 
+        'Valor Cons. Reat. Ponta', 'Cons. Reat. F.Ponta', 'Tarifa Cons. Reat. F.Ponta', 'Tarifa Trib. Cons. Reat. F.Ponta', 'Valor Cons. Reat. F.Ponta', 
+        'Dem. Reat. Ponta', 'Tarifa Dem. Reat. Ponta', 'Tarifa Trib. Dem. Reat. Ponta', 'Valor Dem. Reat. Ponta', 'Dem. Reat. F.Ponta', 'Tarifa Dem. Reat. F.Ponta', 
+        'Tarifa Trib. Dem. Reat. F.Ponta', 'Valor Dem. Reat. F.Ponta', 'Subtotal PDF', 'CIP', 'Retenção Cons. IRRF', 'Retenção Dem. IRRF', 'Valor PIS', 
+        'Valor COFINS', 'Valor ICMS', 'Total Consumo', 'Valor Total Consumo', 'Valor Total Dem.', 'Valor Total Dem. Isenta', 'Valor Total Dem. Ultrap.', 
+        'Valor Total Desv. Dem.', 'Total Cons. Reat.', 'Valor Total Cons. Reat.', 'Valor Total Dem. Reat.', 'Valor Total Reativo', 'Valor Total Fatura', 'Data Cadastro'
     ]
     
     colunas_categoria = ['UC', 'Nome da Unidade', 'Atividade', 'Classificação', 'Mês Referência', 'Bandeira']

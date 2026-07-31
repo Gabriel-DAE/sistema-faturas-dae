@@ -350,14 +350,22 @@ def processar_pdf(arquivo_pdf):
     else:
         dados['classificacao'] = classificacao_bruta
 
-    # 1. Extrator Universal de UC (Aceita 11 e 12 dígitos, com ou sem pontuação)
+    # 1. Extrator Universal de UC (Formato Novo: 10 a 12 dígitos com pontuação)
     match_uc = re.search(r"(\d{1,3}\.\d{3}\.\d{3}\.\d{3}-\d{2}|\d{3}\.\d{3}\.\d{3}-\d{2})", texto)
+    
     if match_uc:
         dados['unidade_consumidora'] = match_uc.group(1).strip()
     else:
-        # Fallback para busca perto do rótulo
-        match_uc_alt = re.search(r"(?:Número da UC|DAE)[\s\S]*?([\d\.-]{8,20})", texto, re.IGNORECASE)
-        dados['unidade_consumidora'] = match_uc_alt.group(1).strip() if match_uc_alt else ""
+        # 2. Extrator Fatura Antiga (Captura a UC logo antes das datas de leitura)
+        # Ex: "4541723 19/06/2026 21/05/2026 29"
+        match_uc_antiga = re.search(r"^\s*(\d{6,10})\s+\d{2}/\d{2}/\d{4}\s+\d{2}/\d{2}/\d{4}", texto, re.MULTILINE)
+        
+        if match_uc_antiga:
+            dados['unidade_consumidora'] = match_uc_antiga.group(1).strip()
+        else:
+            # 3. Fallback Blindado (Evita capturar CEPs que tenham o formato XXXXX-XXX)
+            match_uc_alt = re.search(r"(?:Número da UC|DAE)[\s\S]*?(?<!\d)(\d{6,12})(?!\d|-)", texto, re.IGNORECASE)
+            dados['unidade_consumidora'] = match_uc_alt.group(1).strip() if match_uc_alt else ""
 
     # 2. Limpa os dígitos para busca blindada no Banco de Dados
     uc_apenas_digitos = re.sub(r'\D', '', dados['unidade_consumidora'])

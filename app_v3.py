@@ -1158,13 +1158,21 @@ with aba_controle:
                     df_pendente_envio['Data_Ord'] = pd.to_datetime(df_pendente_envio[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
                     df_pendente_envio = df_pendente_envio.sort_values('Data_Ord')
 
+                    # Recuperando a lógica do Subtotal
+                    cols_energia = ['Valor Total Consumo', 'Valor Total Dem.', 'Valor Total Dem. Isenta', 'Valor Total Dem. Ultrap.', 'Valor Total Reativo', 'Adicional Bandeira']
+                    cols_existentes = [c for c in cols_energia if c in df_pendente_envio.columns]
+                    
+                    if 'Subtotal PDF' in df_pendente_envio.columns:
+                        df_pendente_envio['Subtotal'] = df_pendente_envio.apply(lambda r: r['Subtotal PDF'] if pd.notnull(r['Subtotal PDF']) and r['Subtotal PDF'] > 0 else r[cols_existentes].sum(), axis=1)
+                    else:
+                        df_pendente_envio['Subtotal'] = df_pendente_envio[cols_existentes].sum(axis=1)
+
                     st.info(f"Existem **{len(df_pendente_envio)}** faturas da CPFL prontas para fechamento de lote.")
 
                     # --- EXIBIÇÃO NA TELA E PREPARAÇÃO DOS DADOS ---
-                    # Atualizamos a lista de colunas para englobar os novos dados extraídos
                     colunas_banco_origem = [
                         'Nota Fiscal', 'Data Emissão', 'UC', 'Mês Referência', col_venc_ativa, 
-                        'CIP', 'Retenção Cons. IRRF', 'Retenção Dem. IRRF', 
+                        'Subtotal', 'CIP', 'Retenção Cons. IRRF', 'Retenção Dem. IRRF', 
                         'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Valor Total Fatura'
                     ]
                     
@@ -1185,8 +1193,8 @@ with aba_controle:
                             st.markdown("##### 📝 Detalhamento de faturas")
                             df_detalhe = df_ativ[colunas_banco_origem].rename(columns=mapeamento_cabecalhos).copy()
                             
-                            # Formata apenas as colunas que são de valor (dinheiro)
-                            colunas_dinheiro = ['CIP', 'Valor Cons. IRRF', 'Valor Dem. IRRF', 'Desconto ACL', 'Crédito Subvenção', 'Valor Total Fatura']
+                            # Formata as colunas que são de valor (dinheiro)
+                            colunas_dinheiro = ['Subtotal', 'CIP', 'Valor Cons. IRRF', 'Valor Dem. IRRF', 'Desconto ACL', 'Crédito Subvenção', 'Valor Total Fatura']
                             for col in colunas_dinheiro:
                                 df_detalhe[col] = df_detalhe[col].apply(lambda x: f"R$ {float(x):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notnull(x) else "R$ 0,00")
                             
@@ -1224,10 +1232,10 @@ with aba_controle:
                         font_bold = Font(bold=True)
                         center_align = Alignment(horizontal="center", vertical="center")
                         
-                        # Colunas exatas para o Excel (Total de 11 colunas)
+                        # Colunas exatas para o Excel (Total de 12 colunas)
                         colunas_excel = [
                             'Nota Fiscal', 'Data Emissão', 'Instalação', 'Referência', 'Vencimento', 
-                            'CIP', 'Valor Cons. IRRF', 'Valor Dem. IRRF', 
+                            'Subtotal', 'CIP', 'Valor Cons. IRRF', 'Valor Dem. IRRF', 
                             'Desconto ACL', 'Crédito Subvenção', 'Valor Total Fatura'
                         ]
                         
@@ -1236,8 +1244,8 @@ with aba_controle:
                         for atividade in sorted(df_pendente_envio['Atividade'].unique()):
                             df_ativ = df_pendente_envio[df_pendente_envio['Atividade'] == atividade].copy()
                             
-                            # O mesclado agora vai até a coluna 11
-                            ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=11)
+                            # O mesclado agora vai até a coluna 12
+                            ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=12)
                             c_setor = ws.cell(row=row_idx, column=1, value=f"SETOR: {atividade.upper()}")
                             c_setor.fill = sector_fill; c_setor.font = font_bold; c_setor.alignment = center_align
                             row_idx += 1
@@ -1269,8 +1277,8 @@ with aba_controle:
                                 except:
                                     ws.cell(row=row_idx, column=5, value=str(r[col_venc_ativa]))
                                 
-                                # Colunas de Dinheiro (Da 6 até a 11)
-                                colunas_dinheiro_banco = ['CIP', 'Retenção Cons. IRRF', 'Retenção Dem. IRRF', 'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Valor Total Fatura']
+                                # Colunas de Dinheiro (Da 6 até a 12)
+                                colunas_dinheiro_banco = ['Subtotal', 'CIP', 'Retenção Cons. IRRF', 'Retenção Dem. IRRF', 'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Valor Total Fatura']
                                 for i, col_name in enumerate(colunas_dinheiro_banco, 6):
                                     val = float(r[col_name]) if pd.notnull(r[col_name]) and str(r[col_name]).strip() != "" else 0.0
                                     c_val = ws.cell(row=row_idx, column=i, value=val)

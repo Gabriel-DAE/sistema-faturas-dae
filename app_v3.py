@@ -1335,8 +1335,8 @@ with aba_controle:
                             args=(df_pendente_envio, col_venc_ativa),
                             use_container_width=True
                         )
-                else:
-                    st.success(f"✅ Não existe pendência de envio para as faturas da CPFL no(s) mês(es) selecionado(s).")
+            else:
+                st.success(f"✅ Não existe pendência de envio para as faturas da CPFL no(s) mês(es) selecionado(s).")
 
                 st.divider()
                 with st.expander("📜 Gestão de Envios (Visualizar ou Reverter)"):

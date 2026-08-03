@@ -1131,210 +1131,210 @@ with aba_controle:
 
             # --- SUB-ABA 1: GERADOR DE RELATÓRIO ---
             if not df_pendente_envio.empty:
-                    # Mapeamento da coluna ativa de vencimento
-                    col_venc_ativa = 'Vencimento CPFL' if 'Vencimento CPFL' in df_pendente_envio.columns else 'Vencimento'
+                # Mapeamento da coluna ativa de vencimento
+                col_venc_ativa = 'Vencimento CPFL' if 'Vencimento CPFL' in df_pendente_envio.columns else 'Vencimento'
+                
+                df_pendente_envio['Data_Ord'] = pd.to_datetime(df_pendente_envio[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
+                df_pendente_envio = df_pendente_envio.sort_values('Data_Ord')
+
+                st.info(f"Existem **{len(df_pendente_envio)}** faturas da CPFL prontas para fechamento de lote.")
+
+                # --- EXIBIÇÃO NA TELA E PREPARAÇÃO DOS DADOS ---
+                # Atualizamos a lista de colunas para englobar os novos dados extraídos
+                colunas_banco_origem = [
+                    'Nota Fiscal', 'Data Emissão', 'UC', 'Mês Referência', col_venc_ativa, 
+                    'CIP', 'Retenção Cons. IRRF', 'Retenção Dem. IRRF', 
+                    'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Valor Total Fatura'
+                ]
                     
-                    df_pendente_envio['Data_Ord'] = pd.to_datetime(df_pendente_envio[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
-                    df_pendente_envio = df_pendente_envio.sort_values('Data_Ord')
+                mapeamento_cabecalhos = {
+                    'UC': 'Instalação',
+                    'Mês Referência': 'Referência',
+                    col_venc_ativa: 'Vencimento',
+                    'Retenção Cons. IRRF': 'Valor Cons. IRRF',
+                    'Retenção Dem. IRRF': 'Valor Dem. IRRF',
+                    'Desconto ACL (R$)': 'Desconto ACL',
+                    'Crédito Subvenção (R$)': 'Crédito Subvenção'
+                }
 
-                    st.info(f"Existem **{len(df_pendente_envio)}** faturas da CPFL prontas para fechamento de lote.")
+                for atividade in sorted(df_pendente_envio['Atividade'].unique()):
+                    with st.expander(f"🏢 SETOR: {atividade.upper()}", expanded=True):
+                        df_ativ = df_pendente_envio[df_pendente_envio['Atividade'] == atividade].copy()
+                            
+                        st.markdown("##### 📝 Detalhamento de faturas")
+                        df_detalhe = df_ativ[colunas_banco_origem].rename(columns=mapeamento_cabecalhos).copy()
+                            
+                        # Formata apenas as colunas que são de valor (dinheiro)
+                        colunas_dinheiro = ['CIP', 'Valor Cons. IRRF', 'Valor Dem. IRRF', 'Desconto ACL', 'Crédito Subvenção', 'Valor Total Fatura']
+                        for col in colunas_dinheiro:
+                            df_detalhe[col] = df_detalhe[col].apply(lambda x: f"R$ {float(x):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notnull(x) else "R$ 0,00")
+                            
+                        st.dataframe(df_detalhe, hide_index=True, use_container_width=True)
+                            
+                        st.markdown("##### 📊 Resumo de pagamentos por data")
+                        df_resumo = df_ativ.groupby(col_venc_ativa)['Valor Total Fatura'].sum().reset_index()
+                        df_resumo['D_Ord'] = pd.to_datetime(df_resumo[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
+                        df_resumo = df_resumo.sort_values('D_Ord').drop(columns=['D_Ord'])
+                        df_res_show = df_resumo.copy()
+                        df_res_show.columns = ['Vencimento', 'Valor Total']
+                        df_res_show['Valor Total'] = df_res_show['Valor Total'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                        st.dataframe(df_res_show, hide_index=True, use_container_width=True)
 
-                    # --- EXIBIÇÃO NA TELA E PREPARAÇÃO DOS DADOS ---
-                    # Atualizamos a lista de colunas para englobar os novos dados extraídos
-                    colunas_banco_origem = [
-                        'Nota Fiscal', 'Data Emissão', 'UC', 'Mês Referência', col_venc_ativa, 
-                        'CIP', 'Retenção Cons. IRRF', 'Retenção Dem. IRRF', 
-                        'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Valor Total Fatura'
+                # --- GERAÇÃO DO EXCEL EM MEMÓRIA ---
+                def finalizar_lote_db(dados, col_venc):
+                    conn = obter_conexao()
+                    cursor = conn.cursor()
+                    for _, row in dados.iterrows():
+                        cursor.execute(
+                            "INSERT INTO historico_financeiro (unidade_consumidora, mes_referencia, valor_fatura, vencimento) VALUES (%s, %s, %s, %s)",
+                            (row['UC'], row['Mês Referência'], row['Valor Total Fatura'], row[col_venc])
+                        )
+                    conn.commit()
+                    conn.close()
+
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                    pd.DataFrame().to_excel(writer, index=False, header=False, sheet_name='Relatorio_Financeiro')
+                    ws = writer.sheets['Relatorio_Financeiro']
+                        
+                    header_fill = PatternFill(start_color="002060", fill_type="solid")
+                    sector_fill = PatternFill(start_color="D9E1F2", fill_type="solid")
+                    font_white = Font(bold=True, color="FFFFFF")
+                    font_bold = Font(bold=True)
+                    center_align = Alignment(horizontal="center", vertical="center")
+                        
+                    # Colunas exatas para o Excel (Total de 11 colunas)
+                    colunas_excel = [
+                        'Nota Fiscal', 'Data Emissão', 'Instalação', 'Referência', 'Vencimento', 
+                        'CIP', 'Valor Cons. IRRF', 'Valor Dem. IRRF', 
+                        'Desconto ACL', 'Crédito Subvenção', 'Valor Total Fatura'
                     ]
-                    
-                    mapeamento_cabecalhos = {
-                        'UC': 'Instalação',
-                        'Mês Referência': 'Referência',
-                        col_venc_ativa: 'Vencimento',
-                        'Retenção Cons. IRRF': 'Valor Cons. IRRF',
-                        'Retenção Dem. IRRF': 'Valor Dem. IRRF',
-                        'Desconto ACL (R$)': 'Desconto ACL',
-                        'Crédito Subvenção (R$)': 'Crédito Subvenção'
-                    }
-
+                        
+                    row_idx = 1
+                        
                     for atividade in sorted(df_pendente_envio['Atividade'].unique()):
-                        with st.expander(f"🏢 SETOR: {atividade.upper()}", expanded=True):
-                            df_ativ = df_pendente_envio[df_pendente_envio['Atividade'] == atividade].copy()
+                        df_ativ = df_pendente_envio[df_pendente_envio['Atividade'] == atividade].copy()
                             
-                            st.markdown("##### 📝 Detalhamento de faturas")
-                            df_detalhe = df_ativ[colunas_banco_origem].rename(columns=mapeamento_cabecalhos).copy()
-                            
-                            # Formata apenas as colunas que são de valor (dinheiro)
-                            colunas_dinheiro = ['CIP', 'Valor Cons. IRRF', 'Valor Dem. IRRF', 'Desconto ACL', 'Crédito Subvenção', 'Valor Total Fatura']
-                            for col in colunas_dinheiro:
-                                df_detalhe[col] = df_detalhe[col].apply(lambda x: f"R$ {float(x):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notnull(x) else "R$ 0,00")
-                            
-                            st.dataframe(df_detalhe, hide_index=True, use_container_width=True)
-                            
-                            st.markdown("##### 📊 Resumo de pagamentos por data")
-                            df_resumo = df_ativ.groupby(col_venc_ativa)['Valor Total Fatura'].sum().reset_index()
-                            df_resumo['D_Ord'] = pd.to_datetime(df_resumo[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
-                            df_resumo = df_resumo.sort_values('D_Ord').drop(columns=['D_Ord'])
-                            df_res_show = df_resumo.copy()
-                            df_res_show.columns = ['Vencimento', 'Valor Total']
-                            df_res_show['Valor Total'] = df_res_show['Valor Total'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                            st.dataframe(df_res_show, hide_index=True, use_container_width=True)
-
-                    # --- GERAÇÃO DO EXCEL EM MEMÓRIA ---
-                    def finalizar_lote_db(dados, col_venc):
-                        conn = obter_conexao()
-                        cursor = conn.cursor()
-                        for _, row in dados.iterrows():
-                            cursor.execute(
-                                "INSERT INTO historico_financeiro (unidade_consumidora, mes_referencia, valor_fatura, vencimento) VALUES (%s, %s, %s, %s)",
-                                (row['UC'], row['Mês Referência'], row['Valor Total Fatura'], row[col_venc])
-                            )
-                        conn.commit()
-                        conn.close()
-
-                    buffer = io.BytesIO()
-                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                        pd.DataFrame().to_excel(writer, index=False, header=False, sheet_name='Relatorio_Financeiro')
-                        ws = writer.sheets['Relatorio_Financeiro']
-                        
-                        header_fill = PatternFill(start_color="002060", fill_type="solid")
-                        sector_fill = PatternFill(start_color="D9E1F2", fill_type="solid")
-                        font_white = Font(bold=True, color="FFFFFF")
-                        font_bold = Font(bold=True)
-                        center_align = Alignment(horizontal="center", vertical="center")
-                        
-                        # Colunas exatas para o Excel (Total de 11 colunas)
-                        colunas_excel = [
-                            'Nota Fiscal', 'Data Emissão', 'Instalação', 'Referência', 'Vencimento', 
-                            'CIP', 'Valor Cons. IRRF', 'Valor Dem. IRRF', 
-                            'Desconto ACL', 'Crédito Subvenção', 'Valor Total Fatura'
-                        ]
-                        
-                        row_idx = 1
-                        
-                        for atividade in sorted(df_pendente_envio['Atividade'].unique()):
-                            df_ativ = df_pendente_envio[df_pendente_envio['Atividade'] == atividade].copy()
-                            
-                            # O mesclado agora vai até a coluna 11
-                            ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=11)
-                            c_setor = ws.cell(row=row_idx, column=1, value=f"SETOR: {atividade.upper()}")
-                            c_setor.fill = sector_fill; c_setor.font = font_bold; c_setor.alignment = center_align
-                            row_idx += 1
-                            
-                            for col_num, col_name in enumerate(colunas_excel, 1):
-                                c_head = ws.cell(row=row_idx, column=col_num, value=col_name)
-                                c_head.fill = header_fill; c_head.font = font_white; c_head.alignment = center_align
-                            row_idx += 1
-                            
-                            for _, r in df_ativ.iterrows():
-                                # Nota Fiscal e Data
-                                ws.cell(row=row_idx, column=1, value=str(r['Nota Fiscal']) if pd.notnull(r['Nota Fiscal']) else "")
-                                ws.cell(row=row_idx, column=2, value=str(r['Data Emissão']) if pd.notnull(r['Data Emissão']) else "")
-                                
-                                # Instalação
-                                try:
-                                    uc_segura = int(float(r['UC']))
-                                except (ValueError, TypeError):
-                                    uc_segura = str(r['UC']).strip()
-                                ws.cell(row=row_idx, column=3, value=uc_segura)
-                                
-                                # Referência
-                                ws.cell(row=row_idx, column=4, value=str(r['Mês Referência']))
-                                
-                                # Vencimento
-                                try:
-                                    c_venc = ws.cell(row=row_idx, column=5, value=pd.to_datetime(r[col_venc_ativa], format='%d/%m/%Y'))
-                                    c_venc.number_format = 'DD/MM/YYYY'
-                                except:
-                                    ws.cell(row=row_idx, column=5, value=str(r[col_venc_ativa]))
-                                
-                                # Colunas de Dinheiro (Da 6 até a 11)
-                                colunas_dinheiro_banco = ['CIP', 'Retenção Cons. IRRF', 'Retenção Dem. IRRF', 'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Valor Total Fatura']
-                                for i, col_name in enumerate(colunas_dinheiro_banco, 6):
-                                    val = float(r[col_name]) if pd.notnull(r[col_name]) and str(r[col_name]).strip() != "" else 0.0
-                                    c_val = ws.cell(row=row_idx, column=i, value=val)
-                                    c_val.number_format = 'R$ #,##0.00'
-                                row_idx += 1
-                            
-                            row_idx += 1
-                            
-                            # Tabelas de Resumo do Excel (Ocupam apenas as 2 primeiras colunas)
-                            ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
-                            c_res = ws.cell(row=row_idx, column=1, value=f"RESUMO: {atividade.upper()}")
-                            c_res.fill = sector_fill; c_res.font = font_bold; c_res.alignment = center_align
-                            row_idx += 1
-                            
-                            c_rh1 = ws.cell(row=row_idx, column=1, value="Vencimento")
-                            c_rh2 = ws.cell(row=row_idx, column=2, value="Valor Total")
-                            for cell in [c_rh1, c_rh2]:
-                                cell.fill = header_fill; cell.font = font_white; cell.alignment = center_align
-                            row_idx += 1
-                            
-                            df_res = df_ativ.groupby(col_venc_ativa)['Valor Total Fatura'].sum().reset_index()
-                            df_res['D_Ord'] = pd.to_datetime(df_res[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
-                            for _, rs in df_res.sort_values('D_Ord').iterrows():
-                                try:
-                                    c_rv = ws.cell(row=row_idx, column=1, value=pd.to_datetime(rs[col_venc_ativa], format='%d/%m/%Y'))
-                                    c_rv.number_format = 'DD/MM/YYYY'
-                                except:
-                                    ws.cell(row=row_idx, column=1, value=str(rs[col_venc_ativa]))
-                                
-                                c_rt = ws.cell(row=row_idx, column=2, value=float(rs['Valor Total Fatura']))
-                                c_rt.number_format = 'R$ #,##0.00'
-                                row_idx += 1
-                            
-                            row_idx += 2
-                        
-                        # Resumo Geral Final
-                        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
-                        c_rg = ws.cell(row=row_idx, column=1, value="RESUMO GERAL (TODOS OS SETORES)")
-                        c_rg.fill = sector_fill; c_rg.font = font_bold; c_rg.alignment = center_align
+                        # O mesclado agora vai até a coluna 11
+                        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=11)
+                        c_setor = ws.cell(row=row_idx, column=1, value=f"SETOR: {atividade.upper()}")
+                        c_setor.fill = sector_fill; c_setor.font = font_bold; c_setor.alignment = center_align
                         row_idx += 1
-                        
-                        c_gh1 = ws.cell(row=row_idx, column=1, value="Vencimento")
-                        c_gh2 = ws.cell(row=row_idx, column=2, value="Valor Total")
-                        for cell in [c_gh1, c_gh2]:
+                            
+                        for col_num, col_name in enumerate(colunas_excel, 1):
+                            c_head = ws.cell(row=row_idx, column=col_num, value=col_name)
+                            c_head.fill = header_fill; c_head.font = font_white; c_head.alignment = center_align
+                        row_idx += 1
+                            
+                        for _, r in df_ativ.iterrows():
+                            # Nota Fiscal e Data
+                            ws.cell(row=row_idx, column=1, value=str(r['Nota Fiscal']) if pd.notnull(r['Nota Fiscal']) else "")
+                            ws.cell(row=row_idx, column=2, value=str(r['Data Emissão']) if pd.notnull(r['Data Emissão']) else "")
+                                
+                            # Instalação
+                            try:
+                                uc_segura = int(float(r['UC']))
+                            except (ValueError, TypeError):
+                                uc_segura = str(r['UC']).strip()
+                            ws.cell(row=row_idx, column=3, value=uc_segura)
+                                
+                            # Referência
+                            ws.cell(row=row_idx, column=4, value=str(r['Mês Referência']))
+                                
+                            # Vencimento
+                            try:
+                                c_venc = ws.cell(row=row_idx, column=5, value=pd.to_datetime(r[col_venc_ativa], format='%d/%m/%Y'))
+                                c_venc.number_format = 'DD/MM/YYYY'
+                            except:
+                                ws.cell(row=row_idx, column=5, value=str(r[col_venc_ativa]))
+                                
+                            # Colunas de Dinheiro (Da 6 até a 11)
+                            colunas_dinheiro_banco = ['CIP', 'Retenção Cons. IRRF', 'Retenção Dem. IRRF', 'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Valor Total Fatura']
+                            for i, col_name in enumerate(colunas_dinheiro_banco, 6):
+                                val = float(r[col_name]) if pd.notnull(r[col_name]) and str(r[col_name]).strip() != "" else 0.0
+                                c_val = ws.cell(row=row_idx, column=i, value=val)
+                                c_val.number_format = 'R$ #,##0.00'
+                            row_idx += 1
+                            
+                        row_idx += 1
+                            
+                        # Tabelas de Resumo do Excel (Ocupam apenas as 2 primeiras colunas)
+                        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
+                        c_res = ws.cell(row=row_idx, column=1, value=f"RESUMO: {atividade.upper()}")
+                        c_res.fill = sector_fill; c_res.font = font_bold; c_res.alignment = center_align
+                        row_idx += 1
+                            
+                        c_rh1 = ws.cell(row=row_idx, column=1, value="Vencimento")
+                        c_rh2 = ws.cell(row=row_idx, column=2, value="Valor Total")
+                        for cell in [c_rh1, c_rh2]:
                             cell.fill = header_fill; cell.font = font_white; cell.alignment = center_align
                         row_idx += 1
-                        
-                        df_g = df_pendente_envio.groupby(col_venc_ativa)['Valor Total Fatura'].sum().reset_index()
-                        df_g['D'] = pd.to_datetime(df_g[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
-                        for _, res_g in df_g.sort_values('D').iterrows():
-                            try:
-                                c_gv = ws.cell(row=row_idx, column=1, value=pd.to_datetime(res_g[col_venc_ativa], format='%d/%m/%Y'))
-                                c_gv.number_format = 'DD/MM/YYYY'
-                            except:
-                                ws.cell(row=row_idx, column=1, value=str(res_g[col_venc_ativa]))
                             
-                            c_gt = ws.cell(row=row_idx, column=2, value=float(res_g['Valor Total Fatura']))
-                            c_gt.number_format = 'R$ #,##0.00'
+                        df_res = df_ativ.groupby(col_venc_ativa)['Valor Total Fatura'].sum().reset_index()
+                        df_res['D_Ord'] = pd.to_datetime(df_res[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
+                        for _, rs in df_res.sort_values('D_Ord').iterrows():
+                            try:
+                                c_rv = ws.cell(row=row_idx, column=1, value=pd.to_datetime(rs[col_venc_ativa], format='%d/%m/%Y'))
+                                c_rv.number_format = 'DD/MM/YYYY'
+                            except:
+                                ws.cell(row=row_idx, column=1, value=str(rs[col_venc_ativa]))
+                                
+                            c_rt = ws.cell(row=row_idx, column=2, value=float(rs['Valor Total Fatura']))
+                            c_rt.number_format = 'R$ #,##0.00'
                             row_idx += 1
+                            
+                        row_idx += 2
+                        
+                    # Resumo Geral Final
+                    ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
+                    c_rg = ws.cell(row=row_idx, column=1, value="RESUMO GERAL (TODOS OS SETORES)")
+                    c_rg.fill = sector_fill; c_rg.font = font_bold; c_rg.alignment = center_align
+                    row_idx += 1
+                        
+                    c_gh1 = ws.cell(row=row_idx, column=1, value="Vencimento")
+                    c_gh2 = ws.cell(row=row_idx, column=2, value="Valor Total")
+                    for cell in [c_gh1, c_gh2]:
+                        cell.fill = header_fill; cell.font = font_white; cell.alignment = center_align
+                    row_idx += 1
+                        
+                    df_g = df_pendente_envio.groupby(col_venc_ativa)['Valor Total Fatura'].sum().reset_index()
+                    df_g['D'] = pd.to_datetime(df_g[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
+                    for _, res_g in df_g.sort_values('D').iterrows():
+                        try:
+                            c_gv = ws.cell(row=row_idx, column=1, value=pd.to_datetime(res_g[col_venc_ativa], format='%d/%m/%Y'))
+                            c_gv.number_format = 'DD/MM/YYYY'
+                        except:
+                            ws.cell(row=row_idx, column=1, value=str(res_g[col_venc_ativa]))
+                            
+                        c_gt = ws.cell(row=row_idx, column=2, value=float(res_g['Valor Total Fatura']))
+                        c_gt.number_format = 'R$ #,##0.00'
+                        row_idx += 1
 
-                        # Ajuste de largura das colunas do Excel
-                        from openpyxl.utils import get_column_letter
-                        for i, col in enumerate(ws.columns, 1):
-                            max_l = 0
-                            col_letter = get_column_letter(i)
-                            for cell in col:
-                                try:
-                                    if cell.value: max_l = max(max_l, len(str(cell.value)))
-                                except: pass
-                            ws.column_dimensions[col_letter].width = max_l + 4
+                    # Ajuste de largura das colunas do Excel
+                    from openpyxl.utils import get_column_letter
+                    for i, col in enumerate(ws.columns, 1):
+                        max_l = 0
+                        col_letter = get_column_letter(i)
+                        for cell in col:
+                            try:
+                                if cell.value: max_l = max(max_l, len(str(cell.value)))
+                            except: pass
+                        ws.column_dimensions[col_letter].width = max_l + 4
 
-                    nome_arquivo_excel = f"Financeiro_{'_'.join([m.replace('/', '_') for m in meses_selecionados])}.xlsx" if len(meses_selecionados) <= 3 else "Financeiro_Lote_Multiplo.xlsx"
+                nome_arquivo_excel = f"Financeiro_{'_'.join([m.replace('/', '_') for m in meses_selecionados])}.xlsx" if len(meses_selecionados) <= 3 else "Financeiro_Lote_Multiplo.xlsx"
 
-                    col_btn_gerar, _, _ = st.columns([1, 2, 2])
-                    with col_btn_gerar:
-                        st.download_button(
-                            label="🚀 Gerar Relatório Financeiro",
-                            data=buffer.getvalue(),
-                            file_name=nome_arquivo_excel,
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            type="primary",
-                            on_click=finalizar_lote_db,
-                            args=(df_pendente_envio, col_venc_ativa),
-                            use_container_width=True
-                        )
+                col_btn_gerar, _, _ = st.columns([1, 2, 2])
+                with col_btn_gerar:
+                    st.download_button(
+                        label="🚀 Gerar Relatório Financeiro",
+                        data=buffer.getvalue(),
+                        file_name=nome_arquivo_excel,
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        type="primary",
+                        on_click=finalizar_lote_db,
+                        args=(df_pendente_envio, col_venc_ativa),
+                        use_container_width=True
+                    )
             else:
                 st.success(f"✅ Não existe pendência de envio para as faturas da CPFL no(s) mês(es) selecionado(s).")
 

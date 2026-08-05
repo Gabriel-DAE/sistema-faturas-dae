@@ -159,6 +159,8 @@ def inicializar_banco():
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS valor_energia_acl DOUBLE PRECISION DEFAULT 0.0;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS valor_total_acl DOUBLE PRECISION DEFAULT 0.0;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS data_vencimento_acl TEXT;''')
+        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS valor_icms_acl DOUBLE PRECISION DEFAULT 0.0;''')
+        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS valor_total_acl_com_icms DOUBLE PRECISION DEFAULT 0.0;''')
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS uc_cemig TEXT;''')
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS uc_antiga TEXT;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS uc_original TEXT;''')
@@ -241,8 +243,8 @@ def carregar_dados():
         'retencao_demanda_irrf': 'Retenção Dem. IRRF', 'valor_total_pis': 'Valor PIS', 'valor_total_cofins': 'Valor COFINS',
         'valor_total_icms': 'Valor ICMS', 'valor_total_fatura': 'Valor Total Fatura', 'data_insercao': 'Data Cadastro',
         'data_vencimento_acl': 'Vencimento ACL', 'consumo_energia_acl_kwh': 'Consumo Energia ACL (kWh)',
-        'tarifa_energia_acl': 'Tarifa Energia ACL (R$/kWh)', 'valor_energia_acl': 'Valor Energia ACL (R$)',
-        'valor_total_acl': 'Valor Total ACL (R$)', 'nota_fiscal': 'Nota Fiscal', 'data_emissao': 'Data Emissão',
+        'tarifa_energia_acl': 'Tarifa Energia ACL (R$/kWh)', 'valor_energia_acl': 'Valor Energia ACL (R$)', 'valor_icms_acl': 'Valor ICMS ACL (R$)',
+        'valor_total_acl': 'Valor Total ACL (R$)', 'valor_total_acl_com_icms': 'Valor Total ACL c/ ICMS (R$)', 'nota_fiscal': 'Nota Fiscal', 'data_emissao': 'Data Emissão',
         'desconto_acl': 'Desconto ACL (R$)', 'credito_subvencao': 'Crédito Subvenção (R$)'
     }
     
@@ -274,7 +276,8 @@ def carregar_dados():
     ordem_colunas = [
         'id', 'Data Referência Oculta', 'UC', 'Nome da Unidade', 'Atividade', 'Classificação', 'Mês Referência', 'Vencimento CPFL', 'Vencimento ACL', 
         'Leitura Anterior', 'Leitura Atual', 'Próxima Leitura', 'Consumo Energia ACL (kWh)', 'Tarifa Energia ACL (R$/kWh)', 
-        'Valor Energia ACL (R$)', 'Valor Total ACL (R$)', 'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Consumo Ponta', 'Tarifa Cons. Ponta TUSD', 
+        'Valor Energia ACL (R$)', 'Valor Total ACL (R$)', 'Valor ICMS ACL (R$)', 'Valor Total ACL c/ ICMS (R$)', 
+        'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Consumo Ponta', 'Tarifa Cons. Ponta TUSD', 
         'Tarifa Trib. Cons. Ponta TUSD', 'Valor Cons. Ponta TUSD', 'Tarifa Cons. Ponta TE', 'Tarifa Trib. Cons. Ponta TE', 'Valor Cons. Ponta TE', 
         'Consumo F.Ponta', 'Tarifa Cons. F.Ponta TUSD', 'Tarifa Trib. Cons. F.Ponta TUSD', 'Valor Cons. F.Ponta TUSD', 'Tarifa Cons. F.Ponta TE', 
         'Tarifa Trib. Cons. F.Ponta TE', 'Valor Cons. F.Ponta TE', 'Bandeira', 'Adicional Bandeira', 'Dem. Contr. Ponta', 'Dem. Reg. Ponta', 
@@ -333,7 +336,7 @@ def processar_pdf(arquivo_pdf):
         'demanda_ultrapassagem_fora_ponta', 'tarifa_aneel_dem_ultrap_fponta', 'tarifa_trib_dem_ultrap_fponta', 'valor_dem_ultrap_fponta',
         'demanda_reativa_ponta', 'tarifa_aneel_dem_reativa_ponta', 'tarifa_trib_dem_reativa_ponta', 'valor_dem_reativa_ponta',
         'demanda_reativa_fora_ponta', 'tarifa_aneel_dem_reativa_fponta', 'tarifa_trib_dem_reativa_fponta', 'valor_dem_reativa_fponta', 'subtotal_fatura',
-        'desconto_acl', 'credito_subvencao'
+        'desconto_acl', 'credito_subvencao', 'valor_icms_acl', 'valor_total_acl_com_icms'
     ]
     dados = {k: 0.0 for k in chaves_numericas}
     
@@ -596,6 +599,10 @@ def processar_pdf_cemig(arquivo_pdf):
         match_total = re.search(r"TOTAL\s+([\d\.,]+)", texto, re.IGNORECASE)
         
     dados_cemig['valor_total_acl'] = limpar_numero(match_total.group(1)) if match_total else 0.0
+
+    # Cálculo do ICMS (18% sobre a Energia) e do Valor Total c/ ICMS
+    dados_cemig['valor_icms_acl'] = round(dados_cemig['valor_energia_acl'] * 0.18, 2)
+    dados_cemig['valor_total_acl_com_icms'] = round(dados_cemig['valor_total_acl'] + dados_cemig['valor_icms_acl'], 2)
     
     return dados_cemig
 
@@ -626,7 +633,8 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
         'demanda_reativa_ponta', 'tarifa_aneel_dem_reativa_ponta', 'tarifa_trib_dem_reativa_ponta', 'valor_dem_reativa_ponta',
         'demanda_reativa_fora_ponta', 'tarifa_aneel_dem_reativa_fponta', 'tarifa_trib_dem_reativa_fponta', 'valor_dem_reativa_fponta',
         'subtotal_fatura', 'cip', 'retencao_consumo_irrf', 'retencao_demanda_irrf', 'valor_total_pis', 'valor_total_cofins', 'valor_total_icms',
-        'consumo_energia_acl_kwh', 'tarifa_energia_acl', 'valor_total_acl', 'desconto_acl', 'credito_subvencao'
+        'consumo_energia_acl_kwh', 'tarifa_energia_acl', 'valor_total_acl', 'desconto_acl', 'credito_subvencao',
+        'valor_icms_acl', 'valor_total_acl_com_icms'
     ]
     dados = {k: 0.0 for k in chaves_numericas}
     
@@ -1925,28 +1933,34 @@ with aba_pdf:
                                             consumo_energia_acl_kwh = %s,
                                             tarifa_energia_acl = %s,
                                             valor_energia_acl = %s,
-                                            valor_total_acl = %s
+                                            valor_icms_acl = %s,
+                                            valor_total_acl = %s,
+                                            valor_total_acl_com_icms = %s
                                         WHERE id = %s
                                     """, (
                                         d_cemig['data_vencimento_acl'],
                                         d_cemig['consumo_energia_acl_kwh'],
                                         d_cemig['tarifa_energia_acl'],
                                         d_cemig['valor_energia_acl'],
+                                        d_cemig['valor_icms_acl'],  # <- Novo
                                         d_cemig['valor_total_acl'],
+                                        d_cemig['valor_total_acl_com_icms'], # <- Novo
                                         id_linha
                                     ))
                                     sucessos += 1
                                 else:
-                                    # Se a fatura da CPFL ainda não foi carregada, cria a linha inicial preenchendo os dados da CEMIG
+                                    # Se a fatura da CPFL ainda não foi carregada, cria a linha inicial
                                     c.execute("""
                                         INSERT INTO faturas_cpfl (
                                             unidade_consumidora, nome_unidade, atividade, mes_referencia, classificacao,
-                                            data_vencimento_acl, consumo_energia_acl_kwh, tarifa_energia_acl, valor_energia_acl, valor_total_acl
-                                        ) VALUES (%s, %s, %s, %s, 'Mercado Livre - ACL', %s, %s, %s, %s, %s)
+                                            data_vencimento_acl, consumo_energia_acl_kwh, tarifa_energia_acl, valor_energia_acl,
+                                            valor_icms_acl, valor_total_acl, valor_total_acl_com_icms
+                                        ) VALUES (%s, %s, %s, %s, 'Mercado Livre - ACL', %s, %s, %s, %s, %s, %s, %s)
                                     """, (
                                         uc_alvo, d_cemig['nome_unidade'], d_cemig['atividade'], mes_alvo,
                                         d_cemig['data_vencimento_acl'], d_cemig['consumo_energia_acl_kwh'],
-                                        d_cemig['tarifa_energia_acl'], d_cemig['valor_energia_acl'], d_cemig['valor_total_acl']
+                                        d_cemig['tarifa_energia_acl'], d_cemig['valor_energia_acl'],
+                                        d_cemig['valor_icms_acl'], d_cemig['valor_total_acl'], d_cemig['valor_total_acl_com_icms']
                                     ))
                                     sucessos += 1
 

@@ -159,8 +159,11 @@ def inicializar_banco():
     ''')
     cursor.execute('''
         INSERT INTO parametros_sistema (chave, valor)
-        VALUES ('tarifa_te_ponta_ref', 0.48523),
-               ('tarifa_te_fponta_ref', 0.29134)
+        VALUES ('tarifa_te_ponta_ref', 0.0),
+               ('tarifa_te_fponta_ref', 0.0),
+               ('tarifa_bandeira_amarela', 0.0),
+               ('tarifa_bandeira_vermelha1', 0.0),
+               ('tarifa_bandeira_vermelha2', 0.0)
         ON CONFLICT (chave) DO NOTHING;
     ''')
     
@@ -213,34 +216,37 @@ inicializar_banco()
 
 # --- 2. FUNÇÕES DE EXTRAÇÃO DE PDF E MANIPULAÇÃO DE DADOS ---
 def obter_parametros_tarifas():
-    """Busca as tarifas de referência salvas no banco de dados."""
+    """Busca as tarifas e bandeiras salvas no banco de dados."""
     try:
         conexao = obter_conexao()
         cursor = conexao.cursor()
-        cursor.execute("SELECT chave, valor FROM parametros_sistema WHERE chave IN ('tarifa_te_ponta_ref', 'tarifa_te_fponta_ref');")
+        cursor.execute("SELECT chave, valor FROM parametros_sistema WHERE chave IN ('tarifa_te_ponta_ref', 'tarifa_te_fponta_ref', 'tarifa_bandeira_amarela', 'tarifa_bandeira_vermelha1', 'tarifa_bandeira_vermelha2');")
         rows = cursor.fetchall()
         conexao.close()
         params = {r[0]: r[1] for r in rows}
-        te_ponta = params.get('tarifa_te_ponta_ref', 0.48523)
-        te_fponta = params.get('tarifa_te_fponta_ref', 0.29134)
-        return te_ponta, te_fponta
+        te_ponta = params.get('tarifa_te_ponta_ref', 0.0)
+        te_fponta = params.get('tarifa_te_fponta_ref', 0.0)
+        band_amarela = params.get('tarifa_bandeira_amarela', 0.0)
+        band_verm1 = params.get('tarifa_bandeira_vermelha1', 0.0)
+        band_verm2 = params.get('tarifa_bandeira_vermelha2', 0.0)
+        return te_ponta, te_fponta, band_amarela, band_verm1, band_verm2
     except Exception:
-        return 0.48523, 0.29134
+        return 0.0, 0.0, 0.0, 0.0, 0.0
 
-
-def salvar_parametros_tarifas(te_ponta, te_fponta):
-    """Salva as tarifas de referência no banco de dados e limpa o cache."""
+def salvar_parametros_tarifas(te_ponta, te_fponta, band_amarela, band_verm1, band_verm2):
+    """Salva as tarifas e bandeiras no banco de dados e limpa o cache."""
     try:
         conexao = obter_conexao()
         cursor = conexao.cursor()
         cursor.execute("""
             INSERT INTO parametros_sistema (chave, valor)
-            VALUES ('tarifa_te_ponta_ref', %s), ('tarifa_te_fponta_ref', %s)
+            VALUES ('tarifa_te_ponta_ref', %s), ('tarifa_te_fponta_ref', %s), 
+                   ('tarifa_bandeira_amarela', %s), ('tarifa_bandeira_vermelha1', %s), ('tarifa_bandeira_vermelha2', %s)
             ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor;
-        """, (te_ponta, te_fponta))
+        """, (te_ponta, te_fponta, band_amarela, band_verm1, band_verm2))
         conexao.commit()
         conexao.close()
-        st.cache_data.clear()  # Força o Streamlit a recalcular o carregar_dados()
+        st.cache_data.clear() 
         return True
     except Exception as e:
         st.error(f"Erro ao salvar tarifas: {e}")
@@ -328,32 +334,46 @@ def carregar_dados():
     # 1. VALOR TOTAL DE ENERGIA (CPFL + CEMIG c/ ICMS)
     df['Valor Total de Energia'] = df['Valor Total Fatura'] + df['Valor Total ACL c/ ICMS (R$)']
 
-    # 2. CÁLCULO DA ESTIMATIVA ACR E ECONOMIA ACL (LEITURA DINÂMICA DAS TARIFAS)
+    # 2. CÁLCULO DA ESTIMATIVA ACR E ECONOMIA ACL (LEITURA INTELIGENTE DE BANDEIRAS)
     is_livre = df['Classificação'].astype(str).str.contains('Livre|ACL', case=False, na=False)
 
-    # Puxa as tarifas cadastradas na aba de Configurações
-    TARIFA_TE_PONTA_REF, TARIFA_TE_FPONTA_REF = obter_parametros_tarifas()
+    # Puxa os parâmetros cadastrados
+    TARIFA_TE_PONTA_REF, TARIFA_TE_FPONTA_REF, BAND_AMARELA, BAND_VERM1, BAND_VERM2 = obter_parametros_tarifas()
 
     def calcular_simulacao_linha(r):
         if not r['is_livre']:
-            return pd.Series([r['Valor Total de Energia'], 0.0, 0.0, 0.0, 0.0, 0.0])
+            return pd.Series([r['Valor Total de Energia'], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
         
         # A) Recomposição da Demanda TUSD (removendo 50% desc) INCLUINDO ULTRAPASSAGEM
         demanda_tusd_acr = (r['Valor Dem. Ponta'] + r['Valor Dem. F.Ponta'] + r['Valor Dem. Ultrap. Ponta'] + r['Valor Dem. Ultrap. F.Ponta']) * 2.0
         
-        # B) Consumo TUSD (Mantém como cobrado na CPFL)
+        # B) Consumo TUSD
         consumo_tusd_acr = r['Valor Cons. Ponta TUSD'] + r['Valor Cons. F.Ponta TUSD']
         
         # C) Consumo TE Cativa Simulado
         consumo_te_acr = (r['Consumo Ponta'] * TARIFA_TE_PONTA_REF) + (r['Consumo F.Ponta'] * TARIFA_TE_FPONTA_REF)
         
-        # D) Encargos / CIP / Reativo / Bandeira
-        outros_encargos = r['CIP'] + r['Valor Total Reativo'] + r['Adicional Bandeira']
+        # D) Identificação Automática da Bandeira
+        tipo_bandeira_pdf = str(r['Bandeira']).upper()
+        tarifa_band_aplicada = 0.0
         
-        # E) Custo Simulado no ACR
+        if 'AMARELA' in tipo_bandeira_pdf:
+            tarifa_band_aplicada = BAND_AMARELA
+        elif 'VERMELHA' in tipo_bandeira_pdf:
+            if '1' in tipo_bandeira_pdf or 'I' in tipo_bandeira_pdf:
+                tarifa_band_aplicada = BAND_VERM1
+            elif '2' in tipo_bandeira_pdf or 'II' in tipo_bandeira_pdf:
+                tarifa_band_aplicada = BAND_VERM2
+
+        # E) Cálculo do Adicional de Bandeira Tarifária
+        consumo_total_kwh = r['Consumo Ponta'] + r['Consumo F.Ponta']
+        adicional_bandeira_acr = consumo_total_kwh * tarifa_band_aplicada
+        
+        # F) Outros Encargos / CIP / Reativo
+        outros_encargos = r['CIP'] + r['Valor Total Reativo'] + adicional_bandeira_acr
+        
+        # G) Custo Simulado no ACR e Economia
         custo_acr = demanda_tusd_acr + consumo_tusd_acr + consumo_te_acr + outros_encargos
-        
-        # F) Economia Real do ACL
         economia_acl = custo_acr - r['Valor Total de Energia']
         
         return pd.Series([
@@ -362,11 +382,12 @@ def carregar_dados():
             round(TARIFA_TE_PONTA_REF, 5),     
             round(TARIFA_TE_FPONTA_REF, 5),    
             round(demanda_tusd_acr, 2),
-            round(consumo_te_acr, 2)   
+            round(consumo_te_acr, 2),
+            round(adicional_bandeira_acr, 2)
         ])
 
     df['is_livre'] = is_livre
-    df[['Valor Estimado ACR', 'Valor Economia ACL', 'Tarifa TE Ponta Simulada', 'Tarifa TE F.Ponta Simulada', 'Demanda TUSD Sim. (R$)', 'Consumo TE Sim. (R$)']] = df.apply(calcular_simulacao_linha, axis=1)
+    df[['Valor Estimado ACR', 'Valor Economia ACL', 'Tarifa TE Ponta Simulada', 'Tarifa TE F.Ponta Simulada', 'Demanda TUSD Sim. (R$)', 'Consumo TE Sim. (R$)', 'Bandeira Sim. (R$)']] = df.apply(calcular_simulacao_linha, axis=1)
     df = df.drop(columns=['is_livre'])
 
     # Converter Referência para ordenação cronológica
@@ -2419,38 +2440,35 @@ with aba_config:
                     st.rerun()
 
     # ---------------------------------------------------------
-    # FORMULÁRIO DE TARIFA DE REFERÊNCIA ACR (MERCADO CATIVO)
+    # FORMULÁRIO DE TARIFA DE REFERÊNCIA ACR E BANDEIRAS
     # ---------------------------------------------------------
     st.divider()
-    st.markdown("##### ⚡ Tarifas TE de Referência para Simulação ACR (Mercado Cativo)")
-    st.caption("Defina os valores das Tarifas de Energia (TE) homologadas pela ANEEL para simulação de economia nas UCs do Mercado Livre.")
+    st.markdown("##### ⚡ Tarifas TE e Bandeiras Tarifárias para Simulação ACR (Mercado Cativo)")
+    st.caption("Defina os valores base de cada grandeza para o cálculo automático de economia no Mercado Livre.")
 
-    te_ponta_atual, te_fponta_atual = obter_parametros_tarifas()
+    te_p_atual, te_fp_atual, band_amarela_atual, band_verm1_atual, band_verm2_atual = obter_parametros_tarifas()
 
     with st.form("form_tarifas_ref"):
         col_t1, col_t2 = st.columns(2)
         with col_t1:
-            novo_te_ponta = st.number_input(
-                "Tarifa TE Ponta (R$/kWh)",
-                value=float(te_ponta_atual),
-                format="%.5f",
-                step=0.00001,
-                help="Tarifa de Energia no horário de ponta homologada pela ANEEL (Subgrupo A4)."
-            )
+            novo_te_ponta = st.number_input("Tarifa TE Ponta (R$/kWh)", value=float(te_p_atual), format="%.5f", step=0.00001)
         with col_t2:
-            novo_te_fponta = st.number_input(
-                "Tarifa TE Fora Ponta (R$/kWh)",
-                value=float(te_fponta_atual),
-                format="%.5f",
-                step=0.00001,
-                help="Tarifa de Energia no horário fora de ponta homologada pela ANEEL (Subgrupo A4)."
-            )
+            novo_te_fponta = st.number_input("Tarifa TE Fora Ponta (R$/kWh)", value=float(te_fp_atual), format="%.5f", step=0.00001)
         
-        btn_salvar_tarifas = st.form_submit_button("💾 Salvar Tarifas de Referência", type="primary")
+        st.markdown("###### 🚩 Valores das Bandeiras Tarifárias (R$/kWh)")
+        col_b1, col_b2, col_b3 = st.columns(3)
+        with col_b1:
+            nova_band_amarela = st.number_input("🟡 Amarela", value=float(band_amarela_atual), format="%.5f", step=0.00001)
+        with col_b2:
+            nova_band_verm1 = st.number_input("🔴 Vermelha Patamar 1", value=float(band_verm1_atual), format="%.5f", step=0.00001)
+        with col_b3:
+            nova_band_verm2 = st.number_input("🔻 Vermelha Patamar 2", value=float(band_verm2_atual), format="%.5f", step=0.00001)
+        
+        btn_salvar_tarifas = st.form_submit_button("💾 Salvar Tarifas e Bandeiras", type="primary")
         
         if btn_salvar_tarifas:
-            if salvar_parametros_tarifas(novo_te_ponta, novo_te_fponta):
-                st.success("✅ Tarifas atualizadas com sucesso! Os cálculos do sistema foram recalculados.")
+            if salvar_parametros_tarifas(novo_te_ponta, novo_te_fponta, nova_band_amarela, nova_band_verm1, nova_band_verm2):
+                st.success("✅ Configurações atualizadas! O banco de dados foi recalculado usando o histórico de bandeiras extraído de cada fatura.")
                 st.rerun()
     
     # ---------------------------------------------------------

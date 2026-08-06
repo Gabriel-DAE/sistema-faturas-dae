@@ -179,6 +179,7 @@ def inicializar_banco():
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS data_vencimento_acl TEXT;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS valor_icms_acl DOUBLE PRECISION DEFAULT 0.0;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS valor_total_acl_com_icms DOUBLE PRECISION DEFAULT 0.0;''')
+        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS irpj_retido_acl DOUBLE PRECISION DEFAULT 0.0;''')
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS uc_cemig TEXT;''')
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS uc_antiga TEXT;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS uc_original TEXT;''')
@@ -299,7 +300,8 @@ def carregar_dados():
         'data_vencimento_acl': 'Vencimento ACL', 'consumo_energia_acl_kwh': 'Consumo Energia ACL (kWh)',
         'tarifa_energia_acl': 'Tarifa Energia ACL (R$/kWh)', 'valor_energia_acl': 'Valor Energia ACL (R$)',
         'valor_icms_acl': 'Valor ICMS ACL (R$)', 'valor_total_acl': 'Valor Total ACL (R$)',
-        'valor_total_acl_com_icms': 'Valor Total ACL c/ ICMS (R$)', 'nota_fiscal': 'Nota Fiscal', 'data_emissao': 'Data Emissão',
+        'valor_total_acl_com_icms': 'Valor Total ACL c/ ICMS (R$)', 'irpj_retido_acl': 'IRPJ Retido ACL (R$)', 
+        'nota_fiscal': 'Nota Fiscal', 'data_emissao': 'Data Emissão',
         'desconto_acl': 'Desconto ACL (R$)', 'credito_subvencao': 'Crédito Subvenção (R$)'
     }
     
@@ -307,7 +309,7 @@ def carregar_dados():
     
     # Tratamento de colunas nulas para evitar erros numéricos
     colunas_zerar = [
-        'Valor Total ACL c/ ICMS (R$)', 'Valor Total ACL (R$)', 'Valor ICMS ACL (R$)',
+        'Valor Total ACL c/ ICMS (R$)', 'Valor Total ACL (R$)', 'Valor ICMS ACL (R$)', 'IRPJ Retido ACL (R$)',
         'Valor Cons. Ponta TUSD', 'Valor Cons. Ponta TE', 'Valor Cons. F.Ponta TUSD', 'Valor Cons. F.Ponta TE',
         'Valor Dem. Ponta', 'Valor Dem. F.Ponta', 'Consumo Ponta', 'Consumo F.Ponta',
         'CIP', 'Adicional Bandeira', 'Valor Dem. Isenta Ponta', 'Valor Dem. Isenta F.Ponta',
@@ -342,21 +344,14 @@ def carregar_dados():
 
     def calcular_simulacao_linha(r):
         if not r['is_livre']:
-            return pd.Series([r['Valor Total de Energia'], 0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            return pd.Series([r['Valor Total de Energia'], 0.0])
         
-        # A) Recomposição da Demanda TUSD (removendo 50% desc) INCLUINDO ULTRAPASSAGEM
         demanda_tusd_acr = (r['Valor Dem. Ponta'] + r['Valor Dem. F.Ponta'] + r['Valor Dem. Ultrap. Ponta'] + r['Valor Dem. Ultrap. F.Ponta']) * 2.0
-        
-        # B) Consumo TUSD
         consumo_tusd_acr = r['Valor Cons. Ponta TUSD'] + r['Valor Cons. F.Ponta TUSD']
-        
-        # C) Consumo TE Cativa Simulado
         consumo_te_acr = (r['Consumo Ponta'] * TARIFA_TE_PONTA_REF) + (r['Consumo F.Ponta'] * TARIFA_TE_FPONTA_REF)
         
-        # D) Identificação Automática da Bandeira
         tipo_bandeira_pdf = str(r['Bandeira']).upper()
         tarifa_band_aplicada = 0.0
-        
         if 'AMARELA' in tipo_bandeira_pdf:
             tarifa_band_aplicada = BAND_AMARELA
         elif 'VERMELHA' in tipo_bandeira_pdf:
@@ -365,31 +360,19 @@ def carregar_dados():
             elif '2' in tipo_bandeira_pdf or 'II' in tipo_bandeira_pdf:
                 tarifa_band_aplicada = BAND_VERM2
 
-        # E) Cálculo do Adicional de Bandeira Tarifária
         consumo_total_kwh = r['Consumo Ponta'] + r['Consumo F.Ponta']
         adicional_bandeira_acr = consumo_total_kwh * tarifa_band_aplicada
-        
-        # F) Outros Encargos / CIP / Reativo
         outros_encargos = r['CIP'] + r['Valor Total Reativo'] + adicional_bandeira_acr
         
-        # G) Custo Simulado no ACR e Economia
         custo_acr = demanda_tusd_acr + consumo_tusd_acr + consumo_te_acr + outros_encargos
         economia_acl = custo_acr - r['Valor Total de Energia']
         
-        return pd.Series([
-            round(custo_acr, 2), 
-            round(economia_acl, 2),
-            round(TARIFA_TE_PONTA_REF, 5),     
-            round(TARIFA_TE_FPONTA_REF, 5),    
-            round(demanda_tusd_acr, 2),
-            round(consumo_te_acr, 2),
-            round(adicional_bandeira_acr, 2)
-        ])
+        return pd.Series([round(custo_acr, 2), round(economia_acl, 2)])
 
     df['is_livre'] = is_livre
-    df[['Valor Estimado ACR', 'Valor Economia ACL', 'Tarifa TE Ponta Simulada', 'Tarifa TE F.Ponta Simulada', 'Demanda TUSD Sim. (R$)', 'Consumo TE Sim. (R$)', 'Bandeira Sim. (R$)']] = df.apply(calcular_simulacao_linha, axis=1)
+    df[['Valor Estimado ACR', 'Valor Economia ACL']] = df.apply(calcular_simulacao_linha, axis=1)
     df = df.drop(columns=['is_livre'])
-
+    
     # Converter Referência para ordenação cronológica
     mes_map = {'JAN': '01', 'FEV': '02', 'MAR': '03', 'ABR': '04', 'MAI': '05', 'JUN': '06', 
                'JUL': '07', 'AGO': '08', 'SET': '09', 'OUT': '10', 'NOV': '11', 'DEZ': '12'}
@@ -407,9 +390,8 @@ def carregar_dados():
     ordem_colunas = [
         'id', 'Data Referência Oculta', 'UC', 'Nome da Unidade', 'Atividade', 'Classificação', 'Mês Referência', 'Vencimento CPFL', 'Vencimento ACL', 
         'Leitura Anterior', 'Leitura Atual', 'Próxima Leitura', 'Consumo Energia ACL (kWh)', 'Tarifa Energia ACL (R$/kWh)', 
-        'Valor Energia ACL (R$)', 'Valor Total ACL (R$)', 'Valor ICMS ACL (R$)', 'Valor Total ACL c/ ICMS (R$)', 'Valor Total Fatura', 
-        'Valor Total de Energia', 'Valor Estimado ACR', 'Valor Economia ACL', 'Tarifa TE Ponta Simulada', 'Tarifa TE F.Ponta Simulada', 'Demanda TUSD Sim. (R$)', 
-        'Consumo TE Sim. (R$)', 'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Consumo Ponta', 
+        'Valor Energia ACL (R$)', 'Valor ICMS ACL (R$)', 'IRPJ Retido ACL (R$)', 'Valor Total ACL (R$)', 'Valor Total ACL c/ ICMS (R$)', 'Valor Total Fatura',
+        'Valor Total de Energia', 'Valor Estimado ACR', 'Valor Economia ACL', 'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Consumo Ponta', 
         'Tarifa Cons. Ponta TUSD', 'Tarifa Trib. Cons. Ponta TUSD', 'Valor Cons. Ponta TUSD', 'Tarifa Cons. Ponta TE', 'Tarifa Trib. Cons. Ponta TE', 
         'Valor Cons. Ponta TE', 'Consumo F.Ponta', 'Tarifa Cons. F.Ponta TUSD', 'Tarifa Trib. Cons. F.Ponta TUSD', 'Valor Cons. F.Ponta TUSD', 
         'Tarifa Cons. F.Ponta TE', 'Tarifa Trib. Cons. F.Ponta TE', 'Valor Cons. F.Ponta TE', 'Bandeira', 'Adicional Bandeira', 'Dem. Contr. Ponta', 
@@ -468,7 +450,7 @@ def processar_pdf(arquivo_pdf):
         'demanda_ultrapassagem_fora_ponta', 'tarifa_aneel_dem_ultrap_fponta', 'tarifa_trib_dem_ultrap_fponta', 'valor_dem_ultrap_fponta',
         'demanda_reativa_ponta', 'tarifa_aneel_dem_reativa_ponta', 'tarifa_trib_dem_reativa_ponta', 'valor_dem_reativa_ponta',
         'demanda_reativa_fora_ponta', 'tarifa_aneel_dem_reativa_fponta', 'tarifa_trib_dem_reativa_fponta', 'valor_dem_reativa_fponta', 'subtotal_fatura',
-        'desconto_acl', 'credito_subvencao', 'valor_icms_acl', 'valor_total_acl_com_icms'
+        'desconto_acl', 'credito_subvencao', 'valor_icms_acl', 'valor_total_acl_com_icms', 'irpj_retido_acl'
     ]
     dados = {k: 0.0 for k in chaves_numericas}
     
@@ -735,6 +717,11 @@ def processar_pdf_cemig(arquivo_pdf):
     # Cálculo do ICMS (18% sobre a Energia) e do Valor Total c/ ICMS
     dados_cemig['valor_icms_acl'] = round(dados_cemig['valor_energia_acl'] * 0.18, 2)
     dados_cemig['valor_total_acl_com_icms'] = round(dados_cemig['valor_total_acl'] + dados_cemig['valor_icms_acl'], 2)
+    match_irpj = re.search(r"(?:Imposto\s+Retido(?:\s*-\s*IRPJ)?|IRPJ\s+Retido|Reten[çc]ã[oõ]\s+(?:de\s+)?IRPJ|IRPJ)[\s\S]*?R\$\s*([\d\.,]+)", texto, re.IGNORECASE)
+    if not match_irpj:
+        match_irpj = re.search(r"Imposto\s+Retido[\s\S]*?([\d\.,]+)", texto, re.IGNORECASE)
+    
+    dados_cemig['irpj_retido_acl'] = limpar_numero(match_irpj.group(1)) if match_irpj else 0.0
     
     return dados_cemig
 
@@ -766,7 +753,7 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
         'demanda_reativa_fora_ponta', 'tarifa_aneel_dem_reativa_fponta', 'tarifa_trib_dem_reativa_fponta', 'valor_dem_reativa_fponta',
         'subtotal_fatura', 'cip', 'retencao_consumo_irrf', 'retencao_demanda_irrf', 'valor_total_pis', 'valor_total_cofins', 'valor_total_icms',
         'consumo_energia_acl_kwh', 'tarifa_energia_acl', 'valor_total_acl', 'desconto_acl', 'credito_subvencao',
-        'valor_icms_acl', 'valor_total_acl_com_icms'
+        'valor_icms_acl', 'valor_total_acl_com_icms', 'irpj_retido_acl'
     ]
     dados = {k: 0.0 for k in chaves_numericas}
     
@@ -2156,6 +2143,7 @@ with aba_pdf:
                                         d_cemig['data_vencimento_acl'], d_cemig['consumo_energia_acl_kwh'],
                                         d_cemig['tarifa_energia_acl'], d_cemig['valor_energia_acl'],
                                         d_cemig['valor_icms_acl'], d_cemig['valor_total_acl'], d_cemig['valor_total_acl_com_icms']
+                                        d_cemig['valor_total_acl_com_icms'], d_cemig['irpj_retido_acl']
                                     ))
                                     sucessos += 1
 

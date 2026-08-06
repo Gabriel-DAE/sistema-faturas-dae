@@ -390,7 +390,7 @@ def carregar_dados():
     ordem_colunas = [
         'id', 'Data Referência Oculta', 'UC', 'Nome da Unidade', 'Atividade', 'Classificação', 'Mês Referência', 'Vencimento CPFL', 'Vencimento ACL', 
         'Leitura Anterior', 'Leitura Atual', 'Próxima Leitura', 'Consumo Energia ACL (kWh)', 'Tarifa Energia ACL (R$/kWh)', 
-        'Valor Energia ACL (R$)', 'Valor ICMS ACL (R$)', 'IRPJ Retido ACL (R$)', 'Valor Total ACL (R$)', 'Valor Total ACL c/ ICMS (R$)', 'Valor Total Fatura',
+        'Valor Energia ACL (R$)', 'IRPJ Retido ACL (R$)', 'Valor Total ACL (R$)', 'Valor ICMS ACL (R$)', 'Valor Total ACL c/ ICMS (R$)', 'Valor Total Fatura',
         'Valor Total de Energia', 'Valor Estimado ACR', 'Valor Economia ACL', 'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Consumo Ponta', 
         'Tarifa Cons. Ponta TUSD', 'Tarifa Trib. Cons. Ponta TUSD', 'Valor Cons. Ponta TUSD', 'Tarifa Cons. Ponta TE', 'Tarifa Trib. Cons. Ponta TE', 
         'Valor Cons. Ponta TE', 'Consumo F.Ponta', 'Tarifa Cons. F.Ponta TUSD', 'Tarifa Trib. Cons. F.Ponta TUSD', 'Valor Cons. F.Ponta TUSD', 

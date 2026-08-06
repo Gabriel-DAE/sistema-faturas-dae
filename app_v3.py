@@ -2142,7 +2142,7 @@ with aba_pdf:
                                         uc_alvo, d_cemig['nome_unidade'], d_cemig['atividade'], mes_alvo,
                                         d_cemig['data_vencimento_acl'], d_cemig['consumo_energia_acl_kwh'],
                                         d_cemig['tarifa_energia_acl'], d_cemig['valor_energia_acl'],
-                                        d_cemig['valor_icms_acl'], d_cemig['valor_total_acl'], d_cemig['valor_total_acl_com_icms']
+                                        d_cemig['valor_icms_acl'], d_cemig['valor_total_acl'], d_cemig['valor_total_acl_com_icms'],
                                         d_cemig['valor_total_acl_com_icms'], d_cemig['irpj_retido_acl']
                                     ))
                                     sucessos += 1

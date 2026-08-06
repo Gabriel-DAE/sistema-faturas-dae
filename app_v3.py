@@ -149,6 +149,21 @@ def inicializar_banco():
             dia_vencimento INTEGER DEFAULT 10
         )
     ''')
+    
+    # 3. Tabela de parâmetros do sistema (Tarifas de referência ACR)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS parametros_sistema (
+            chave TEXT PRIMARY KEY,
+            valor DOUBLE PRECISION
+        );
+    ''')
+    cursor.execute('''
+        INSERT INTO parametros_sistema (chave, valor)
+        VALUES ('tarifa_te_ponta_ref', 0.48523),
+               ('tarifa_te_fponta_ref', 0.29134)
+        ON CONFLICT (chave) DO NOTHING;
+    ''')
+    
     # Comando de segurança para adicionar colunas em bancos que já existem
     try:
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'ATIVA';''')
@@ -197,6 +212,40 @@ def inicializar_banco():
 inicializar_banco()
 
 # --- 2. FUNÇÕES DE EXTRAÇÃO DE PDF E MANIPULAÇÃO DE DADOS ---
+def obter_parametros_tarifas():
+    """Busca as tarifas de referência salvas no banco de dados."""
+    try:
+        conexao = obter_conexao()
+        cursor = conexao.cursor()
+        cursor.execute("SELECT chave, valor FROM parametros_sistema WHERE chave IN ('tarifa_te_ponta_ref', 'tarifa_te_fponta_ref');")
+        rows = cursor.fetchall()
+        conexao.close()
+        params = {r[0]: r[1] for r in rows}
+        te_ponta = params.get('tarifa_te_ponta_ref', 0.48523)
+        te_fponta = params.get('tarifa_te_fponta_ref', 0.29134)
+        return te_ponta, te_fponta
+    except Exception:
+        return 0.48523, 0.29134
+
+
+def salvar_parametros_tarifas(te_ponta, te_fponta):
+    """Salva as tarifas de referência no banco de dados e limpa o cache."""
+    try:
+        conexao = obter_conexao()
+        cursor = conexao.cursor()
+        cursor.execute("""
+            INSERT INTO parametros_sistema (chave, valor)
+            VALUES ('tarifa_te_ponta_ref', %s), ('tarifa_te_fponta_ref', %s)
+            ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor;
+        """, (te_ponta, te_fponta))
+        conexao.commit()
+        conexao.close()
+        st.cache_data.clear()  # Força o Streamlit a recalcular o carregar_dados()
+        return True
+    except Exception as e:
+        st.error(f"Erro ao salvar tarifas: {e}")
+        return False
+
 @st.cache_data(show_spinner="Carregando e processando banco de dados...", ttl=600, max_entries=2)
 def carregar_dados():
     url_sqlalchemy = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://")
@@ -279,43 +328,24 @@ def carregar_dados():
     # 1. VALOR TOTAL DE ENERGIA (CPFL + CEMIG c/ ICMS)
     df['Valor Total de Energia'] = df['Valor Total Fatura'] + df['Valor Total ACL c/ ICMS (R$)']
 
-    # 2. CÁLCULO DA ESTIMATIVA ACR E ECONOMIA ACL (OPÇÃO A)
-    # 2. CÁLCULO DA ESTIMATIVA ACR E ECONOMIA ACL (OPÇÃO A)
+    # 2. CÁLCULO DA ESTIMATIVA ACR E ECONOMIA ACL (LEITURA DINÂMICA DAS TARIFAS)
     is_livre = df['Classificação'].astype(str).str.contains('Livre|ACL', case=False, na=False)
-    df_cativo = df[~is_livre]
 
-    # Extrai tarifa TE média por Mês Referência das UCs cativas
-    tarifas_te_mes = {}
-    if not df_cativo.empty:
-        for mes, grupo in df_cativo.groupby('Mês Referência'):
-            cp = grupo['Consumo Ponta'].sum()
-            v_te_p = grupo['Valor Cons. Ponta TE'].sum()
-            te_p = (v_te_p / cp) if cp > 0 else 0.0 # Mudamos para 0.0 para escancarar se faltar dado
-
-            cfp = grupo['Consumo F.Ponta'].sum()
-            v_te_fp = grupo['Valor Cons. F.Ponta TE'].sum()
-            te_fp = (v_te_fp / cfp) if cfp > 0 else 0.0
-
-            tarifas_te_mes[mes] = {'te_p': te_p, 'te_fp': te_fp}
+    # Puxa as tarifas cadastradas na aba de Configurações
+    TARIFA_TE_PONTA_REF, TARIFA_TE_FPONTA_REF = obter_parametros_tarifas()
 
     def calcular_simulacao_linha(r):
         if not r['is_livre']:
             return pd.Series([r['Valor Total de Energia'], 0.0, 0.0, 0.0, 0.0, 0.0])
         
-        mes = r['Mês Referência']
-        
-        # Pega a tarifa cativa do mês. Se não existir, avisa usando 0.0
-        te_p = tarifas_te_mes.get(mes, {}).get('te_p', 0.0)
-        te_fp = tarifas_te_mes.get(mes, {}).get('te_fp', 0.0)
-        
         # A) Recomposição da Demanda TUSD (removendo 50% desc) INCLUINDO ULTRAPASSAGEM
         demanda_tusd_acr = (r['Valor Dem. Ponta'] + r['Valor Dem. F.Ponta'] + r['Valor Dem. Ultrap. Ponta'] + r['Valor Dem. Ultrap. F.Ponta']) * 2.0
         
-        # B) Consumo TUSD (Mantém como cobrado)
+        # B) Consumo TUSD (Mantém como cobrado na CPFL)
         consumo_tusd_acr = r['Valor Cons. Ponta TUSD'] + r['Valor Cons. F.Ponta TUSD']
         
         # C) Consumo TE Cativa Simulado
-        consumo_te_acr = (r['Consumo Ponta'] * te_p) + (r['Consumo F.Ponta'] * te_fp)
+        consumo_te_acr = (r['Consumo Ponta'] * TARIFA_TE_PONTA_REF) + (r['Consumo F.Ponta'] * TARIFA_TE_FPONTA_REF)
         
         # D) Encargos / CIP / Reativo / Bandeira
         outros_encargos = r['CIP'] + r['Valor Total Reativo'] + r['Adicional Bandeira']
@@ -329,10 +359,10 @@ def carregar_dados():
         return pd.Series([
             round(custo_acr, 2), 
             round(economia_acl, 2),
-            round(te_p, 4),            # AUDITORIA: Qual tarifa ponta foi usada?
-            round(te_fp, 4),           # AUDITORIA: Qual tarifa fora ponta foi usada?
-            round(demanda_tusd_acr, 2),# AUDITORIA: Qual o valor da demanda dobrada?
-            round(consumo_te_acr, 2)   # AUDITORIA: Qual o valor simulado de TE?
+            round(TARIFA_TE_PONTA_REF, 5),     
+            round(TARIFA_TE_FPONTA_REF, 5),    
+            round(demanda_tusd_acr, 2),
+            round(consumo_te_acr, 2)   
         ])
 
     df['is_livre'] = is_livre
@@ -2246,9 +2276,6 @@ with aba_pdf:
 with aba_config:
     st.markdown("##### ⚙️ Configurações Gerais do Sistema")
     
-    # ---------------------------------------------------------
-    # FUNÇÃO DE GERAR EXCEL DE CADASTRO (Definida no topo para evitar NameError)
-    # ---------------------------------------------------------
     @st.cache_data(show_spinner=False, ttl=60)
     def gerar_excel_cadastro():
         conn = obter_conexao()
@@ -2391,6 +2418,41 @@ with aba_config:
                     st.session_state['msg_uc'] = "✅ Cadastro da UC atualizado com sucesso!"
                     st.rerun()
 
+    # ---------------------------------------------------------
+    # FORMULÁRIO DE TARIFA DE REFERÊNCIA ACR (MERCADO CATIVO)
+    # ---------------------------------------------------------
+    st.divider()
+    st.markdown("##### ⚡ Tarifas TE de Referência para Simulação ACR (Mercado Cativo)")
+    st.caption("Defina os valores das Tarifas de Energia (TE) homologadas pela ANEEL para simulação de economia nas UCs do Mercado Livre.")
+
+    te_ponta_atual, te_fponta_atual = obter_parametros_tarifas()
+
+    with st.form("form_tarifas_ref"):
+        col_t1, col_t2 = st.columns(2)
+        with col_t1:
+            novo_te_ponta = st.number_input(
+                "Tarifa TE Ponta (R$/kWh)",
+                value=float(te_ponta_atual),
+                format="%.5f",
+                step=0.00001,
+                help="Tarifa de Energia no horário de ponta homologada pela ANEEL (Subgrupo A4)."
+            )
+        with col_t2:
+            novo_te_fponta = st.number_input(
+                "Tarifa TE Fora Ponta (R$/kWh)",
+                value=float(te_fponta_atual),
+                format="%.5f",
+                step=0.00001,
+                help="Tarifa de Energia no horário fora de ponta homologada pela ANEEL (Subgrupo A4)."
+            )
+        
+        btn_salvar_tarifas = st.form_submit_button("💾 Salvar Tarifas de Referência", type="primary")
+        
+        if btn_salvar_tarifas:
+            if salvar_parametros_tarifas(novo_te_ponta, novo_te_fponta):
+                st.success("✅ Tarifas atualizadas com sucesso! Os cálculos do sistema foram recalculados.")
+                st.rerun()
+    
     # ---------------------------------------------------------
     # 2. EXPORTAR CADASTRO DE UNIDADES
     # ---------------------------------------------------------

@@ -280,6 +280,7 @@ def carregar_dados():
     df['Valor Total de Energia'] = df['Valor Total Fatura'] + df['Valor Total ACL c/ ICMS (R$)']
 
     # 2. CÁLCULO DA ESTIMATIVA ACR E ECONOMIA ACL (OPÇÃO A)
+    # 2. CÁLCULO DA ESTIMATIVA ACR E ECONOMIA ACL (OPÇÃO A)
     is_livre = df['Classificação'].astype(str).str.contains('Livre|ACL', case=False, na=False)
     df_cativo = df[~is_livre]
 
@@ -289,32 +290,34 @@ def carregar_dados():
         for mes, grupo in df_cativo.groupby('Mês Referência'):
             cp = grupo['Consumo Ponta'].sum()
             v_te_p = grupo['Valor Cons. Ponta TE'].sum()
-            te_p = (v_te_p / cp) if cp > 0 else 0.35
+            te_p = (v_te_p / cp) if cp > 0 else 0.0 # Mudamos para 0.0 para escancarar se faltar dado
 
             cfp = grupo['Consumo F.Ponta'].sum()
             v_te_fp = grupo['Valor Cons. F.Ponta TE'].sum()
-            te_fp = (v_te_fp / cfp) if cfp > 0 else 0.25
+            te_fp = (v_te_fp / cfp) if cfp > 0 else 0.0
 
             tarifas_te_mes[mes] = {'te_p': te_p, 'te_fp': te_fp}
 
     def calcular_simulacao_linha(r):
         if not r['is_livre']:
-            return pd.Series([r['Valor Total de Energia'], 0.0])
+            return pd.Series([r['Valor Total de Energia'], 0.0, 0.0, 0.0, 0.0, 0.0])
         
         mes = r['Mês Referência']
-        te_p = tarifas_te_mes.get(mes, {}).get('te_p', 0.35)
-        te_fp = tarifas_te_mes.get(mes, {}).get('te_fp', 0.25)
         
-        # A) Recomposição da Demanda TUSD (removendo os 50% de desconto)
-        demanda_tusd_acr = (r['Valor Dem. Ponta'] + r['Valor Dem. F.Ponta']) * 2.0
+        # Pega a tarifa cativa do mês. Se não existir, avisa usando 0.0
+        te_p = tarifas_te_mes.get(mes, {}).get('te_p', 0.0)
+        te_fp = tarifas_te_mes.get(mes, {}).get('te_fp', 0.0)
         
-        # B) Consumo TUSD
+        # A) Recomposição da Demanda TUSD (removendo 50% desc) INCLUINDO ULTRAPASSAGEM
+        demanda_tusd_acr = (r['Valor Dem. Ponta'] + r['Valor Dem. F.Ponta'] + r['Valor Dem. Ultrap. Ponta'] + r['Valor Dem. Ultrap. F.Ponta']) * 2.0
+        
+        # B) Consumo TUSD (Mantém como cobrado)
         consumo_tusd_acr = r['Valor Cons. Ponta TUSD'] + r['Valor Cons. F.Ponta TUSD']
         
         # C) Consumo TE Cativa Simulado
         consumo_te_acr = (r['Consumo Ponta'] * te_p) + (r['Consumo F.Ponta'] * te_fp)
         
-        # D) Encargos / CIP / Reativo / Bandeira Tarifária
+        # D) Encargos / CIP / Reativo / Bandeira
         outros_encargos = r['CIP'] + r['Valor Total Reativo'] + r['Adicional Bandeira']
         
         # E) Custo Simulado no ACR
@@ -323,10 +326,17 @@ def carregar_dados():
         # F) Economia Real do ACL
         economia_acl = custo_acr - r['Valor Total de Energia']
         
-        return pd.Series([round(custo_acr, 2), round(economia_acl, 2)])
+        return pd.Series([
+            round(custo_acr, 2), 
+            round(economia_acl, 2),
+            round(te_p, 4),            # AUDITORIA: Qual tarifa ponta foi usada?
+            round(te_fp, 4),           # AUDITORIA: Qual tarifa fora ponta foi usada?
+            round(demanda_tusd_acr, 2),# AUDITORIA: Qual o valor da demanda dobrada?
+            round(consumo_te_acr, 2)   # AUDITORIA: Qual o valor simulado de TE?
+        ])
 
     df['is_livre'] = is_livre
-    df[['Valor Estimado ACR', 'Valor Economia ACL']] = df.apply(calcular_simulacao_linha, axis=1)
+    df[['Valor Estimado ACR', 'Valor Economia ACL', 'Tarifa TE Ponta Simulada', 'Tarifa TE F.Ponta Simulada', 'Demanda TUSD Sim. (R$)', 'Consumo TE Sim. (R$)']] = df.apply(calcular_simulacao_linha, axis=1)
     df = df.drop(columns=['is_livre'])
 
     # Converter Referência para ordenação cronológica
@@ -346,8 +356,9 @@ def carregar_dados():
     ordem_colunas = [
         'id', 'Data Referência Oculta', 'UC', 'Nome da Unidade', 'Atividade', 'Classificação', 'Mês Referência', 'Vencimento CPFL', 'Vencimento ACL', 
         'Leitura Anterior', 'Leitura Atual', 'Próxima Leitura', 'Consumo Energia ACL (kWh)', 'Tarifa Energia ACL (R$/kWh)', 
-        'Valor Energia ACL (R$)', 'Valor ICMS ACL (R$)', 'Valor Total ACL (R$)', 'Valor Total ACL c/ ICMS (R$)', 'Valor Total Fatura', 
-        'Valor Total de Energia', 'Valor Estimado ACR', 'Valor Economia ACL', 'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Consumo Ponta', 
+        'Valor Energia ACL (R$)', 'Valor Total ACL (R$)', 'Valor ICMS ACL (R$)', 'Valor Total ACL c/ ICMS (R$)', 'Valor Total Fatura', 
+        'Valor Total de Energia', 'Valor Estimado ACR', 'Valor Economia ACL', 'Tarifa TE Ponta Simulada', 'Tarifa TE F.Ponta Simulada', 'Demanda TUSD Sim. (R$)', 
+        'Consumo TE Sim. (R$)', 'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Consumo Ponta', 
         'Tarifa Cons. Ponta TUSD', 'Tarifa Trib. Cons. Ponta TUSD', 'Valor Cons. Ponta TUSD', 'Tarifa Cons. Ponta TE', 'Tarifa Trib. Cons. Ponta TE', 
         'Valor Cons. Ponta TE', 'Consumo F.Ponta', 'Tarifa Cons. F.Ponta TUSD', 'Tarifa Trib. Cons. F.Ponta TUSD', 'Valor Cons. F.Ponta TUSD', 
         'Tarifa Cons. F.Ponta TE', 'Tarifa Trib. Cons. F.Ponta TE', 'Valor Cons. F.Ponta TE', 'Bandeira', 'Adicional Bandeira', 'Dem. Contr. Ponta', 

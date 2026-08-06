@@ -199,7 +199,6 @@ inicializar_banco()
 # --- 2. FUNÇÕES DE EXTRAÇÃO DE PDF E MANIPULAÇÃO DE DADOS ---
 @st.cache_data(show_spinner="Carregando e processando banco de dados...", ttl=600, max_entries=2)
 def carregar_dados():
-    # Usando SQLAlchemy para facilitar a vida do Pandas ao ler do Postgres
     url_sqlalchemy = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://")
     engine = create_engine(url_sqlalchemy)
     df = pd.read_sql_query("SELECT * FROM faturas_cpfl", engine)
@@ -243,12 +242,21 @@ def carregar_dados():
         'retencao_demanda_irrf': 'Retenção Dem. IRRF', 'valor_total_pis': 'Valor PIS', 'valor_total_cofins': 'Valor COFINS',
         'valor_total_icms': 'Valor ICMS', 'valor_total_fatura': 'Valor Total Fatura', 'data_insercao': 'Data Cadastro',
         'data_vencimento_acl': 'Vencimento ACL', 'consumo_energia_acl_kwh': 'Consumo Energia ACL (kWh)',
-        'tarifa_energia_acl': 'Tarifa Energia ACL (R$/kWh)', 'valor_energia_acl': 'Valor Energia ACL (R$)', 'valor_icms_acl': 'Valor ICMS ACL (R$)',
-        'valor_total_acl': 'Valor Total ACL (R$)', 'valor_total_acl_com_icms': 'Valor Total ACL c/ ICMS (R$)', 'nota_fiscal': 'Nota Fiscal', 'data_emissao': 'Data Emissão',
+        'tarifa_energia_acl': 'Tarifa Energia ACL (R$/kWh)', 'valor_energia_acl': 'Valor Energia ACL (R$)',
+        'valor_icms_acl': 'Valor ICMS ACL (R$)', 'valor_total_acl': 'Valor Total ACL (R$)',
+        'valor_total_acl_com_icms': 'Valor Total ACL c/ ICMS (R$)', 'nota_fiscal': 'Nota Fiscal', 'data_emissao': 'Data Emissão',
         'desconto_acl': 'Desconto ACL (R$)', 'credito_subvencao': 'Crédito Subvenção (R$)'
     }
     
     df = df.rename(columns=dicionario_nomes)
+    
+    # Tratamento de colunas nulas para evitar erros de soma
+    for col_acl in ['Valor Total ACL c/ ICMS (R$)', 'Valor Total ACL (R$)', 'Valor ICMS ACL (R$)']:
+        if col_acl in df.columns:
+            df[col_acl] = df[col_acl].fillna(0.0)
+        else:
+            df[col_acl] = 0.0
+
     df['Total Consumo'] = df['Consumo Ponta'] + df['Consumo F.Ponta']
     df['Valor Total Consumo'] = df['Valor Cons. Ponta TUSD'] + df['Valor Cons. Ponta TE'] + df['Valor Cons. F.Ponta TUSD'] + df['Valor Cons. F.Ponta TE']
     df['Valor Total Dem. Isenta'] = df['Valor Dem. Isenta Ponta'] + df['Valor Dem. Isenta F.Ponta']
@@ -259,6 +267,8 @@ def carregar_dados():
     df['Valor Total Dem. Reat.'] = df['Valor Dem. Reat. Ponta'] + df['Valor Dem. Reat. F.Ponta']
     df['Valor Total Dem.'] = df['Valor Dem. Ponta'] + df['Valor Dem. F.Ponta']
     df['Valor Total Reativo'] = df['Valor Total Cons. Reat.'] + df['Valor Total Dem. Reat.']
+    
+    # --- NOVA COLUNA: VALOR TOTAL DE ENERGIA (CPFL + CEMIG c/ ICMS) ---
     df['Valor Total de Energia'] = df['Valor Total Fatura'] + df['Valor Total ACL c/ ICMS (R$)']
 
     mes_map = {'JAN': '01', 'FEV': '02', 'MAR': '03', 'ABR': '04', 'MAI': '05', 'JUN': '06', 
@@ -277,8 +287,8 @@ def carregar_dados():
     ordem_colunas = [
         'id', 'Data Referência Oculta', 'UC', 'Nome da Unidade', 'Atividade', 'Classificação', 'Mês Referência', 'Vencimento CPFL', 'Vencimento ACL', 
         'Leitura Anterior', 'Leitura Atual', 'Próxima Leitura', 'Consumo Energia ACL (kWh)', 'Tarifa Energia ACL (R$/kWh)', 
-        'Valor Energia ACL (R$)', 'Valor Total ACL (R$)', 'Valor ICMS ACL (R$)', 'Valor Total ACL c/ ICMS (R$)', 
-        'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Consumo Ponta', 'Tarifa Cons. Ponta TUSD', 
+        'Valor Energia ACL (R$)', 'Valor ICMS ACL (R$)', 'Valor Total ACL (R$)', 'Valor Total ACL c/ ICMS (R$)', 'Valor Total Fatura', 
+        'Valor Total de Energia', 'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Consumo Ponta', 'Tarifa Cons. Ponta TUSD', 
         'Tarifa Trib. Cons. Ponta TUSD', 'Valor Cons. Ponta TUSD', 'Tarifa Cons. Ponta TE', 'Tarifa Trib. Cons. Ponta TE', 'Valor Cons. Ponta TE', 
         'Consumo F.Ponta', 'Tarifa Cons. F.Ponta TUSD', 'Tarifa Trib. Cons. F.Ponta TUSD', 'Valor Cons. F.Ponta TUSD', 'Tarifa Cons. F.Ponta TE', 
         'Tarifa Trib. Cons. F.Ponta TE', 'Valor Cons. F.Ponta TE', 'Bandeira', 'Adicional Bandeira', 'Dem. Contr. Ponta', 'Dem. Reg. Ponta', 
@@ -291,7 +301,7 @@ def carregar_dados():
         'Dem. Reat. Ponta', 'Tarifa Dem. Reat. Ponta', 'Tarifa Trib. Dem. Reat. Ponta', 'Valor Dem. Reat. Ponta', 'Dem. Reat. F.Ponta', 'Tarifa Dem. Reat. F.Ponta', 
         'Tarifa Trib. Dem. Reat. F.Ponta', 'Valor Dem. Reat. F.Ponta', 'Subtotal PDF', 'CIP', 'Retenção Cons. IRRF', 'Retenção Dem. IRRF', 'Valor PIS', 
         'Valor COFINS', 'Valor ICMS', 'Total Consumo', 'Valor Total Consumo', 'Valor Total Dem.', 'Valor Total Dem. Isenta', 'Valor Total Dem. Ultrap.', 
-        'Valor Total Desv. Dem.', 'Total Cons. Reat.', 'Valor Total Cons. Reat.', 'Valor Total Dem. Reat.', 'Valor Total Reativo', 'Valor Total Fatura', 
+        'Valor Total Desv. Dem.', 'Total Cons. Reat.', 'Valor Total Cons. Reat.', 'Valor Total Dem. Reat.', 'Valor Total Reativo', 
         'Nota Fiscal', 'Data Emissão', 'Data Cadastro'
     ]
     
@@ -835,6 +845,68 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     if valor_pagar_fim > 0: dados['valor_total_fatura'] = valor_pagar_fim
         
     return dados
+
+def calcular_economia_acl_vs_acr(df_completo):
+    """Calcula a economia real acumulada e mensal para unidades do Mercado Livre (ACL)."""
+    df_cativo = df_completo[~df_completo['Classificação'].str.contains('Livre|ACL', case=False, na=False)].copy()
+    df_livre = df_completo[df_completo['Classificação'].str.contains('Livre|ACL', case=False, na=False)].copy()
+    
+    if df_livre.empty:
+        return pd.DataFrame()
+
+    # 1. Extração da Tarifa Média de Energia (TE) do Cativo por Mês Referência (Opção A)
+    tarifas_te_mes = {}
+    for mes, grupo in df_cativo.groupby('Mês Referência'):
+        cons_p = grupo['Consumo Ponta'].sum()
+        val_te_p = grupo['Valor Cons. Ponta TE'].sum()
+        tarifa_te_p = (val_te_p / cons_p) if cons_p > 0 else 0.35  # Valor padrão de fallback se não houver registros
+
+        cons_fp = grupo['Consumo F.Ponta'].sum()
+        val_te_fp = grupo['Valor Cons. F.Ponta TE'].sum()
+        tarifa_te_fp = (val_te_fp / cons_fp) if cons_fp > 0 else 0.25
+
+        tarifas_te_mes[mes] = {'te_ponta': tarifa_te_p, 'te_fponta': tarifa_te_fp}
+
+    # 2. Reconstrução do Custo Simulado no Cativo (ACR)
+    simulacoes = []
+    for _, r in df_livre.iterrows():
+        mes = r['Mês Referência']
+        te_p = tarifas_te_mes.get(mes, {}).get('te_ponta', 0.35)
+        te_fp = tarifas_te_mes.get(mes, {}).get('te_fponta', 0.25)
+        
+        # A) Recomposição da Demanda TUSD (Elimina os 50% de desconto do ACL)
+        demanda_tusd_acr = (r['Valor Dem. Ponta'] + r['Valor Dem. F.Ponta']) * 2.0
+        
+        # B) Consumo TUSD (Mantém tarifa de transporte da CPFL)
+        consumo_tusd_acr = r['Valor Cons. Ponta TUSD'] + r['Valor Cons. F.Ponta TUSD']
+        
+        # C) Consumo TE Categoria Cativo (Simulado com tarifação da CPFL Cativo)
+        consumo_te_acr = (r['Consumo Ponta'] * te_p) + (r['Consumo F.Ponta'] * te_fp)
+        
+        # D) Encargos / CIP / Reativo
+        outros_encargos_acr = r['CIP'] + r['Valor Total Reativo'] + r['Adicional Bandeira']
+        
+        # E) Custo Total Simulado no Cativo
+        custo_simulado_acr = demanda_tusd_acr + consumo_tusd_acr + consumo_te_acr + outros_encargos_acr
+        
+        # F) Custo Real Pago no ACL (CPFL + CEMIG c/ ICMS)
+        custo_real_acl = r['Valor Total de Energia']
+        
+        # G) Economia Gerada
+        economia_rs = custo_simulado_acr - custo_real_acl
+        economia_pct = (economia_rs / custo_simulado_acr * 100) if custo_simulado_acr > 0 else 0.0
+        
+        simulacoes.append({
+            'UC': r['UC'],
+            'Nome da Unidade': r['Nome da Unidade'],
+            'Mês Referência': mes,
+            'Custo Real ACL (R$)': custo_real_acl,
+            'Custo Simulado ACR (R$)': custo_simulado_acr,
+            'Economia (R$)': economia_rs,
+            'Economia (%)': economia_pct
+        })
+
+    return pd.DataFrame(simulacoes)
     
 # --- 4. INTERFACE ---
 aba_dash, aba_controle, aba_dados, aba_espelho, aba_pdf, aba_config = st.tabs(["📈 Dashboard", "💰 Controle Financeiro", "📊 Banco de Dados", "📑 Espelho de Fatura", "📄 Upload de Fatura", "⚙️ Configurações"])
@@ -863,6 +935,7 @@ with aba_dash:
 
         # --- SELETORES SUPERIORES E BOTÃO DE RESET ---
         dic_parametros = {
+            "Valor Total de Energia (R$)": "Valor Total de Energia",
             "Consumo Total (kWh)": "Total Consumo",
             "Valor Total Fatura (R$)": "Valor Total Fatura",
             "Valor Total Consumo (R$)": "Valor Total Consumo",

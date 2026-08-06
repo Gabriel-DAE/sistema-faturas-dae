@@ -1748,7 +1748,7 @@ with aba_controle:
                         ids_pendentes_cemig = df_ids_cemig['id'].tolist()
                         
                         # Filtra o DataFrame principal que já está na memória
-                        df_cemig_envio = df[(df['id'].isin(ids_pendentes_cemig)) & (df['Mês Referência'].isin(meses_selecionados))].copy()
+                        df_cemig_envio = df_faturas[(df_faturas['id'].isin(ids_pendentes_cemig)) & (df_faturas['Mês Referência'].isin(meses_selecionados))].copy()
                         
                         if df_cemig_envio.empty:
                             st.success("🎉 Nenhuma fatura CEMIG pendente de envio para o(s) mês(es) selecionado(s).")

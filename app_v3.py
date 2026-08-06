@@ -180,7 +180,6 @@ def inicializar_banco():
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS valor_icms_acl DOUBLE PRECISION DEFAULT 0.0;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS valor_total_acl_com_icms DOUBLE PRECISION DEFAULT 0.0;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS irpj_retido_acl DOUBLE PRECISION DEFAULT 0.0;''')
-        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS data_envio_cemig DATE;''')
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS uc_cemig TEXT;''')
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS uc_antiga TEXT;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS uc_original TEXT;''')
@@ -1016,145 +1015,7 @@ def calcular_economia_acl_vs_acr(df_completo):
         })
 
     return pd.DataFrame(simulacoes)
-
-# ---------------------------------------------------------
-# FUNÇÕES DE RELATÓRIO E BANCO PARA A CEMIG
-# ---------------------------------------------------------
-def salvar_faturas_cemig_bd(ids_cemig):
-    """Marca as faturas da CEMIG como enviadas no banco."""
-    try:
-        from sqlalchemy import create_engine
-        # Usa a mesma lógica de conexão que você já possui
-        url_sqlalchemy = st.secrets["DATABASE_URL"].replace("postgresql://", "postgresql+psycopg://") if "DATABASE_URL" in st.secrets else ""
-        # Caso use psycopg puro:
-        conexao = obter_conexao()
-        c = conexao.cursor()
-        c.execute("""
-            UPDATE faturas_cpfl
-            SET data_envio_cemig = CURRENT_DATE
-            WHERE id = ANY(%s)
-        """, (ids_cemig,))
-        conexao.commit()
-        conexao.close()
-        st.cache_data.clear()
-    except Exception as e:
-        st.error(f"Erro ao salvar lote CEMIG no banco: {e}")
-
-def gerar_excel_financeiro_cemig(df_pendente):
-    """Gera o Excel específico para o pagamento da Comercializadora."""
-    import io
-    import pandas as pd
-    from openpyxl import Workbook
-    from openpyxl.styles import Font, PatternFill, Alignment
-
-    output = io.BytesIO()
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "Lote CEMIG"
-
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill("solid", fgColor="228B22") # Verde CEMIG
-    subtotal_font = Font(bold=True)
-    subtotal_fill = PatternFill("solid", fgColor="E2EFDA")
-    align_center = Alignment(horizontal="center", vertical="center")
-
-    cabecalhos = [
-        "Nota Fiscal CEMIG", "Data de Emissão", "Referência", "Vencimento",
-        "Unidade Consumidora CEMIG", "Valor Energia ACL", "IRPJ Retido ACL",
-        "Valor Total ACL", "Valor ICMS ACL"
-    ]
     
-    ws.append(cabecalhos)
-    for col_idx in range(1, len(cabecalhos) + 1):
-        cell = ws.cell(row=1, column=col_idx)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = align_center
-
-    row_idx = 2
-    
-    if df_pendente.empty:
-        ws.cell(row=2, column=1, value="Nenhuma fatura CEMIG pendente neste lote.")
-        wb.save(output)
-        return output.getvalue()
-
-    total_geral_energia = total_geral_irpj = total_geral_total_acl = total_geral_icms = 0.0
-
-    for setor, df_setor in df_pendente.groupby('Atividade'):
-        ws.cell(row=row_idx, column=1, value=f"SETOR: {setor}").font = Font(bold=True, size=12)
-        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=len(cabecalhos))
-        row_idx += 1
-        
-        df_setor['D_Ord'] = pd.to_datetime(df_setor['Vencimento ACL'], format='%d/%m/%Y', errors='coerce')
-        df_setor = df_setor.sort_values('D_Ord')
-        
-        for vencimento, df_venc in df_setor.groupby('Vencimento ACL'):
-            sub_energia = sub_irpj = sub_total_acl = sub_icms = 0.0
-            
-            for _, r in df_venc.iterrows():
-                ws.cell(row=row_idx, column=1, value=r.get('Nota Fiscal', ''))
-                ws.cell(row=row_idx, column=2, value=r.get('Data Emissão', ''))
-                ws.cell(row=row_idx, column=3, value=r.get('Mês Referência', ''))
-                ws.cell(row=row_idx, column=4, value=r.get('Vencimento ACL', ''))
-                ws.cell(row=row_idx, column=5, value=r.get('UC', ''))
-                
-                v_energia = float(r.get('Valor Energia ACL (R$)', 0.0))
-                v_irpj = float(r.get('IRPJ Retido ACL (R$)', 0.0))
-                v_total_acl = float(r.get('Valor Total ACL (R$)', 0.0))
-                v_icms = float(r.get('Valor ICMS ACL (R$)', 0.0))
-                
-                ws.cell(row=row_idx, column=6, value=v_energia).number_format = '#,##0.00'
-                ws.cell(row=row_idx, column=7, value=v_irpj).number_format = '#,##0.00'
-                ws.cell(row=row_idx, column=8, value=v_total_acl).number_format = '#,##0.00'
-                ws.cell(row=row_idx, column=9, value=v_icms).number_format = '#,##0.00'
-                
-                sub_energia += v_energia; sub_irpj += v_irpj
-                sub_total_acl += v_total_acl; sub_icms += v_icms
-                row_idx += 1
-                
-            ws.cell(row=row_idx, column=1, value=f"SUBTOTAL VENCIMENTO {vencimento}")
-            ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=5)
-            
-            for col in range(1, 6):
-                ws.cell(row=row_idx, column=col).fill = subtotal_fill
-                ws.cell(row=row_idx, column=col).font = subtotal_font
-                
-            for col, sub_v in zip(range(6, 10), [sub_energia, sub_irpj, sub_total_acl, sub_icms]):
-                c_sub = ws.cell(row=row_idx, column=col, value=sub_v)
-                c_sub.fill = subtotal_fill
-                c_sub.font = subtotal_font
-                c_sub.number_format = '#,##0.00'
-                
-            row_idx += 2
-            total_geral_energia += sub_energia; total_geral_irpj += sub_irpj
-            total_geral_total_acl += sub_total_acl; total_geral_icms += sub_icms
-
-    row_idx += 1
-    ws.cell(row=row_idx, column=1, value="TOTAL GERAL LOTE CEMIG").font = Font(bold=True, size=12)
-    ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=5)
-    
-    for col, tot_v in zip(range(6, 10), [total_geral_energia, total_geral_irpj, total_geral_total_acl, total_geral_icms]):
-        c_tot = ws.cell(row=row_idx, column=col, value=tot_v)
-        c_tot.font = Font(bold=True)
-        c_tot.fill = PatternFill("solid", fgColor="B8CCE4")
-        c_tot.number_format = '#,##0.00'
-        
-    for c in range(1, 6):
-        ws.cell(row=row_idx, column=c).fill = PatternFill("solid", fgColor="B8CCE4")
-
-    for col in ws.columns:
-        max_length = 0
-        column = col[0].column_letter
-        for cell in col:
-            try:
-                if cell.value and len(str(cell.value)) > max_length:
-                    max_length = len(str(cell.value))
-            except: pass
-        ws.column_dimensions[column].width = max_length + 2
-
-    wb.save(output)
-    return output.getvalue()
-
 # --- 4. INTERFACE ---
 aba_dash, aba_controle, aba_dados, aba_espelho, aba_pdf, aba_config = st.tabs(["📈 Dashboard", "💰 Controle Financeiro", "📊 Banco de Dados", "📑 Espelho de Fatura", "📄 Upload de Fatura", "⚙️ Configurações"])
 
@@ -1460,321 +1321,267 @@ with aba_controle:
 
             # --- SUB-ABA 1: GERADOR DE RELATÓRIO ---
             with tab_relatorio:
-                st.markdown("### 📊 Relatórios para Pagamento")
+                # Filtro de segurança: Isola estritamente as faturas da CPFL para o fechamento financeiro
+                df_mes_cpfl = df_mes[df_mes['Classificação'] != 'Mercado Livre - ACL'].copy()
                 
-                # CRIAMOS AS DUAS SUB-ABAS INDEPENDENTES
-                aba_cpfl, aba_cemig = st.tabs(["⚡ Relatório Financeiro CPFL", "🏢 Relatório Financeiro CEMIG"])
+                # Busca faturas já enviadas para os meses selecionados
+                placeholders_mes = ','.join(['%s'] * len(meses_selecionados))
+                df_enviados = pd.read_sql_query(
+                    f"SELECT id, unidade_consumidora, mes_referencia, data_envio, valor_fatura FROM historico_financeiro WHERE mes_referencia IN ({placeholders_mes})", 
+                    conexao, 
+                    params=tuple(meses_selecionados)
+                )
+                    
+                # 1. Criamos uma chave única juntando UC e Mês para que o envio de um mês não oculte o outro
+                df_mes_cpfl['Chave_Fatura'] = df_mes_cpfl['UC'].astype(str) + "_" + df_mes_cpfl['Mês Referência'].astype(str)
+                df_enviados['Chave_Fatura'] = df_enviados['unidade_consumidora'].astype(str) + "_" + df_enviados['mes_referencia'].astype(str)
                 
-                # =========================================================
-                # 1. ABA DO RELATÓRIO DA CPFL (SUA LÓGICA INTACTA)
-                # =========================================================
-                with aba_cpfl:
-                    # Filtro de segurança: Isola estritamente as faturas da CPFL para o fechamento financeiro
-                    df_mes_cpfl = df_mes[df_mes['Classificação'] != 'Mercado Livre - ACL'].copy()
+                faturas_ja_enviadas = df_enviados['Chave_Fatura'].tolist()
+                
+                # 2. Filtra as faturas exatas (UC + Mês) que ainda não foram enviadas
+                df_pendente_envio = df_mes_cpfl[~df_mes_cpfl['Chave_Fatura'].isin(faturas_ja_enviadas)].copy()
+                
+                if not df_pendente_envio.empty:
+                    # Mapeamento da coluna ativa de vencimento
+                    col_venc_ativa = 'Vencimento CPFL' if 'Vencimento CPFL' in df_pendente_envio.columns else 'Vencimento'
                     
-                    # Busca faturas já enviadas para os meses selecionados
-                    placeholders_mes = ','.join(['%s'] * len(meses_selecionados))
-                    df_enviados = pd.read_sql_query(
-                        f"SELECT id, unidade_consumidora, mes_referencia, data_envio, valor_fatura FROM historico_financeiro WHERE mes_referencia IN ({placeholders_mes})", 
-                        conexao, 
-                        params=tuple(meses_selecionados)
-                    )
-                        
-                    # 1. Criamos uma chave única juntando UC e Mês para que o envio de um mês não oculte o outro
-                    df_mes_cpfl['Chave_Fatura'] = df_mes_cpfl['UC'].astype(str) + "_" + df_mes_cpfl['Mês Referência'].astype(str)
-                    df_enviados['Chave_Fatura'] = df_enviados['unidade_consumidora'].astype(str) + "_" + df_enviados['mes_referencia'].astype(str)
-                    
-                    faturas_ja_enviadas = df_enviados['Chave_Fatura'].tolist()
-                    
-                    # 2. Filtra as faturas exatas (UC + Mês) que ainda não foram enviadas
-                    df_pendente_envio = df_mes_cpfl[~df_mes_cpfl['Chave_Fatura'].isin(faturas_ja_enviadas)].copy()
-                    
-                    if not df_pendente_envio.empty:
-                        # Mapeamento da coluna ativa de vencimento
-                        col_venc_ativa = 'Vencimento CPFL' if 'Vencimento CPFL' in df_pendente_envio.columns else 'Vencimento'
-                        
-                        df_pendente_envio['Data_Ord'] = pd.to_datetime(df_pendente_envio[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
-                        df_pendente_envio = df_pendente_envio.sort_values('Data_Ord')
+                    df_pendente_envio['Data_Ord'] = pd.to_datetime(df_pendente_envio[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
+                    df_pendente_envio = df_pendente_envio.sort_values('Data_Ord')
 
-                        # Recuperando a lógica do Subtotal
-                        cols_energia = ['Valor Total Consumo', 'Valor Total Dem.', 'Valor Total Dem. Isenta', 'Valor Total Dem. Ultrap.', 'Valor Total Reativo', 'Adicional Bandeira']
-                        cols_existentes = [c for c in cols_energia if c in df_pendente_envio.columns]
+                    # Recuperando a lógica do Subtotal
+                    cols_energia = ['Valor Total Consumo', 'Valor Total Dem.', 'Valor Total Dem. Isenta', 'Valor Total Dem. Ultrap.', 'Valor Total Reativo', 'Adicional Bandeira']
+                    cols_existentes = [c for c in cols_energia if c in df_pendente_envio.columns]
+                    
+                    if 'Subtotal PDF' in df_pendente_envio.columns:
+                        df_pendente_envio['Subtotal'] = df_pendente_envio.apply(lambda r: r['Subtotal PDF'] if pd.notnull(r['Subtotal PDF']) and r['Subtotal PDF'] > 0 else r[cols_existentes].sum(), axis=1)
+                    else:
+                        df_pendente_envio['Subtotal'] = df_pendente_envio[cols_existentes].sum(axis=1)
+
+                    st.info(f"Existem **{len(df_pendente_envio)}** faturas da CPFL prontas para fechamento de lote.")
+
+                    # --- EXIBIÇÃO NA TELA E PREPARAÇÃO DOS DADOS ---
+                    colunas_banco_origem = [
+                        'Nota Fiscal', 'Data Emissão', 'UC', 'Mês Referência', col_venc_ativa, 
+                        'Subtotal', 'CIP', 'Retenção Cons. IRRF', 'Retenção Dem. IRRF', 
+                        'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Valor Total Fatura'
+                    ]
+                    
+                    mapeamento_cabecalhos = {
+                        'UC': 'Instalação',
+                        'Mês Referência': 'Referência',
+                        col_venc_ativa: 'Vencimento',
+                        'Retenção Cons. IRRF': 'Valor Cons. IRRF',
+                        'Retenção Dem. IRRF': 'Valor Dem. IRRF',
+                        'Desconto ACL (R$)': 'Desconto ACL',
+                        'Crédito Subvenção (R$)': 'Crédito Subvenção'
+                    }
+
+                    for atividade in sorted(df_pendente_envio['Atividade'].unique()):
+                        with st.expander(f"🏢 SETOR: {atividade.upper()}", expanded=True):
+                            df_ativ = df_pendente_envio[df_pendente_envio['Atividade'] == atividade].copy()
+                            
+                            st.markdown("##### 📝 Detalhamento de faturas")
+                            df_detalhe = df_ativ[colunas_banco_origem].rename(columns=mapeamento_cabecalhos).copy()
+                            
+                            # Formata as colunas que são de valor (dinheiro)
+                            colunas_dinheiro = ['Subtotal', 'CIP', 'Valor Cons. IRRF', 'Valor Dem. IRRF', 'Desconto ACL', 'Crédito Subvenção', 'Valor Total Fatura']
+                            for col in colunas_dinheiro:
+                                df_detalhe[col] = df_detalhe[col].apply(lambda x: f"R$ {float(x):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notnull(x) else "R$ 0,00")
+                            
+                            st.dataframe(df_detalhe, hide_index=True, use_container_width=True)
+                            
+                            st.markdown("##### 📊 Resumo de pagamentos por data")
+                            df_resumo = df_ativ.groupby(col_venc_ativa)['Valor Total Fatura'].sum().reset_index()
+                            df_resumo['D_Ord'] = pd.to_datetime(df_resumo[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
+                            df_resumo = df_resumo.sort_values('D_Ord').drop(columns=['D_Ord'])
+                            df_res_show = df_resumo.copy()
+                            df_res_show.columns = ['Vencimento', 'Valor Total']
+                            df_res_show['Valor Total'] = df_res_show['Valor Total'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                            st.dataframe(df_res_show, hide_index=True, use_container_width=True)
+
+                    # --- GERAÇÃO DO EXCEL EM MEMÓRIA ---
+                    def finalizar_lote_db(dados, col_venc):
+                        conn = obter_conexao()
+                        cursor = conn.cursor()
+                        for _, row in dados.iterrows():
+                            cursor.execute(
+                                "INSERT INTO historico_financeiro (unidade_consumidora, mes_referencia, valor_fatura, vencimento) VALUES (%s, %s, %s, %s)",
+                                (row['UC'], row['Mês Referência'], row['Valor Total Fatura'], row[col_venc])
+                            )
+                        conn.commit()
+                        conn.close()
+
+                    buffer = io.BytesIO()
+                    with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+                        pd.DataFrame().to_excel(writer, index=False, header=False, sheet_name='Relatorio_Financeiro')
+                        ws = writer.sheets['Relatorio_Financeiro']
                         
-                        if 'Subtotal PDF' in df_pendente_envio.columns:
-                            df_pendente_envio['Subtotal'] = df_pendente_envio.apply(lambda r: r['Subtotal PDF'] if pd.notnull(r['Subtotal PDF']) and r['Subtotal PDF'] > 0 else r[cols_existentes].sum(), axis=1)
-                        else:
-                            df_pendente_envio['Subtotal'] = df_pendente_envio[cols_existentes].sum(axis=1)
-
-                        st.info(f"Existem **{len(df_pendente_envio)}** faturas da CPFL prontas para fechamento de lote.")
-
-                        # --- EXIBIÇÃO NA TELA E PREPARAÇÃO DOS DADOS ---
-                        colunas_banco_origem = [
-                            'Nota Fiscal', 'Data Emissão', 'UC', 'Mês Referência', col_venc_ativa, 
-                            'Subtotal', 'CIP', 'Retenção Cons. IRRF', 'Retenção Dem. IRRF', 
-                            'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Valor Total Fatura'
+                        header_fill = PatternFill(start_color="002060", fill_type="solid")
+                        sector_fill = PatternFill(start_color="D9E1F2", fill_type="solid")
+                        font_white = Font(bold=True, color="FFFFFF")
+                        font_bold = Font(bold=True)
+                        center_align = Alignment(horizontal="center", vertical="center")
+                        
+                        # Colunas exatas para o Excel (Total de 12 colunas)
+                        colunas_excel = [
+                            'Nota Fiscal', 'Data Emissão', 'Instalação', 'Referência', 'Vencimento', 
+                            'Subtotal', 'CIP', 'Valor Cons. IRRF', 'Valor Dem. IRRF', 
+                            'Desconto ACL', 'Crédito Subvenção', 'Valor Total Fatura'
                         ]
                         
-                        mapeamento_cabecalhos = {
-                            'UC': 'Instalação',
-                            'Mês Referência': 'Referência',
-                            col_venc_ativa: 'Vencimento',
-                            'Retenção Cons. IRRF': 'Valor Cons. IRRF',
-                            'Retenção Dem. IRRF': 'Valor Dem. IRRF',
-                            'Desconto ACL (R$)': 'Desconto ACL',
-                            'Crédito Subvenção (R$)': 'Crédito Subvenção'
-                        }
-
+                        row_idx = 1
+                        
                         for atividade in sorted(df_pendente_envio['Atividade'].unique()):
-                            with st.expander(f"🏢 SETOR: {atividade.upper()}", expanded=True):
-                                df_ativ = df_pendente_envio[df_pendente_envio['Atividade'] == atividade].copy()
-                                
-                                st.markdown("##### 📝 Detalhamento de faturas")
-                                df_detalhe = df_ativ[colunas_banco_origem].rename(columns=mapeamento_cabecalhos).copy()
-                                
-                                # Formata as colunas que são de valor (dinheiro)
-                                colunas_dinheiro = ['Subtotal', 'CIP', 'Valor Cons. IRRF', 'Valor Dem. IRRF', 'Desconto ACL', 'Crédito Subvenção', 'Valor Total Fatura']
-                                for col in colunas_dinheiro:
-                                    df_detalhe[col] = df_detalhe[col].apply(lambda x: f"R$ {float(x):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notnull(x) else "R$ 0,00")
-                                
-                                st.dataframe(df_detalhe, hide_index=True, use_container_width=True)
-                                
-                                st.markdown("##### 📊 Resumo de pagamentos por data")
-                                df_resumo = df_ativ.groupby(col_venc_ativa)['Valor Total Fatura'].sum().reset_index()
-                                df_resumo['D_Ord'] = pd.to_datetime(df_resumo[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
-                                df_resumo = df_resumo.sort_values('D_Ord').drop(columns=['D_Ord'])
-                                df_res_show = df_resumo.copy()
-                                df_res_show.columns = ['Vencimento', 'Valor Total']
-                                df_res_show['Valor Total'] = df_res_show['Valor Total'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                                st.dataframe(df_res_show, hide_index=True, use_container_width=True)
-
-                        # --- GERAÇÃO DO EXCEL EM MEMÓRIA ---
-                        def finalizar_lote_db(dados, col_venc):
-                            conn = obter_conexao()
-                            cursor = conn.cursor()
-                            for _, row in dados.iterrows():
-                                cursor.execute(
-                                    "INSERT INTO historico_financeiro (unidade_consumidora, mes_referencia, valor_fatura, vencimento) VALUES (%s, %s, %s, %s)",
-                                    (row['UC'], row['Mês Referência'], row['Valor Total Fatura'], row[col_venc])
-                                )
-                            conn.commit()
-                            conn.close()
-
-                        buffer = io.BytesIO()
-                        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-                            pd.DataFrame().to_excel(writer, index=False, header=False, sheet_name='Relatorio_Financeiro')
-                            ws = writer.sheets['Relatorio_Financeiro']
+                            df_ativ = df_pendente_envio[df_pendente_envio['Atividade'] == atividade].copy()
                             
-                            header_fill = PatternFill(start_color="002060", fill_type="solid")
-                            sector_fill = PatternFill(start_color="D9E1F2", fill_type="solid")
-                            font_white = Font(bold=True, color="FFFFFF")
-                            font_bold = Font(bold=True)
-                            center_align = Alignment(horizontal="center", vertical="center")
-                            
-                            # Colunas exatas para o Excel (Total de 12 colunas)
-                            colunas_excel = [
-                                'Nota Fiscal', 'Data Emissão', 'Instalação', 'Referência', 'Vencimento', 
-                                'Subtotal', 'CIP', 'Valor Cons. IRRF', 'Valor Dem. IRRF', 
-                                'Desconto ACL', 'Crédito Subvenção', 'Valor Total Fatura'
-                            ]
-                            
-                            row_idx = 1
-                            
-                            for atividade in sorted(df_pendente_envio['Atividade'].unique()):
-                                df_ativ = df_pendente_envio[df_pendente_envio['Atividade'] == atividade].copy()
-                                
-                                # O mesclado agora vai até a coluna 12
-                                ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=12)
-                                c_setor = ws.cell(row=row_idx, column=1, value=f"SETOR: {atividade.upper()}")
-                                c_setor.fill = sector_fill; c_setor.font = font_bold; c_setor.alignment = center_align
-                                row_idx += 1
-                                
-                                for col_num, col_name in enumerate(colunas_excel, 1):
-                                    c_head = ws.cell(row=row_idx, column=col_num, value=col_name)
-                                    c_head.fill = header_fill; c_head.font = font_white; c_head.alignment = center_align
-                                row_idx += 1
-                                
-                                for _, r in df_ativ.iterrows():
-                                    # Nota Fiscal e Data
-                                    ws.cell(row=row_idx, column=1, value=str(r['Nota Fiscal']) if pd.notnull(r['Nota Fiscal']) else "")
-                                    ws.cell(row=row_idx, column=2, value=str(r['Data Emissão']) if pd.notnull(r['Data Emissão']) else "")
-                                    
-                                    # Instalação
-                                    try:
-                                        uc_segura = int(float(r['UC']))
-                                    except (ValueError, TypeError):
-                                        uc_segura = str(r['UC']).strip()
-                                    ws.cell(row=row_idx, column=3, value=uc_segura)
-                                    
-                                    # Referência
-                                    ws.cell(row=row_idx, column=4, value=str(r['Mês Referência']))
-                                    
-                                    # Vencimento
-                                    try:
-                                        c_venc = ws.cell(row=row_idx, column=5, value=pd.to_datetime(r[col_venc_ativa], format='%d/%m/%Y'))
-                                        c_venc.number_format = 'DD/MM/YYYY'
-                                    except:
-                                        ws.cell(row=row_idx, column=5, value=str(r[col_venc_ativa]))
-                                    
-                                    # Colunas de Dinheiro (Da 6 até a 12)
-                                    colunas_dinheiro_banco = ['Subtotal', 'CIP', 'Retenção Cons. IRRF', 'Retenção Dem. IRRF', 'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Valor Total Fatura']
-                                    for i, col_name in enumerate(colunas_dinheiro_banco, 6):
-                                        val = float(r[col_name]) if pd.notnull(r[col_name]) and str(r[col_name]).strip() != "" else 0.0
-                                        c_val = ws.cell(row=row_idx, column=i, value=val)
-                                        c_val.number_format = 'R$ #,##0.00'
-                                    row_idx += 1
-                                
-                                row_idx += 1
-                                
-                                # Tabelas de Resumo do Excel (Ocupam apenas as 2 primeiras colunas)
-                                ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
-                                c_res = ws.cell(row=row_idx, column=1, value=f"RESUMO: {atividade.upper()}")
-                                c_res.fill = sector_fill; c_res.font = font_bold; c_res.alignment = center_align
-                                row_idx += 1
-                                
-                                c_rh1 = ws.cell(row=row_idx, column=1, value="Vencimento")
-                                c_rh2 = ws.cell(row=row_idx, column=2, value="Valor Total")
-                                for cell in [c_rh1, c_rh2]:
-                                    cell.fill = header_fill; cell.font = font_white; cell.alignment = center_align
-                                row_idx += 1
-                                
-                                df_res = df_ativ.groupby(col_venc_ativa)['Valor Total Fatura'].sum().reset_index()
-                                df_res['D_Ord'] = pd.to_datetime(df_res[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
-                                for _, rs in df_res.sort_values('D_Ord').iterrows():
-                                    try:
-                                        c_rv = ws.cell(row=row_idx, column=1, value=pd.to_datetime(rs[col_venc_ativa], format='%d/%m/%Y'))
-                                        c_rv.number_format = 'DD/MM/YYYY'
-                                    except:
-                                        ws.cell(row=row_idx, column=1, value=str(rs[col_venc_ativa]))
-                                    
-                                    c_rt = ws.cell(row=row_idx, column=2, value=float(rs['Valor Total Fatura']))
-                                    c_rt.number_format = 'R$ #,##0.00'
-                                    row_idx += 1
-                                
-                                row_idx += 2
-                            
-                            # Resumo Geral Final
-                            ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
-                            c_rg = ws.cell(row=row_idx, column=1, value="RESUMO GERAL (TODOS OS SETORES)")
-                            c_rg.fill = sector_fill; c_rg.font = font_bold; c_rg.alignment = center_align
+                            # O mesclado agora vai até a coluna 12
+                            ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=12)
+                            c_setor = ws.cell(row=row_idx, column=1, value=f"SETOR: {atividade.upper()}")
+                            c_setor.fill = sector_fill; c_setor.font = font_bold; c_setor.alignment = center_align
                             row_idx += 1
                             
-                            c_gh1 = ws.cell(row=row_idx, column=1, value="Vencimento")
-                            c_gh2 = ws.cell(row=row_idx, column=2, value="Valor Total")
-                            for cell in [c_gh1, c_gh2]:
+                            for col_num, col_name in enumerate(colunas_excel, 1):
+                                c_head = ws.cell(row=row_idx, column=col_num, value=col_name)
+                                c_head.fill = header_fill; c_head.font = font_white; c_head.alignment = center_align
+                            row_idx += 1
+                            
+                            for _, r in df_ativ.iterrows():
+                                # Nota Fiscal e Data
+                                ws.cell(row=row_idx, column=1, value=str(r['Nota Fiscal']) if pd.notnull(r['Nota Fiscal']) else "")
+                                ws.cell(row=row_idx, column=2, value=str(r['Data Emissão']) if pd.notnull(r['Data Emissão']) else "")
+                                
+                                # Instalação
+                                try:
+                                    uc_segura = int(float(r['UC']))
+                                except (ValueError, TypeError):
+                                    uc_segura = str(r['UC']).strip()
+                                ws.cell(row=row_idx, column=3, value=uc_segura)
+                                
+                                # Referência
+                                ws.cell(row=row_idx, column=4, value=str(r['Mês Referência']))
+                                
+                                # Vencimento
+                                try:
+                                    c_venc = ws.cell(row=row_idx, column=5, value=pd.to_datetime(r[col_venc_ativa], format='%d/%m/%Y'))
+                                    c_venc.number_format = 'DD/MM/YYYY'
+                                except:
+                                    ws.cell(row=row_idx, column=5, value=str(r[col_venc_ativa]))
+                                
+                                # Colunas de Dinheiro (Da 6 até a 12)
+                                colunas_dinheiro_banco = ['Subtotal', 'CIP', 'Retenção Cons. IRRF', 'Retenção Dem. IRRF', 'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Valor Total Fatura']
+                                for i, col_name in enumerate(colunas_dinheiro_banco, 6):
+                                    val = float(r[col_name]) if pd.notnull(r[col_name]) and str(r[col_name]).strip() != "" else 0.0
+                                    c_val = ws.cell(row=row_idx, column=i, value=val)
+                                    c_val.number_format = 'R$ #,##0.00'
+                                row_idx += 1
+                            
+                            row_idx += 1
+                            
+                            # Tabelas de Resumo do Excel (Ocupam apenas as 2 primeiras colunas)
+                            ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
+                            c_res = ws.cell(row=row_idx, column=1, value=f"RESUMO: {atividade.upper()}")
+                            c_res.fill = sector_fill; c_res.font = font_bold; c_res.alignment = center_align
+                            row_idx += 1
+                            
+                            c_rh1 = ws.cell(row=row_idx, column=1, value="Vencimento")
+                            c_rh2 = ws.cell(row=row_idx, column=2, value="Valor Total")
+                            for cell in [c_rh1, c_rh2]:
                                 cell.fill = header_fill; cell.font = font_white; cell.alignment = center_align
                             row_idx += 1
                             
-                            df_g = df_pendente_envio.groupby(col_venc_ativa)['Valor Total Fatura'].sum().reset_index()
-                            df_g['D'] = pd.to_datetime(df_g[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
-                            for _, res_g in df_g.sort_values('D').iterrows():
+                            df_res = df_ativ.groupby(col_venc_ativa)['Valor Total Fatura'].sum().reset_index()
+                            df_res['D_Ord'] = pd.to_datetime(df_res[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
+                            for _, rs in df_res.sort_values('D_Ord').iterrows():
                                 try:
-                                    c_gv = ws.cell(row=row_idx, column=1, value=pd.to_datetime(res_g[col_venc_ativa], format='%d/%m/%Y'))
-                                    c_gv.number_format = 'DD/MM/YYYY'
+                                    c_rv = ws.cell(row=row_idx, column=1, value=pd.to_datetime(rs[col_venc_ativa], format='%d/%m/%Y'))
+                                    c_rv.number_format = 'DD/MM/YYYY'
                                 except:
-                                    ws.cell(row=row_idx, column=1, value=str(res_g[col_venc_ativa]))
+                                    ws.cell(row=row_idx, column=1, value=str(rs[col_venc_ativa]))
                                 
-                                c_gt = ws.cell(row=row_idx, column=2, value=float(res_g['Valor Total Fatura']))
-                                c_gt.number_format = 'R$ #,##0.00'
+                                c_rt = ws.cell(row=row_idx, column=2, value=float(rs['Valor Total Fatura']))
+                                c_rt.number_format = 'R$ #,##0.00'
                                 row_idx += 1
+                            
+                            row_idx += 2
+                        
+                        # Resumo Geral Final
+                        ws.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=2)
+                        c_rg = ws.cell(row=row_idx, column=1, value="RESUMO GERAL (TODOS OS SETORES)")
+                        c_rg.fill = sector_fill; c_rg.font = font_bold; c_rg.alignment = center_align
+                        row_idx += 1
+                        
+                        c_gh1 = ws.cell(row=row_idx, column=1, value="Vencimento")
+                        c_gh2 = ws.cell(row=row_idx, column=2, value="Valor Total")
+                        for cell in [c_gh1, c_gh2]:
+                            cell.fill = header_fill; cell.font = font_white; cell.alignment = center_align
+                        row_idx += 1
+                        
+                        df_g = df_pendente_envio.groupby(col_venc_ativa)['Valor Total Fatura'].sum().reset_index()
+                        df_g['D'] = pd.to_datetime(df_g[col_venc_ativa], format='%d/%m/%Y', errors='coerce')
+                        for _, res_g in df_g.sort_values('D').iterrows():
+                            try:
+                                c_gv = ws.cell(row=row_idx, column=1, value=pd.to_datetime(res_g[col_venc_ativa], format='%d/%m/%Y'))
+                                c_gv.number_format = 'DD/MM/YYYY'
+                            except:
+                                ws.cell(row=row_idx, column=1, value=str(res_g[col_venc_ativa]))
+                            
+                            c_gt = ws.cell(row=row_idx, column=2, value=float(res_g['Valor Total Fatura']))
+                            c_gt.number_format = 'R$ #,##0.00'
+                            row_idx += 1
 
-                            # Ajuste de largura das colunas do Excel
-                            from openpyxl.utils import get_column_letter
-                            for i, col in enumerate(ws.columns, 1):
-                                max_l = 0
-                                col_letter = get_column_letter(i)
-                                for cell in col:
-                                    try:
-                                        if cell.value: max_l = max(max_l, len(str(cell.value)))
-                                    except: pass
-                                ws.column_dimensions[col_letter].width = max_l + 4
+                        # Ajuste de largura das colunas do Excel
+                        from openpyxl.utils import get_column_letter
+                        for i, col in enumerate(ws.columns, 1):
+                            max_l = 0
+                            col_letter = get_column_letter(i)
+                            for cell in col:
+                                try:
+                                    if cell.value: max_l = max(max_l, len(str(cell.value)))
+                                except: pass
+                            ws.column_dimensions[col_letter].width = max_l + 4
 
-                        nome_arquivo_excel = f"Financeiro_CPFL_{'_'.join([m.replace('/', '_') for m in meses_selecionados])}.xlsx" if len(meses_selecionados) <= 3 else "Financeiro_CPFL_Lote_Multiplo.xlsx"
+                    nome_arquivo_excel = f"Financeiro_{'_'.join([m.replace('/', '_') for m in meses_selecionados])}.xlsx" if len(meses_selecionados) <= 3 else "Financeiro_Lote_Multiplo.xlsx"
 
-                        col_btn_gerar, _, _ = st.columns([1, 2, 2])
-                        with col_btn_gerar:
-                            st.download_button(
-                                label="🚀 Gerar Relatório CPFL (.xlsx)",
-                                data=buffer.getvalue(),
-                                file_name=nome_arquivo_excel,
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                type="primary",
-                                on_click=finalizar_lote_db,
-                                args=(df_pendente_envio, col_venc_ativa),
-                                use_container_width=True
-                            )
+                    col_btn_gerar, _, _ = st.columns([1, 2, 2])
+                    with col_btn_gerar:
+                        st.download_button(
+                            label="🚀 Gerar Relatório Financeiro",
+                            data=buffer.getvalue(),
+                            file_name=nome_arquivo_excel,
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            type="primary",
+                            on_click=finalizar_lote_db,
+                            args=(df_pendente_envio, col_venc_ativa),
+                            use_container_width=True
+                        )
+                else:
+                    st.success(f"✅ Não existe pendência de envio para as faturas da CPFL no(s) mês(es) selecionado(s).")
+
+                st.divider()
+                with st.expander("📜 Gestão de Envios (Visualizar ou Reverter)"):
+                    if not df_enviados.empty:
+                        df_hist_nomes = pd.merge(df_enviados, df_faturas[['UC', 'Nome da Unidade']].drop_duplicates(), left_on='unidade_consumidora', right_on='UC', how='left')
+                        df_hist_nomes['data_envio'] = pd.to_datetime(df_hist_nomes['data_envio']).dt.strftime('%d/%m/%Y %H:%M')
+                        st.write("Selecione para **REVERTER** (faturas voltam para a lista acima):")
+                        
+                        evento_hist = st.dataframe(
+                            df_hist_nomes[['id', 'Nome da Unidade', 'unidade_consumidora', 'mes_referencia', 'data_envio', 'valor_fatura']],
+                            use_container_width=True, hide_index=True, on_select="rerun", selection_mode="multi-row",
+                            column_config={"id": None, "valor_fatura": st.column_config.NumberColumn("Valor (R$)", format="%.2f")},
+                            key=f"tabela_reversao_{'_'.join(meses_selecionados)}"
+                        )
+                        
+                        if len(evento_hist.selection.rows) > 0:
+                            linhas_validas = [i for i in evento_hist.selection.rows if i < len(df_hist_nomes)]
+                            if len(linhas_validas) > 0:
+                                ids_reverter = [int(df_hist_nomes.iloc[i]['id']) for i in linhas_validas]
+                                if st.button(f"🔄 Reverter {len(ids_reverter)} selecionada(s)", type="secondary"):
+                                    cursor = conexao.cursor()
+                                    cursor.execute(f"DELETE FROM historico_financeiro WHERE id IN ({','.join(['%s']*len(ids_reverter))})", tuple(ids_reverter))
+                                    conexao.commit()
+                                    st.rerun()
                     else:
-                        st.success(f"✅ Não existe pendência de envio para as faturas da CPFL no(s) mês(es) selecionado(s).")
-
-                    st.divider()
-                    with st.expander("📜 Gestão de Envios (Visualizar ou Reverter)"):
-                        if not df_enviados.empty:
-                            df_hist_nomes = pd.merge(df_enviados, df_faturas[['UC', 'Nome da Unidade']].drop_duplicates(), left_on='unidade_consumidora', right_on='UC', how='left')
-                            df_hist_nomes['data_envio'] = pd.to_datetime(df_hist_nomes['data_envio']).dt.strftime('%d/%m/%Y %H:%M')
-                            st.write("Selecione para **REVERTER** (faturas voltam para a lista acima):")
-                            
-                            evento_hist = st.dataframe(
-                                df_hist_nomes[['id', 'Nome da Unidade', 'unidade_consumidora', 'mes_referencia', 'data_envio', 'valor_fatura']],
-                                use_container_width=True, hide_index=True, on_select="rerun", selection_mode="multi-row",
-                                column_config={"id": None, "valor_fatura": st.column_config.NumberColumn("Valor (R$)", format="%.2f")},
-                                key=f"tabela_reversao_{'_'.join(meses_selecionados)}"
-                            )
-                            
-                            if len(evento_hist.selection.rows) > 0:
-                                linhas_validas = [i for i in evento_hist.selection.rows if i < len(df_hist_nomes)]
-                                if len(linhas_validas) > 0:
-                                    ids_reverter = [int(df_hist_nomes.iloc[i]['id']) for i in linhas_validas]
-                                    if st.button(f"🔄 Reverter {len(ids_reverter)} selecionada(s)", type="secondary"):
-                                        cursor = conexao.cursor()
-                                        cursor.execute(f"DELETE FROM historico_financeiro WHERE id IN ({','.join(['%s']*len(ids_reverter))})", tuple(ids_reverter))
-                                        conexao.commit()
-                                        st.rerun()
-                        else:
-                            st.info("Nenhum envio da CPFL registrado para o(s) mês(es) selecionado(s).")
-
-                # =========================================================
-                # 2. ABA DO RELATÓRIO EXCLUSIVO DA CEMIG
-                # =========================================================
-                with aba_cemig:
-                    st.markdown("##### Faturas CEMIG (Energia) Pendentes")
-                    
-                    try:
-                        # Puxa do banco quem ainda NÃO teve a planilha CEMIG gerada
-                        query_cemig = """
-                            SELECT id FROM faturas_cpfl 
-                            WHERE data_envio_cemig IS NULL 
-                            AND classificacao ILIKE '%%Livre%%'
-                        """
-                        df_ids_cemig = pd.read_sql_query(query_cemig, conexao)
-                        ids_pendentes_cemig = df_ids_cemig['id'].tolist()
-                        
-                        # Filtra o DataFrame principal que já está na memória
-                        df_cemig_envio = df_faturas[(df_faturas['id'].isin(ids_pendentes_cemig)) & (df_faturas['Mês Referência'].isin(meses_selecionados))].copy()
-                        
-                        if df_cemig_envio.empty:
-                            st.success("🎉 Nenhuma fatura CEMIG pendente de envio para o(s) mês(es) selecionado(s).")
-                        else:
-                            st.dataframe(
-                                df_cemig_envio[['UC', 'Nome da Unidade', 'Mês Referência', 'Vencimento ACL', 'Valor Total ACL (R$)']], 
-                                hide_index=True, 
-                                use_container_width=True
-                            )
-                            
-                            excel_cemig = gerar_excel_financeiro_cemig(df_cemig_envio)
-                            lista_ids_cemig = df_cemig_envio['id'].tolist()
-                            nome_arquivo_cemig = "_".join([m.replace('/', '_') for m in meses_selecionados]) if len(meses_selecionados) <= 3 else "Lote_Multiplo"
-                            
-                            st.download_button(
-                                label="🚀 Baixar Lote CEMIG (.xlsx)",
-                                data=excel_cemig,
-                                file_name=f"Financeiro_CEMIG_{nome_arquivo_cemig}.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                type="primary",
-                                on_click=salvar_faturas_cemig_bd,
-                                args=(lista_ids_cemig,),
-                                use_container_width=True
-                            )
-                    except Exception as e:
-                        st.error(f"Erro ao carregar dados pendentes da CEMIG: {e}")
+                        st.info("Nenhum envio registrado para o(s) mês(es) selecionado(s).")
 
             # --- SUB-ABA 2: PENDÊNCIAS DE CARGA ---
             with tab_pendencias:
@@ -1957,102 +1764,39 @@ with aba_dados:
             ids_para_excluir = [int(df_filtrado.iloc[i]['id']) for i in linhas_selecionadas]
             qtd_selecionada = len(ids_para_excluir)
             
-            st.markdown(f"🔴 **{qtd_selecionada} Fatura(s) Selecionada(s)** para edição.")
-            
-            # --- 1. ESCOLHA DO TIPO DE EXCLUSÃO/LIMPEZA ---
-            tipo_exclusao = st.selectbox(
-                "O que você deseja fazer com as faturas selecionadas?",
-                [
-                    "🗑️ Excluir Linha Completa (Apagar TUDO do mês)",
-                    "🧹 Limpar apenas a CEMIG (Apagar a Fatura de Energia, manter TUSD)",
-                    "🧹 Limpar apenas a CPFL (Apagar a Fatura TUSD, manter Energia)"
-                ]
-            )
+            st.markdown(f"🔴 **{qtd_selecionada} Fatura(s) Selecionada(s)** para exclusão.")
             
             if st.session_state.get('confirmar_exclusao_ids') != ids_para_excluir:
-                if st.button("Executar Ação Selecionada", type="primary"):
+                if st.button("🗑️ Excluir Selecionadas"):
                     st.session_state['confirmar_exclusao_ids'] = ids_para_excluir
-                    st.session_state['tipo_exclusao_selecionado'] = tipo_exclusao
                     st.rerun()
             else:
-                tipo_acao_memoria = st.session_state.get('tipo_exclusao_selecionado', '')
-                
-                # --- AVISOS DE SEGURANÇA PERSONALIZADOS ---
-                if "Completa" in tipo_acao_memoria:
-                    st.warning(f"⚠️ TEM CERTEZA? Isso apagará permanentemente a linha inteira de {qtd_selecionada} fatura(s)!")
-                elif "CEMIG" in tipo_acao_memoria:
-                    st.warning(f"⚠️ TEM CERTEZA? Isso vai apagar apenas os valores da CEMIG de {qtd_selecionada} fatura(s).")
-                elif "CPFL" in tipo_acao_memoria:
-                    st.warning(f"⚠️ TEM CERTEZA? Isso vai apagar apenas os valores da CPFL de {qtd_selecionada} fatura(s).")
-
+                st.warning(f"⚠️ TEM CERTEZA? Isso apagará permanentemente {qtd_selecionada} fatura(s) do banco de dados!")
                 col1, col2, _ = st.columns([1, 1, 3]) 
                 
                 with col1:
-                    if st.button("✅ Sim, executar agora!", type="primary"):
-                        try:
-                            conexao = obter_conexao()
-                            c = conexao.cursor()
-                            
-                            # Preparação SQL para o Postgres (%s)
-                            placeholders = ','.join('%s' for _ in ids_para_excluir)
-                            
-                            # --- 2. AS 3 AÇÕES POSSÍVEIS ---
-                            if "Completa" in tipo_acao_memoria:
-                                query = f"DELETE FROM faturas_cpfl WHERE id IN ({placeholders})"
-                                c.execute(query, tuple(ids_para_excluir))
-                                msg_sucesso = f"✅ {qtd_selecionada} fatura(s) excluída(s) por completo!"
-
-                            elif "CEMIG" in tipo_acao_memoria:
-                                query = f"""
-                                    UPDATE faturas_cpfl SET
-                                        data_vencimento_acl = NULL, consumo_energia_acl_kwh = 0, tarifa_energia_acl = 0,
-                                        valor_energia_acl = 0, valor_icms_acl = 0, valor_total_acl = 0,
-                                        valor_total_acl_com_icms = 0, irpj_retido_acl = 0, desconto_acl = 0,
-                                        credito_subvencao = 0, data_envio_cemig = NULL
-                                    WHERE id IN ({placeholders})
-                                """
-                                c.execute(query, tuple(ids_para_excluir))
-                                msg_sucesso = f"✅ Dados da CEMIG removidos em {qtd_selecionada} fatura(s)!"
-
-                            elif "CPFL" in tipo_acao_memoria:
-                                query = f"""
-                                    UPDATE faturas_cpfl SET
-                                        data_vencimento = NULL, periodo_leitura_inicio = NULL, periodo_leitura_fim = NULL,
-                                        data_proxima_leitura = NULL, valor_total_fatura = 0, consumo_ponta = 0,
-                                        consumo_fora_ponta = 0, valor_dem_ponta = 0, valor_dem_fponta = 0,
-                                        demanda_registrada_ponta = 0, demanda_registrada_fora_ponta = 0,
-                                        demanda_ultrapassagem_ponta = 0, demanda_ultrapassagem_fora_ponta = 0,
-                                        valor_dem_ultrap_ponta = 0, valor_dem_ultrap_fponta = 0,
-                                        consumo_reativo_ponta = 0, consumo_reativo_fora_ponta = 0,
-                                        valor_cons_reativo_ponta = 0, valor_cons_reativo_fponta = 0,
-                                        demanda_reativa_ponta = 0, demanda_reativa_fora_ponta = 0,
-                                        valor_dem_reativa_ponta = 0, valor_dem_reativa_fponta = 0,
-                                        subtotal_fatura = 0, cip = 0, valor_total_pis = 0,
-                                        valor_total_cofins = 0, valor_total_icms = 0, data_envio_planilha = NULL
-                                    WHERE id IN ({placeholders})
-                                """
-                                c.execute(query, tuple(ids_para_excluir))
-                                msg_sucesso = f"✅ Dados da CPFL removidos em {qtd_selecionada} fatura(s)!"
-
-                            conexao.commit()
-                            conexao.close()
-                            
-                            carregar_dados.clear()
-                            
-                            st.session_state['confirmar_exclusao_ids'] = None
-                            st.session_state['tipo_exclusao_selecionado'] = None
-                            st.success(msg_sucesso)
-                            st.rerun()
-
-                        except Exception as e:
-                            st.error(f"Erro ao executar a ação no banco de dados: {e}")
-
+                    if st.button("✅ Sim, apagar agora!", type="primary"):
+                        conexao = obter_conexao()
+                        c = conexao.cursor()
+                        
+                        # Preparação SQL para o Postgres (%s)
+                        placeholders = ','.join('%s' for _ in ids_para_excluir)
+                        query_exclusao = f"DELETE FROM faturas_cpfl WHERE id IN ({placeholders})"
+                        
+                        c.execute(query_exclusao, tuple(ids_para_excluir))
+                        conexao.commit()
+                        conexao.close()
+                        
+                        carregar_dados.clear()
+                        
+                        st.session_state['confirmar_exclusao_ids'] = None
+                        st.success(f"{qtd_selecionada} fatura(s) excluída(s) com sucesso!")
+                        st.rerun()
                 with col2:
                     if st.button("❌ Cancelar"):
                         st.session_state['confirmar_exclusao_ids'] = None
-                        st.session_state['tipo_exclusao_selecionado'] = None
                         st.rerun()
-                        
+
         st.divider()
         @st.cache_data(show_spinner=False, ttl=120, max_entries=1)
         def gerar_excel_cache(df_para_excel):

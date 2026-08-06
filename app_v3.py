@@ -995,14 +995,12 @@ with aba_dash:
         # --- SELETORES SUPERIORES E BOTÃO DE RESET ---
         dic_parametros = {
             "Consumo Total (kWh)": "Total Consumo",
-            "Valor Total Fatura (R$)": "Valor Total Fatura",
+            "Valor Total de Energia (R$)": "Valor Total de Energia",
             "Valor Total Consumo (R$)": "Valor Total Consumo",
             "Valor Total Demanda (R$)": "Valor Total Dem.",
             "Valor Total Desv. Dem. (R$)": "Valor Total Desv. Dem.",
             "Valor Total Reativo (R$)": "Valor Total Reativo",
-            "Valor Estimado ACR (R$)": "Valor Estimado ACR",
             "Valor Economia ACL (R$)": "Valor Economia ACL",
-            "Valor Total de Energia (R$)": "Valor Total de Energia"
         }
         
         # Ajuste de layout: Indicador (2.5), Classificação (2.5), Espaço (4), Botão (1.5)

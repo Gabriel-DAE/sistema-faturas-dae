@@ -1647,26 +1647,103 @@ with aba_controle:
 
                     buffer_cemig = io.BytesIO()
                     with pd.ExcelWriter(buffer_cemig, engine='openpyxl') as writer:
-                        df_export_cemig = df_pend_cemig[colunas_banco_cemig].rename(columns=mapeamento_cemig)
-                        df_export_cemig.to_excel(writer, index=False, sheet_name='Relatorio_CEMIG')
+                        workbook = writer.book
+                        # Cria a aba do Excel manualmente
+                        worksheet = workbook.create_sheet('Relatorio_CEMIG')
                         
                         # --- ESTILIZAÇÃO DO EXCEL CEMIG ---
-                        workbook = writer.book
-                        worksheet = writer.sheets['Relatorio_CEMIG']
+                        header_fill_setor = PatternFill(start_color='00B050', end_color='00B050', fill_type='solid') # Verde Claro
+                        header_fill_colunas = PatternFill(start_color='008000', end_color='008000', fill_type='solid') # Verde Escuro
+                        header_font_branca = Font(bold=True, color='FFFFFF')
+                        header_font_preta = Font(bold=True, color='000000')
+                        alignment_center = Alignment(horizontal='center', vertical='center')
                         
-                        # Cores e Fontes (Fundo Verde Escuro, Letra Branca, Centralizado)
-                        header_fill = PatternFill(start_color='008000', end_color='008000', fill_type='solid')
-                        header_font = Font(bold=True, color='FFFFFF')
-                        header_alignment = Alignment(horizontal='center', vertical='center')
+                        row_idx = 1
+                        totais_gerais_cemig = {
+                            'Valor Energia ACL (R$)': 0, 
+                            'Valor ICMS ACL (R$)': 0, 
+                            'IRPJ Retido ACL (R$)': 0, 
+                            'Valor Total ACL (R$)': 0
+                        }
                         
-                        # Aplica o estilo na primeira linha (Cabeçalho)
-                        for cell in worksheet[1]:
-                            cell.fill = header_fill
-                            cell.font = header_font
-                            cell.alignment = header_alignment
-                            
-                        # Ajuste seguro da largura das colunas
                         from openpyxl.utils import get_column_letter
+                        
+                        # Agrupa as faturas da CEMIG pelo setor (Atividade)
+                        for setor, df_setor in df_pend_cemig.groupby('Atividade', dropna=False):
+                            setor_nome = str(setor).upper() if pd.notnull(setor) else "NÃO INFORMADO"
+                            
+                            # 1. Linha do Setor (Fundo Verde Claro, Texto Preto)
+                            ws_cell_setor = worksheet.cell(row=row_idx, column=1, value=f"SETOR: {setor_nome}")
+                            worksheet.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=len(colunas_banco_cemig))
+                            ws_cell_setor.fill = header_fill_setor
+                            ws_cell_setor.font = header_font_preta
+                            ws_cell_setor.alignment = alignment_center
+                            row_idx += 1
+                            
+                            # 2. Linha de Títulos das Colunas (Fundo Verde Escuro, Texto Branco)
+                            for col_idx, col_name in enumerate(colunas_banco_cemig, 1):
+                                cell = worksheet.cell(row=row_idx, column=col_idx, value=mapeamento_cemig.get(col_name, col_name))
+                                cell.fill = header_fill_colunas
+                                cell.font = header_font_branca
+                                cell.alignment = alignment_center
+                            row_idx += 1
+                            
+                            # 3. Inserção dos Dados
+                            totais_setor = {'Valor Energia ACL (R$)': 0, 'Valor ICMS ACL (R$)': 0, 'IRPJ Retido ACL (R$)': 0, 'Valor Total ACL (R$)': 0}
+                            
+                            for _, row in df_setor.iterrows():
+                                for col_idx, col_name in enumerate(colunas_banco_cemig, 1):
+                                    val = row[col_name]
+                                    cell = worksheet.cell(row=row_idx, column=col_idx, value=val)
+                                    
+                                    # Formatação de Moeda e Soma para as colunas financeiras
+                                    if col_name in totais_setor:
+                                        valor_num = float(val) if pd.notnull(val) else 0.0
+                                        cell.value = valor_num
+                                        cell.number_format = 'R$ #,##0.00'
+                                        totais_setor[col_name] += valor_num
+                                        totais_gerais_cemig[col_name] += valor_num
+                                row_idx += 1
+                                
+                            # 4. Totalizador do Setor
+                            worksheet.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=5) 
+                            cell_total_setor = worksheet.cell(row=row_idx, column=1, value=f"TOTAL {setor_nome}")
+                            cell_total_setor.fill = header_fill_colunas
+                            cell_total_setor.font = header_font_branca
+                            cell_total_setor.alignment = alignment_center
+                            
+                            # Pinta o fundo das células mescladas para o visual ficar completo
+                            for c_idx in range(2, 6):
+                                worksheet.cell(row=row_idx, column=c_idx).fill = header_fill_colunas
+                            
+                            # Aplica os valores totais do setor
+                            for c_name, t_val in totais_setor.items():
+                                col_idx = colunas_banco_cemig.index(c_name) + 1
+                                cell = worksheet.cell(row=row_idx, column=col_idx, value=t_val)
+                                cell.fill = header_fill_colunas
+                                cell.font = header_font_branca
+                                cell.number_format = 'R$ #,##0.00'
+                            
+                            row_idx += 2 # Dá um espaço de 1 linha antes de começar o próximo setor
+                            
+                        # 5. Totalizador Geral (Fim do Arquivo)
+                        worksheet.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=5)
+                        cell_total_geral = worksheet.cell(row=row_idx, column=1, value="TOTAL GERAL CEMIG")
+                        cell_total_geral.fill = header_fill_colunas
+                        cell_total_geral.font = header_font_branca
+                        cell_total_geral.alignment = alignment_center
+                        
+                        for c_idx in range(2, 6):
+                            worksheet.cell(row=row_idx, column=c_idx).fill = header_fill_colunas
+                            
+                        for c_name, t_val in totais_gerais_cemig.items():
+                            col_idx = colunas_banco_cemig.index(c_name) + 1
+                            cell = worksheet.cell(row=row_idx, column=col_idx, value=t_val)
+                            cell.fill = header_fill_colunas
+                            cell.font = header_font_branca
+                            cell.number_format = 'R$ #,##0.00'
+                            
+                        # 6. Ajuste seguro da largura das colunas
                         for i, col in enumerate(worksheet.columns, 1):
                             max_length = 0
                             col_letter = get_column_letter(i)
@@ -1676,8 +1753,11 @@ with aba_controle:
                                         max_length = len(str(cell.value))
                                 except:
                                     pass
-                            adjusted_width = (max_length + 3)
-                            worksheet.column_dimensions[col_letter].width = adjusted_width
+                            worksheet.column_dimensions[col_letter].width = (max_length + 3)
+                            
+                        # Remove a aba padrão Sheet criada automaticamente pelo openpyxl
+                        if 'Sheet' in workbook.sheetnames:
+                            workbook.remove(workbook['Sheet'])
                         
                     col_btn_gerar, _, _ = st.columns([1, 2, 2])
                     with col_btn_gerar:

@@ -180,13 +180,16 @@ def inicializar_banco():
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS valor_icms_acl DOUBLE PRECISION DEFAULT 0.0;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS valor_total_acl_com_icms DOUBLE PRECISION DEFAULT 0.0;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS irpj_retido_acl DOUBLE PRECISION DEFAULT 0.0;''')
+        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS nota_fiscal_cemig TEXT;''')
+        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS data_emissao_cemig TEXT;''')
+        cursor.execute('''ALTER TABLE historico_financeiro ADD COLUMN IF NOT EXISTS tipo_fatura TEXT DEFAULT 'CPFL';''')
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS uc_cemig TEXT;''')
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS uc_antiga TEXT;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS uc_original TEXT;''')
-        cursor.execute("ALTER TABLE faturas_cpfl ADD COLUMN nota_fiscal TEXT;")
-        cursor.execute("ALTER TABLE faturas_cpfl ADD COLUMN data_emissao TEXT;")
-        cursor.execute("ALTER TABLE faturas_cpfl ADD COLUMN desconto_acl REAL DEFAULT 0.0;")
-        cursor.execute("ALTER TABLE faturas_cpfl ADD COLUMN credito_subvencao REAL DEFAULT 0.0;")
+        cursor.execute("ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS nota_fiscal TEXT;")
+        cursor.execute("ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS data_emissao TEXT;")
+        cursor.execute("ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS desconto_acl REAL DEFAULT 0.0;")
+        cursor.execute("ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS credito_subvencao REAL DEFAULT 0.0;")
     except Exception as e:
         print("Aviso ao atualizar estrutura do banco:", e)
         
@@ -302,7 +305,8 @@ def carregar_dados():
         'valor_icms_acl': 'Valor ICMS ACL (R$)', 'valor_total_acl': 'Valor Total ACL (R$)',
         'valor_total_acl_com_icms': 'Valor Total ACL c/ ICMS (R$)', 'irpj_retido_acl': 'IRPJ Retido ACL (R$)', 
         'nota_fiscal': 'Nota Fiscal', 'data_emissao': 'Data Emissão',
-        'desconto_acl': 'Desconto ACL (R$)', 'credito_subvencao': 'Crédito Subvenção (R$)'
+        'desconto_acl': 'Desconto ACL (R$)', 'credito_subvencao': 'Crédito Subvenção (R$)',
+        'nota_fiscal_cemig': 'Nota Fiscal CEMIG', 'data_emissao_cemig': 'Data Emissão CEMIG'
     }
     
     df = df.rename(columns=dicionario_nomes)
@@ -405,7 +409,7 @@ def carregar_dados():
         'Dem. Reat. F.Ponta', 'Tarifa Dem. Reat. F.Ponta', 'Tarifa Trib. Dem. Reat. F.Ponta', 'Valor Dem. Reat. F.Ponta', 'Subtotal PDF', 'CIP', 
         'Retenção Cons. IRRF', 'Retenção Dem. IRRF', 'Valor PIS', 'Valor COFINS', 'Valor ICMS', 'Total Consumo', 'Valor Total Consumo', 
         'Valor Total Dem.', 'Valor Total Dem. Isenta', 'Valor Total Dem. Ultrap.', 'Valor Total Desv. Dem.', 'Total Cons. Reat.', 
-        'Valor Total Cons. Reat.', 'Valor Total Dem. Reat.', 'Valor Total Reativo', 'Nota Fiscal', 'Data Emissão', 'Data Cadastro'
+        'Valor Total Cons. Reat.', 'Valor Total Dem. Reat.', 'Valor Total Reativo', 'Nota Fiscal', 'Data Emissão', 'Nota Fiscal CEMIG', 'Data Emissão CEMIG', 'Data Cadastro'
     ]
     
     colunas_categoria = ['UC', 'Nome da Unidade', 'Atividade', 'Classificação', 'Mês Referência', 'Bandeira']
@@ -657,6 +661,9 @@ def processar_pdf_cemig(arquivo_pdf):
     
     match_mes = re.search(r"Referente a[\s\S]*?([A-Z]{3}/\d{4})", texto, re.IGNORECASE)
     dados_cemig['mes_referencia'] = match_mes.group(1).strip().upper() if match_mes else ""
+
+    dados_cemig['nota_fiscal_cemig'] = extrair_texto_regex(r"NOTA FISCAL Nº\s*(\d+)", texto)
+    dados_cemig['data_emissao_cemig'] = extrair_texto_regex(r"Data de emissão:\s*(\d{2}/\d{2}/\d{4})", texto, re.IGNORECASE)
     
     vencimento_bruto = extrair_texto_regex(r"Vencimento\s*(\d{2}/\d{2}/\d{4})", texto)
     dados_cemig['data_vencimento_acl'] = vencimento_bruto if vencimento_bruto else extrair_texto_regex(r"(\d{2}/\d{2}/\d{4})", texto) 
@@ -717,10 +724,8 @@ def processar_pdf_cemig(arquivo_pdf):
     # Cálculo do ICMS (18% sobre a Energia) e do Valor Total c/ ICMS
     dados_cemig['valor_icms_acl'] = round(dados_cemig['valor_energia_acl'] * 0.18, 2)
     dados_cemig['valor_total_acl_com_icms'] = round(dados_cemig['valor_total_acl'] + dados_cemig['valor_icms_acl'], 2)
-    match_irpj = re.search(r"(?:Imposto\s+Retido(?:\s*-\s*IRPJ)?|IRPJ\s+Retido|Reten[çc]ã[oõ]\s+(?:de\s+)?IRPJ|IRPJ)[\s\S]*?R\$\s*([\d\.,]+)", texto, re.IGNORECASE)
-    if not match_irpj:
-        match_irpj = re.search(r"Imposto\s+Retido[\s\S]*?([\d\.,]+)", texto, re.IGNORECASE)
     
+    match_irpj = re.search(r"Imposto\s+Retido.*?IRPJ.*?(?:R\$)?\s*(?:-)?\s*([\d\.,]+)", texto, re.IGNORECASE)
     dados_cemig['irpj_retido_acl'] = limpar_numero(match_irpj.group(1)) if match_irpj else 0.0
     
     return dados_cemig
@@ -1317,28 +1322,23 @@ with aba_controle:
             
             st.divider()
 
-            tab_relatorio, tab_pendencias = st.tabs(["📝 Gerar Relatório Financeiro", "🚨 Pendências de Carga"])
+            tab_rel_cpfl, tab_rel_cemig, tab_pendencias = st.tabs(["📝 Relatório CPFL", "⚡ Relatório CEMIG", "🚨 Pendências de Carga"])
 
-            # --- SUB-ABA 1: GERADOR DE RELATÓRIO ---
-            with tab_relatorio:
-                # Filtro de segurança: Isola estritamente as faturas da CPFL para o fechamento financeiro
+            # --- SUB-ABA 1: RELATÓRIO CPFL ---
+            with tab_rel_cpfl:
                 df_mes_cpfl = df_mes[df_mes['Classificação'] != 'Mercado Livre - ACL'].copy()
                 
-                # Busca faturas já enviadas para os meses selecionados
                 placeholders_mes = ','.join(['%s'] * len(meses_selecionados))
-                df_enviados = pd.read_sql_query(
-                    f"SELECT id, unidade_consumidora, mes_referencia, data_envio, valor_fatura FROM historico_financeiro WHERE mes_referencia IN ({placeholders_mes})", 
+                df_enviados_cpfl = pd.read_sql_query(
+                    f"SELECT id, unidade_consumidora, mes_referencia, data_envio, valor_fatura FROM historico_financeiro WHERE tipo_fatura = 'CPFL' AND mes_referencia IN ({placeholders_mes})", 
                     conexao, 
                     params=tuple(meses_selecionados)
                 )
                     
-                # 1. Criamos uma chave única juntando UC e Mês para que o envio de um mês não oculte o outro
                 df_mes_cpfl['Chave_Fatura'] = df_mes_cpfl['UC'].astype(str) + "_" + df_mes_cpfl['Mês Referência'].astype(str)
-                df_enviados['Chave_Fatura'] = df_enviados['unidade_consumidora'].astype(str) + "_" + df_enviados['mes_referencia'].astype(str)
+                df_enviados_cpfl['Chave_Fatura'] = df_enviados_cpfl['unidade_consumidora'].astype(str) + "_" + df_enviados_cpfl['mes_referencia'].astype(str)
                 
-                faturas_ja_enviadas = df_enviados['Chave_Fatura'].tolist()
-                
-                # 2. Filtra as faturas exatas (UC + Mês) que ainda não foram enviadas
+                faturas_ja_enviadas = df_enviados_cpfl['Chave_Fatura'].tolist()
                 df_pendente_envio = df_mes_cpfl[~df_mes_cpfl['Chave_Fatura'].isin(faturas_ja_enviadas)].copy()
                 
                 if not df_pendente_envio.empty:
@@ -1405,7 +1405,7 @@ with aba_controle:
                         cursor = conn.cursor()
                         for _, row in dados.iterrows():
                             cursor.execute(
-                                "INSERT INTO historico_financeiro (unidade_consumidora, mes_referencia, valor_fatura, vencimento) VALUES (%s, %s, %s, %s)",
+                                "INSERT INTO historico_financeiro (unidade_consumidora, mes_referencia, valor_fatura, vencimento, tipo_fatura) VALUES (%s, %s, %s, %s, 'CPFL')",
                                 (row['UC'], row['Mês Referência'], row['Valor Total Fatura'], row[col_venc])
                             )
                         conn.commit()
@@ -1583,7 +1583,122 @@ with aba_controle:
                     else:
                         st.info("Nenhum envio registrado para o(s) mês(es) selecionado(s).")
 
-            # --- SUB-ABA 2: PENDÊNCIAS DE CARGA ---
+            # --- SUB-ABA 2: RELATÓRIO CEMIG ---
+            with tab_rel_cemig:
+                # Isola as faturas que possuem valor na CEMIG
+                df_mes_cemig = df_mes[df_mes['Valor Total ACL (R$)'] > 0].copy()
+                
+                # Cruza com df_cadastro para puxar o Número da UC CEMIG oficial
+                df_mes_cemig = pd.merge(df_mes_cemig, df_cadastro[['unidade_consumidora', 'uc_cemig']], left_on='UC', right_on='unidade_consumidora', how='left')
+                
+                # ATENÇÃO: Adicionei o 'valor_fatura' nesta consulta SQL abaixo!
+                df_enviados_cemig = pd.read_sql_query(
+                    f"SELECT id, unidade_consumidora, mes_referencia, data_envio, valor_fatura FROM historico_financeiro WHERE tipo_fatura = 'CEMIG' AND mes_referencia IN ({placeholders_mes})", 
+                    conexao, params=tuple(meses_selecionados)
+                )
+                
+                df_mes_cemig['Chave_Fatura'] = df_mes_cemig['UC'].astype(str) + "_" + df_mes_cemig['Mês Referência'].astype(str)
+                df_enviados_cemig['Chave_Fatura'] = df_enviados_cemig['unidade_consumidora'].astype(str) + "_" + df_enviados_cemig['mes_referencia'].astype(str)
+                faturas_ja_enviadas_cemig = df_enviados_cemig['Chave_Fatura'].tolist()
+                
+                df_pend_cemig = df_mes_cemig[~df_mes_cemig['Chave_Fatura'].isin(faturas_ja_enviadas_cemig)].copy()
+                
+                if not df_pend_cemig.empty:
+                    df_pend_cemig['Data_Ord'] = pd.to_datetime(df_pend_cemig['Vencimento ACL'], format='%d/%m/%Y', errors='coerce')
+                    df_pend_cemig = df_pend_cemig.sort_values('Data_Ord')
+                    
+                    st.info(f"Existem **{len(df_pend_cemig)}** faturas da CEMIG prontas para fechamento de lote.")
+                    
+                    # Padronização e Exibição de Tabela
+                    colunas_banco_cemig = [
+                        'Nota Fiscal CEMIG', 'Data Emissão CEMIG', 'uc_cemig', 'Mês Referência', 'Vencimento ACL',
+                        'Valor Energia ACL (R$)', 'Valor ICMS ACL (R$)', 'IRPJ Retido ACL (R$)', 'Valor Total ACL (R$)'
+                    ]
+                    
+                    mapeamento_cemig = {
+                        'uc_cemig': 'Instalação (CEMIG)',
+                        'Vencimento ACL': 'Vencimento',
+                        'Valor Energia ACL (R$)': 'Valor Energia ACL',
+                        'Valor ICMS ACL (R$)': 'Valor ICMS',
+                        'IRPJ Retido ACL (R$)': 'IRPJ Retido',
+                        'Valor Total ACL (R$)': 'Valor Total Fatura'
+                    }
+                    
+                    df_detalhe_cemig = df_pend_cemig[colunas_banco_cemig].rename(columns=mapeamento_cemig).copy()
+                    
+                    cols_din_cemig = ['Valor Energia ACL', 'Valor ICMS', 'IRPJ Retido', 'Valor Total Fatura']
+                    for col in cols_din_cemig:
+                        df_detalhe_cemig[col] = df_detalhe_cemig[col].apply(lambda x: f"R$ {float(x):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notnull(x) else "R$ 0,00")
+                    
+                    st.dataframe(df_detalhe_cemig, hide_index=True, use_container_width=True)
+                    
+                    # Gerar Excel na Memória
+                    def finalizar_lote_cemig(dados):
+                        conn = obter_conexao()
+                        cursor = conn.cursor()
+                        for _, row in dados.iterrows():
+                            cursor.execute(
+                                "INSERT INTO historico_financeiro (unidade_consumidora, mes_referencia, valor_fatura, vencimento, tipo_fatura) VALUES (%s, %s, %s, %s, 'CEMIG')",
+                                (row['UC'], row['Mês Referência'], row['Valor Total ACL (R$)'], row['Vencimento ACL'])
+                            )
+                        conn.commit()
+                        conn.close()
+
+                    buffer_cemig = io.BytesIO()
+                    with pd.ExcelWriter(buffer_cemig, engine='openpyxl') as writer:
+                        df_export_cemig = df_pend_cemig[colunas_banco_cemig].rename(columns=mapeamento_cemig)
+                        df_export_cemig.to_excel(writer, index=False, sheet_name='Relatorio_CEMIG')
+                        
+                    st.download_button(
+                        label="🚀 Gerar Relatório Financeiro (CEMIG)",
+                        data=buffer_cemig.getvalue(),
+                        file_name=f"Financeiro_CEMIG_{'_'.join([m.replace('/', '_') for m in meses_selecionados])}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        type="primary",
+                        on_click=finalizar_lote_cemig,
+                        args=(df_pend_cemig,),
+                        use_container_width=True
+                    )
+                else:
+                    st.success("✅ Não existe pendência de envio para as faturas da CEMIG no(s) mês(es) selecionado(s).")
+                
+                # --- GESTÃO DE ENVIOS / REVERSÃO DA CEMIG ---
+                st.divider()
+                with st.expander("📜 Gestão de Envios (Visualizar ou Reverter) - CEMIG"):
+                    if not df_enviados_cemig.empty:
+                        # Cruzamos com df_cadastro para puxar o nome da unidade para a visualização
+                        df_hist_nomes_cemig = pd.merge(df_enviados_cemig, df_cadastro[['unidade_consumidora', 'nome_unidade']], on='unidade_consumidora', how='left')
+                        df_hist_nomes_cemig['data_envio'] = pd.to_datetime(df_hist_nomes_cemig['data_envio']).dt.strftime('%d/%m/%Y %H:%M')
+                        
+                        st.write("Selecione para **REVERTER** (faturas voltam para a lista de lote pendente acima):")
+                        
+                        evento_hist_cemig = st.dataframe(
+                            df_hist_nomes_cemig[['id', 'nome_unidade', 'unidade_consumidora', 'mes_referencia', 'data_envio', 'valor_fatura']],
+                            use_container_width=True, hide_index=True, on_select="rerun", selection_mode="multi-row",
+                            column_config={
+                                "id": None, 
+                                "nome_unidade": "Nome da Unidade",
+                                "unidade_consumidora": "Instalação Mestra",
+                                "mes_referencia": "Referência",
+                                "data_envio": "Data do Envio",
+                                "valor_fatura": st.column_config.NumberColumn("Valor Enviado (R$)", format="%.2f")
+                            },
+                            key=f"tabela_reversao_cemig_{'_'.join(meses_selecionados)}"
+                        )
+                        
+                        if len(evento_hist_cemig.selection.rows) > 0:
+                            linhas_validas_cemig = [i for i in evento_hist_cemig.selection.rows if i < len(df_hist_nomes_cemig)]
+                            if len(linhas_validas_cemig) > 0:
+                                ids_reverter_cemig = [int(df_hist_nomes_cemig.iloc[i]['id']) for i in linhas_validas_cemig]
+                                if st.button(f"🔄 Reverter {len(ids_reverter_cemig)} fatura(s) da CEMIG", type="secondary", key="btn_reverte_cemig"):
+                                    cursor = conexao.cursor()
+                                    cursor.execute(f"DELETE FROM historico_financeiro WHERE id IN ({','.join(['%s']*len(ids_reverter_cemig))})", tuple(ids_reverter_cemig))
+                                    conexao.commit()
+                                    st.rerun()
+                    else:
+                        st.info("Nenhum envio registrado para as faturas da CEMIG no(s) mês(es) selecionado(s).")
+            
+            # --- SUB-ABA 3: PENDÊNCIAS DE CARGA ---
             with tab_pendencias:
                 linhas_pendentes = []
                 hoje = pd.Timestamp.today().normalize()
@@ -2117,16 +2232,22 @@ with aba_pdf:
                                             valor_energia_acl = %s,
                                             valor_icms_acl = %s,
                                             valor_total_acl = %s,
-                                            valor_total_acl_com_icms = %s
+                                            valor_total_acl_com_icms = %s,
+                                            nota_fiscal_cemig = %s,
+                                            data_emissao_cemig = %s,
+                                            irpj_retido_acl = %s
                                         WHERE id = %s
                                     """, (
                                         d_cemig['data_vencimento_acl'],
                                         d_cemig['consumo_energia_acl_kwh'],
                                         d_cemig['tarifa_energia_acl'],
                                         d_cemig['valor_energia_acl'],
-                                        d_cemig['valor_icms_acl'],  # <- Novo
+                                        d_cemig['valor_icms_acl'],
                                         d_cemig['valor_total_acl'],
-                                        d_cemig['valor_total_acl_com_icms'], # <- Novo
+                                        d_cemig['valor_total_acl_com_icms'],
+                                        d_cemig['nota_fiscal_cemig'],
+                                        d_cemig['data_emissao_cemig'],
+                                        d_cemig['irpj_retido_acl'],
                                         id_linha
                                     ))
                                     sucessos += 1
@@ -2136,14 +2257,15 @@ with aba_pdf:
                                         INSERT INTO faturas_cpfl (
                                             unidade_consumidora, nome_unidade, atividade, mes_referencia, classificacao,
                                             data_vencimento_acl, consumo_energia_acl_kwh, tarifa_energia_acl, valor_energia_acl,
-                                            valor_icms_acl, valor_total_acl, valor_total_acl_com_icms
-                                        ) VALUES (%s, %s, %s, %s, 'Mercado Livre - ACL', %s, %s, %s, %s, %s, %s, %s)
+                                            valor_icms_acl, valor_total_acl, valor_total_acl_com_icms, irpj_retido_acl,
+                                            nota_fiscal_cemig, data_emissao_cemig
+                                        ) VALUES (%s, %s, %s, %s, 'Mercado Livre - ACL', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                                     """, (
                                         uc_alvo, d_cemig['nome_unidade'], d_cemig['atividade'], mes_alvo,
                                         d_cemig['data_vencimento_acl'], d_cemig['consumo_energia_acl_kwh'],
                                         d_cemig['tarifa_energia_acl'], d_cemig['valor_energia_acl'],
                                         d_cemig['valor_icms_acl'], d_cemig['valor_total_acl'], d_cemig['valor_total_acl_com_icms'],
-                                        d_cemig['valor_total_acl_com_icms'], d_cemig['irpj_retido_acl']
+                                        d_cemig['irpj_retido_acl'], d_cemig['nota_fiscal_cemig'], d_cemig['data_emissao_cemig']
                                     ))
                                     sucessos += 1
 

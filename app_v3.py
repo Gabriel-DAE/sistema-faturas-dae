@@ -1672,13 +1672,6 @@ with aba_controle:
                             df_res_show['Valor Total'] = df_res_show['Valor Total'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
                             
                             st.dataframe(df_res_show, hide_index=True, use_container_width=True)
-
-                    # --- PAINEL DE TOTAL GERAL CEMIG NA TELA ---
-                    st.markdown("### 💰 TOTAL GERAL CEMIG")
-                    st.write(f"**Total Energia ACL:** R$ {tot_geral_energia:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                    st.write(f"**Total ICMS ACL:** R$ {tot_geral_icms:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                    st.write(f"**Total IRPJ Retido:** R$ {tot_geral_irpj:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                    st.write(f"**TOTAL GERAL A PAGAR:** R$ {tot_geral_fatura:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
                     
                     st.divider()
 

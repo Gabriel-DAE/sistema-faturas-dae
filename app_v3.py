@@ -1650,6 +1650,35 @@ with aba_controle:
                         df_export_cemig = df_pend_cemig[colunas_banco_cemig].rename(columns=mapeamento_cemig)
                         df_export_cemig.to_excel(writer, index=False, sheet_name='Relatorio_CEMIG')
                         
+                        # --- ESTILIZAÇÃO DO EXCEL CEMIG ---
+                        workbook = writer.book
+                        worksheet = writer.sheets['Relatorio_CEMIG']
+                        
+                        # Cores e Fontes (Fundo Verde Escuro, Letra Branca, Centralizado)
+                        header_fill = PatternFill(start_color='008000', end_color='008000', fill_type='solid')
+                        header_font = Font(bold=True, color='FFFFFF')
+                        header_alignment = Alignment(horizontal='center', vertical='center')
+                        
+                        # Aplica o estilo na primeira linha (Cabeçalho)
+                        for cell in worksheet[1]:
+                            cell.fill = header_fill
+                            cell.font = header_font
+                            cell.alignment = header_alignment
+                            
+                        # Ajuste seguro da largura das colunas
+                        from openpyxl.utils import get_column_letter
+                        for i, col in enumerate(worksheet.columns, 1):
+                            max_length = 0
+                            col_letter = get_column_letter(i)
+                            for cell in col:
+                                try:
+                                    if cell.value and len(str(cell.value)) > max_length:
+                                        max_length = len(str(cell.value))
+                                except:
+                                    pass
+                            adjusted_width = (max_length + 3)
+                            worksheet.column_dimensions[col_letter].width = adjusted_width
+                        
                     col_btn_gerar, _, _ = st.columns([1, 2, 2])
                     with col_btn_gerar:
                         st.download_button(

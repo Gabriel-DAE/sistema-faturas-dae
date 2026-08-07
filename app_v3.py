@@ -2019,34 +2019,77 @@ with aba_dados:
             ids_para_excluir = [int(df_filtrado.iloc[i]['id']) for i in linhas_selecionadas]
             qtd_selecionada = len(ids_para_excluir)
             
-            st.markdown(f"🔴 **{qtd_selecionada} Fatura(s) Selecionada(s)** para exclusão.")
+            st.markdown(f"🔴 **{qtd_selecionada} Fatura(s) Selecionada(s)** para modificação/exclusão.")
             
             if st.session_state.get('confirmar_exclusao_ids') != ids_para_excluir:
-                if st.button("🗑️ Excluir Selecionadas"):
+                if st.button("🗑️ Modificar / Excluir Selecionadas"):
                     st.session_state['confirmar_exclusao_ids'] = ids_para_excluir
                     st.rerun()
             else:
-                st.warning(f"⚠️ TEM CERTEZA? Isso apagará permanentemente {qtd_selecionada} fatura(s) do banco de dados!")
-                col1, col2, _ = st.columns([1, 1, 3]) 
+                st.warning(f"⚠️ TEM CERTEZA? Escolha o que deseja fazer com as {qtd_selecionada} fatura(s) selecionada(s):")
+                
+                # --- NOVO MENU DE OPÇÕES DE EXCLUSÃO ---
+                opcao_exclusao = st.radio(
+                    "⚙️ Opções de Exclusão:",
+                    [
+                        "🗑️ Excluir Registro Completo (Apagar a linha inteira, tanto CPFL quanto CEMIG)",
+                        "⚡ Limpar apenas os dados da CEMIG (Zerar valores e manter CPFL intacta)",
+                        "💡 Limpar apenas os dados da CPFL (Zerar valores e manter CEMIG intacta)"
+                    ]
+                )
+                
+                # Ajustei o tamanho das colunas para caber os novos botões confortavelmente
+                col1, col2, _ = st.columns([1.5, 1.5, 3]) 
                 
                 with col1:
-                    if st.button("✅ Sim, apagar agora!", type="primary"):
+                    if st.button("✅ Confirmar Ação", type="primary"):
                         conexao = obter_conexao()
                         c = conexao.cursor()
                         
                         # Preparação SQL para o Postgres (%s)
                         placeholders = ','.join('%s' for _ in ids_para_excluir)
-                        query_exclusao = f"DELETE FROM faturas_cpfl WHERE id IN ({placeholders})"
                         
-                        c.execute(query_exclusao, tuple(ids_para_excluir))
+                        # --- LÓGICA CONDICIONAL DE EXCLUSÃO ---
+                        if "Completo" in opcao_exclusao:
+                            query = f"DELETE FROM faturas_cpfl WHERE id IN ({placeholders})"
+                            c.execute(query, tuple(ids_para_excluir))
+                            msg_sucesso = f"✅ {qtd_selecionada} registro(s) completo(s) excluído(s) do banco!"
+                            
+                        elif "CEMIG" in opcao_exclusao:
+                            query = f"""
+                                UPDATE faturas_cpfl SET
+                                    data_vencimento_acl = NULL, consumo_energia_acl_kwh = 0.0, tarifa_energia_acl = 0.0,
+                                    valor_energia_acl = 0.0, valor_icms_acl = 0.0, valor_total_acl = 0.0,
+                                    valor_total_acl_com_icms = 0.0, irpj_retido_acl = 0.0,
+                                    nota_fiscal_cemig = NULL, data_emissao_cemig = NULL
+                                WHERE id IN ({placeholders})
+                            """
+                            c.execute(query, tuple(ids_para_excluir))
+                            msg_sucesso = f"✅ Dados da CEMIG apagados em {qtd_selecionada} fatura(s)!"
+                            
+                        elif "CPFL" in opcao_exclusao:
+                            query = f"""
+                                UPDATE faturas_cpfl SET
+                                    data_vencimento = NULL, data_emissao = NULL, nota_fiscal = NULL,
+                                    valor_total_fatura = 0.0, subtotal_fatura = 0.0, cip = 0.0,
+                                    desconto_acl = 0.0, credito_subvencao = 0.0, pis_cofins = 0.0,
+                                    valor_cons_irrf = 0.0, valor_dem_irrf = 0.0,
+                                    valor_cons_ponta_tusd = 0.0, valor_cons_fponta_tusd = 0.0,
+                                    valor_dem_ponta_tusd = 0.0, valor_dem_fponta_tusd = 0.0
+                                WHERE id IN ({placeholders})
+                            """
+                            c.execute(query, tuple(ids_para_excluir))
+                            msg_sucesso = f"✅ Dados da CPFL apagados em {qtd_selecionada} fatura(s)!"
+                            
                         conexao.commit()
                         conexao.close()
                         
                         carregar_dados.clear()
                         
                         st.session_state['confirmar_exclusao_ids'] = None
-                        st.success(f"{qtd_selecionada} fatura(s) excluída(s) com sucesso!")
+                        st.success(msg_sucesso)
                         st.rerun()
+                        
                 with col2:
                     if st.button("❌ Cancelar"):
                         st.session_state['confirmar_exclusao_ids'] = None

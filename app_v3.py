@@ -662,8 +662,11 @@ def processar_pdf_cemig(arquivo_pdf):
     match_mes = re.search(r"Referente a[\s\S]*?([A-Z]{3}/\d{4})", texto, re.IGNORECASE)
     dados_cemig['mes_referencia'] = match_mes.group(1).strip().upper() if match_mes else ""
 
-    dados_cemig['nota_fiscal_cemig'] = extrair_texto_regex(r"NOTA FISCAL Nº\s*(\d+)", texto)
-    dados_cemig['data_emissao_cemig'] = extrair_texto_regex(r"Data de emissão:\s*(\d{2}/\d{2}/\d{4})", texto, re.IGNORECASE)
+    match_nf = re.search(r"NOTA FISCAL Nº\s*(\d+)", texto, re.IGNORECASE)
+    dados_cemig['nota_fiscal_cemig'] = match_nf.group(1) if match_nf else None
+
+    match_emissao = re.search(r"Data de emissão:\s*(\d{2}/\d{2}/\d{4})", texto, re.IGNORECASE)
+    dados_cemig['data_emissao_cemig'] = match_emissao.group(1) if match_emissao else None
     
     vencimento_bruto = extrair_texto_regex(r"Vencimento\s*(\d{2}/\d{2}/\d{4})", texto)
     dados_cemig['data_vencimento_acl'] = vencimento_bruto if vencimento_bruto else extrair_texto_regex(r"(\d{2}/\d{2}/\d{4})", texto) 
@@ -726,7 +729,14 @@ def processar_pdf_cemig(arquivo_pdf):
     dados_cemig['valor_total_acl_com_icms'] = round(dados_cemig['valor_total_acl'] + dados_cemig['valor_icms_acl'], 2)
     
     match_irpj = re.search(r"Imposto\s+Retido.*?IRPJ.*?(?:R\$)?\s*(?:-)?\s*([\d\.,]+)", texto, re.IGNORECASE)
-    dados_cemig['irpj_retido_acl'] = limpar_numero(match_irpj.group(1)) if match_irpj else 0.0
+    if match_irpj:
+        try:
+            texto_irpj = match_irpj.group(1).replace(".", "").replace(",", ".")
+            dados_cemig['irpj_retido_acl'] = float(texto_irpj)
+        except Exception:
+            dados_cemig['irpj_retido_acl'] = 0.0
+    else:
+        dados_cemig['irpj_retido_acl'] = 0.0
     
     return dados_cemig
 

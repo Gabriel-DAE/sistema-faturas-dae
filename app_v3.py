@@ -1623,7 +1623,7 @@ with aba_controle:
                         'Valor Total ACL (R$)': 'Valor Total Fatura'
                     }
 
-                    # --- EXIBIÇÃO NA TELA SEPARADA POR SETOR ---
+                    # --- EXIBIÇÃO NA TELA SEPARADA POR SETOR (PADRÃO EXPANDER) ---
                     st.markdown("### 📊 Detalhamento por Setor - CEMIG")
                     
                     # Variáveis para acumular o Total Geral na tela
@@ -1632,41 +1632,48 @@ with aba_controle:
                     tot_geral_irpj = 0.0
                     tot_geral_fatura = 0.0
 
-                    # Varre cada setor (Atividade)
-                    for setor, df_setor in df_pend_cemig.groupby('Atividade', dropna=False):
-                        setor_nome = str(setor).upper() if pd.notnull(setor) else "NÃO INFORMADO"
-                        st.markdown(f"#### {setor_nome}")
-                        
-                        # Tabela filtrada do setor
-                        df_setor_show = df_setor[colunas_banco_cemig].rename(columns=mapeamento_cemig).copy()
-                        
-                        # Cálculos das somas do setor
-                        s_energia = df_setor['Valor Energia ACL (R$)'].sum()
-                        s_icms = df_setor['Valor ICMS ACL (R$)'].sum()
-                        s_irpj = df_setor['IRPJ Retido ACL (R$)'].sum()
-                        s_total = df_setor['Valor Total ACL (R$)'].sum()
-                        
-                        # Acumula nos totais gerais
-                        tot_geral_energia += s_energia
-                        tot_geral_icms += s_icms
-                        tot_geral_irpj += s_irpj
-                        tot_geral_fatura += s_total
-                        
-                        # Formata moedas para a tabela na tela
-                        cols_din_cemig = ['Valor Energia ACL', 'Valor ICMS', 'IRPJ Retido', 'Valor Total Fatura']
-                        for col in cols_din_cemig:
-                            df_setor_show[col] = df_setor_show[col].apply(
-                                lambda x: f"R$ {float(x):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notnull(x) else "R$ 0,00"
-                            )
-                        
-                        # Exibe a tabela Limpa (Padrão CPFL)
-                        st.dataframe(df_setor_show, hide_index=True, use_container_width=True)
-                        
-                        # Exibe o Subtotal em texto logo abaixo da tabela (Padrão CPFL)
-                        texto_subtotal = f"**Subtotal {setor_nome}:** Energia: R$ {s_energia:,.2f} | ICMS: R$ {s_icms:,.2f} | IRPJ: R$ {s_irpj:,.2f} | **Fatura: R$ {s_total:,.2f}**"
-                        st.write(texto_subtotal.replace(",", "X").replace(".", ",").replace("X", "."))
-                        
-                        st.divider()
+                    # Filtra os setores de forma segura
+                    setores_unicos = [s for s in df_pend_cemig['Atividade'].unique() if pd.notnull(s)]
+                    setores_unicos = sorted(setores_unicos)
+                    if df_pend_cemig['Atividade'].isnull().any():
+                        setores_unicos.append("NÃO INFORMADO")
+
+                    for atividade in setores_unicos:
+                        with st.expander(f"🏢 SETOR: {atividade.upper()}", expanded=True):
+                            # Filtra as faturas do setor atual
+                            if atividade == "NÃO INFORMADO":
+                                df_ativ = df_pend_cemig[df_pend_cemig['Atividade'].isnull()].copy()
+                            else:
+                                df_ativ = df_pend_cemig[df_pend_cemig['Atividade'] == atividade].copy()
+                            
+                            # Acumulando para o Total Geral no fim da página
+                            tot_geral_energia += df_ativ['Valor Energia ACL (R$)'].sum()
+                            tot_geral_icms += df_ativ['Valor ICMS ACL (R$)'].sum()
+                            tot_geral_irpj += df_ativ['IRPJ Retido ACL (R$)'].sum()
+                            tot_geral_fatura += df_ativ['Valor Total ACL (R$)'].sum()
+                            
+                            # 1. Tabela de Detalhamento
+                            st.markdown("##### 📝 Detalhamento de faturas")
+                            df_detalhe = df_ativ[colunas_banco_cemig].rename(columns=mapeamento_cemig).copy()
+                            
+                            # Formata as colunas que são de valor (dinheiro)
+                            cols_din_cemig = ['Valor Energia ACL', 'Valor ICMS', 'IRPJ Retido', 'Valor Total Fatura']
+                            for col in cols_din_cemig:
+                                df_detalhe[col] = df_detalhe[col].apply(lambda x: f"R$ {float(x):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notnull(x) else "R$ 0,00")
+                            
+                            st.dataframe(df_detalhe, hide_index=True, use_container_width=True)
+                            
+                            # 2. Tabela de Resumo de Pagamentos por Data
+                            st.markdown("##### 📊 Resumo de pagamentos por data")
+                            df_resumo = df_ativ.groupby('Vencimento ACL')['Valor Total ACL (R$)'].sum().reset_index()
+                            df_resumo['D_Ord'] = pd.to_datetime(df_resumo['Vencimento ACL'], format='%d/%m/%Y', errors='coerce')
+                            df_resumo = df_resumo.sort_values('D_Ord').drop(columns=['D_Ord'])
+                            
+                            df_res_show = df_resumo.copy()
+                            df_res_show.columns = ['Vencimento', 'Valor Total']
+                            df_res_show['Valor Total'] = df_res_show['Valor Total'].apply(lambda x: f"R$ {x:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                            
+                            st.dataframe(df_res_show, hide_index=True, use_container_width=True)
 
                     # --- PAINEL DE TOTAL GERAL CEMIG NA TELA ---
                     st.markdown("### 💰 TOTAL GERAL CEMIG")

@@ -1592,7 +1592,6 @@ with aba_controle:
                 # Cruza com df_cadastro para puxar o Número da UC CEMIG oficial
                 df_mes_cemig = pd.merge(df_mes_cemig, df_cadastro[['unidade_consumidora', 'uc_cemig']], left_on='UC', right_on='unidade_consumidora', how='left')
                 
-                # ATENÇÃO: Adicionei o 'valor_fatura' nesta consulta SQL abaixo!
                 df_enviados_cemig = pd.read_sql_query(
                     f"SELECT id, unidade_consumidora, mes_referencia, data_envio, valor_fatura FROM historico_financeiro WHERE tipo_fatura = 'CEMIG' AND mes_referencia IN ({placeholders_mes})", 
                     conexao, params=tuple(meses_selecionados)
@@ -1610,7 +1609,6 @@ with aba_controle:
                     
                     st.info(f"Existem **{len(df_pend_cemig)}** faturas da CEMIG prontas para fechamento de lote.")
                     
-                    # Padronização e Exibição de Tabela
                     colunas_banco_cemig = [
                         'Nota Fiscal CEMIG', 'Data Emissão CEMIG', 'uc_cemig', 'Mês Referência', 'Vencimento ACL',
                         'Valor Energia ACL (R$)', 'Valor ICMS ACL (R$)', 'IRPJ Retido ACL (R$)', 'Valor Total ACL (R$)'
@@ -1624,16 +1622,64 @@ with aba_controle:
                         'IRPJ Retido ACL (R$)': 'IRPJ Retido',
                         'Valor Total ACL (R$)': 'Valor Total Fatura'
                     }
+
+                    # --- EXIBIÇÃO NA TELA SEPARADA POR SETOR ---
+                    st.markdown("### 📊 Detalhamento por Setor - CEMIG")
                     
-                    df_detalhe_cemig = df_pend_cemig[colunas_banco_cemig].rename(columns=mapeamento_cemig).copy()
-                    
-                    cols_din_cemig = ['Valor Energia ACL', 'Valor ICMS', 'IRPJ Retido', 'Valor Total Fatura']
-                    for col in cols_din_cemig:
-                        df_detalhe_cemig[col] = df_detalhe_cemig[col].apply(lambda x: f"R$ {float(x):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notnull(x) else "R$ 0,00")
-                    
-                    st.dataframe(df_detalhe_cemig, hide_index=True, use_container_width=True)
-                    
-                    # Gerar Excel na Memória
+                    # Variáveis para acumular o Total Geral na tela
+                    tot_geral_energia = 0.0
+                    tot_geral_icms = 0.0
+                    tot_geral_irpj = 0.0
+                    tot_geral_fatura = 0.0
+
+                    # Varre cada setor (Atividade)
+                    for setor, df_setor in df_pend_cemig.groupby('Atividade', dropna=False):
+                        setor_nome = str(setor).upper() if pd.notnull(setor) else "NÃO INFORMADO"
+                        st.markdown(f"#### 🏢 Setor: {setor_nome}")
+                        
+                        # Tabela filtrada do setor
+                        df_setor_show = df_setor[colunas_banco_cemig].rename(columns=mapeamento_cemig).copy()
+                        
+                        # Cálculos das somas do setor
+                        s_energia = df_setor['Valor Energia ACL (R$)'].sum()
+                        s_icms = df_setor['Valor ICMS ACL (R$)'].sum()
+                        s_irpj = df_setor['IRPJ Retido ACL (R$)'].sum()
+                        s_total = df_setor['Valor Total ACL (R$)'].sum()
+                        
+                        # Acumula nos totais gerais
+                        tot_geral_energia += s_energia
+                        tot_geral_icms += s_icms
+                        tot_geral_irpj += s_irpj
+                        tot_geral_fatura += s_total
+                        
+                        # Formata moedas para a tabela na tela
+                        cols_din_cemig = ['Valor Energia ACL', 'Valor ICMS', 'IRPJ Retido', 'Valor Total Fatura']
+                        for col in cols_din_cemig:
+                            df_setor_show[col] = df_setor_show[col].apply(
+                                lambda x: f"R$ {float(x):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notnull(x) else "R$ 0,00"
+                            )
+                        
+                        st.dataframe(df_setor_show, hide_index=True, use_container_width=True)
+                        
+                        # Cartões com os Subtotais do Setor
+                        c1, c2, c3, c4 = st.columns(4)
+                        c1.metric("Energia ACL", f"R$ {s_energia:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                        c2.metric("ICMS ACL", f"R$ {s_icms:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                        c3.metric("IRPJ Retido", f"R$ {s_irpj:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                        c4.metric(f"TOTAL {setor_nome}", f"R$ {s_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                        
+                        st.divider()
+
+                    # --- PAINEL DE TOTAL GERAL CEMIG NA TELA ---
+                    st.markdown("### 💰 Total Geral CEMIG (Todos os Setores)")
+                    g1, g2, g3, g4 = st.columns(4)
+                    g1.metric("Total Energia ACL", f"R$ {tot_geral_energia:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                    g2.metric("Total ICMS ACL", f"R$ {tot_geral_icms:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                    g3.metric("Total IRPJ Retido", f"R$ {tot_geral_irpj:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                    g4.metric("TOTAL GERAL CEMIG", f"R$ {tot_geral_fatura:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                    st.divider()
+
+                    # --- GERAÇÃO DO ARQUIVO EXCEL NA MEMÓRIA ---
                     def finalizar_lote_cemig(dados):
                         conn = obter_conexao()
                         cursor = conn.cursor()
@@ -1648,31 +1694,23 @@ with aba_controle:
                     buffer_cemig = io.BytesIO()
                     with pd.ExcelWriter(buffer_cemig, engine='openpyxl') as writer:
                         workbook = writer.book
-                        # Cria a aba do Excel manualmente
                         worksheet = workbook.create_sheet('Relatorio_CEMIG')
                         
-                        # --- ESTILIZAÇÃO DO EXCEL CEMIG ---
-                        header_fill_setor = PatternFill(start_color='00B050', end_color='00B050', fill_type='solid') # Verde Claro
-                        header_fill_colunas = PatternFill(start_color='008000', end_color='008000', fill_type='solid') # Verde Escuro
+                        # Estilização
+                        header_fill_setor = PatternFill(start_color='82c836', end_color='82c836', fill_type='solid')
+                        header_fill_colunas = PatternFill(start_color='d4ecba', end_color='d4ecba', fill_type='solid')
                         header_font_branca = Font(bold=True, color='FFFFFF')
                         header_font_preta = Font(bold=True, color='000000')
                         alignment_center = Alignment(horizontal='center', vertical='center')
                         
                         row_idx = 1
-                        totais_gerais_cemig = {
-                            'Valor Energia ACL (R$)': 0, 
-                            'Valor ICMS ACL (R$)': 0, 
-                            'IRPJ Retido ACL (R$)': 0, 
-                            'Valor Total ACL (R$)': 0
-                        }
-                        
+                        totais_gerais_cemig = {'Valor Energia ACL (R$)': 0, 'Valor ICMS ACL (R$)': 0, 'IRPJ Retido ACL (R$)': 0, 'Valor Total ACL (R$)': 0}
                         from openpyxl.utils import get_column_letter
                         
-                        # Agrupa as faturas da CEMIG pelo setor (Atividade)
                         for setor, df_setor in df_pend_cemig.groupby('Atividade', dropna=False):
                             setor_nome = str(setor).upper() if pd.notnull(setor) else "NÃO INFORMADO"
                             
-                            # 1. Linha do Setor (Fundo Verde Claro, Texto Preto)
+                            # 1. Linha do Setor
                             ws_cell_setor = worksheet.cell(row=row_idx, column=1, value=f"SETOR: {setor_nome}")
                             worksheet.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=len(colunas_banco_cemig))
                             ws_cell_setor.fill = header_fill_setor
@@ -1680,23 +1718,20 @@ with aba_controle:
                             ws_cell_setor.alignment = alignment_center
                             row_idx += 1
                             
-                            # 2. Linha de Títulos das Colunas (Fundo Verde Escuro, Texto Branco)
+                            # 2. Cabeçalhos
                             for col_idx, col_name in enumerate(colunas_banco_cemig, 1):
                                 cell = worksheet.cell(row=row_idx, column=col_idx, value=mapeamento_cemig.get(col_name, col_name))
                                 cell.fill = header_fill_colunas
-                                cell.font = header_font_branca
+                                cell.font = header_font_preta
                                 cell.alignment = alignment_center
                             row_idx += 1
                             
-                            # 3. Inserção dos Dados
+                            # 3. Dados
                             totais_setor = {'Valor Energia ACL (R$)': 0, 'Valor ICMS ACL (R$)': 0, 'IRPJ Retido ACL (R$)': 0, 'Valor Total ACL (R$)': 0}
-                            
                             for _, row in df_setor.iterrows():
                                 for col_idx, col_name in enumerate(colunas_banco_cemig, 1):
                                     val = row[col_name]
                                     cell = worksheet.cell(row=row_idx, column=col_idx, value=val)
-                                    
-                                    # Formatação de Moeda e Soma para as colunas financeiras
                                     if col_name in totais_setor:
                                         valor_num = float(val) if pd.notnull(val) else 0.0
                                         cell.value = valor_num
@@ -1705,18 +1740,16 @@ with aba_controle:
                                         totais_gerais_cemig[col_name] += valor_num
                                 row_idx += 1
                                 
-                            # 4. Totalizador do Setor
+                            # 4. Totalizador Setor
                             worksheet.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=5) 
                             cell_total_setor = worksheet.cell(row=row_idx, column=1, value=f"TOTAL {setor_nome}")
                             cell_total_setor.fill = header_fill_colunas
                             cell_total_setor.font = header_font_branca
                             cell_total_setor.alignment = alignment_center
                             
-                            # Pinta o fundo das células mescladas para o visual ficar completo
                             for c_idx in range(2, 6):
                                 worksheet.cell(row=row_idx, column=c_idx).fill = header_fill_colunas
                             
-                            # Aplica os valores totais do setor
                             for c_name, t_val in totais_setor.items():
                                 col_idx = colunas_banco_cemig.index(c_name) + 1
                                 cell = worksheet.cell(row=row_idx, column=col_idx, value=t_val)
@@ -1724,9 +1757,9 @@ with aba_controle:
                                 cell.font = header_font_branca
                                 cell.number_format = 'R$ #,##0.00'
                             
-                            row_idx += 2 # Dá um espaço de 1 linha antes de começar o próximo setor
+                            row_idx += 2
                             
-                        # 5. Totalizador Geral (Fim do Arquivo)
+                        # 5. Total Geral
                         worksheet.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=5)
                         cell_total_geral = worksheet.cell(row=row_idx, column=1, value="TOTAL GERAL CEMIG")
                         cell_total_geral.fill = header_fill_colunas
@@ -1743,7 +1776,7 @@ with aba_controle:
                             cell.font = header_font_branca
                             cell.number_format = 'R$ #,##0.00'
                             
-                        # 6. Ajuste seguro da largura das colunas
+                        # 6. Larguras de coluna
                         for i, col in enumerate(worksheet.columns, 1):
                             max_length = 0
                             col_letter = get_column_letter(i)
@@ -1755,22 +1788,19 @@ with aba_controle:
                                     pass
                             worksheet.column_dimensions[col_letter].width = (max_length + 3)
                             
-                        # Remove a aba padrão Sheet criada automaticamente pelo openpyxl
                         if 'Sheet' in workbook.sheetnames:
                             workbook.remove(workbook['Sheet'])
                         
-                    col_btn_gerar, _, _ = st.columns([1, 2, 2])
-                    with col_btn_gerar:
-                        st.download_button(
-                            label="🚀 Gerar Relatório Financeiro (CEMIG)",
-                            data=buffer_cemig.getvalue(),
-                            file_name=f"Financeiro_CEMIG_{'_'.join([m.replace('/', '_') for m in meses_selecionados])}.xlsx",
-                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                            type="primary",
-                            on_click=finalizar_lote_cemig,
-                            args=(df_pend_cemig,),
-                            use_container_width=True
-                        )
+                    st.download_button(
+                        label="🚀 Gerar Relatório Financeiro (CEMIG)",
+                        data=buffer_cemig.getvalue(),
+                        file_name=f"Financeiro_CEMIG_{'_'.join([m.replace('/', '_') for m in meses_selecionados])}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        type="primary",
+                        on_click=finalizar_lote_cemig,
+                        args=(df_pend_cemig,),
+                        use_container_width=True
+                    )
                 else:
                     st.success("✅ Não existe pendência de envio para as faturas da CEMIG no(s) mês(es) selecionado(s).")
                 

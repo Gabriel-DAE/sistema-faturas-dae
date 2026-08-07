@@ -1611,7 +1611,7 @@ with aba_controle:
                     
                     colunas_banco_cemig = [
                         'Nota Fiscal CEMIG', 'Data Emissão CEMIG', 'uc_cemig', 'Mês Referência', 'Vencimento ACL',
-                        'Valor Energia ACL (R$)', 'Valor ICMS ACL (R$)', 'IRPJ Retido ACL (R$)', 'Valor Total ACL (R$)'
+                        'Valor Energia ACL (R$)', 'IRPJ Retido ACL (R$)', 'Valor Total ACL (R$)', 'Valor ICMS ACL (R$)'
                     ]
                     
                     mapeamento_cemig = {
@@ -1635,7 +1635,7 @@ with aba_controle:
                     # Varre cada setor (Atividade)
                     for setor, df_setor in df_pend_cemig.groupby('Atividade', dropna=False):
                         setor_nome = str(setor).upper() if pd.notnull(setor) else "NÃO INFORMADO"
-                        st.markdown(f"#### 🏢 Setor: {setor_nome}")
+                        st.markdown(f"#### {setor_nome}")
                         
                         # Tabela filtrada do setor
                         df_setor_show = df_setor[colunas_banco_cemig].rename(columns=mapeamento_cemig).copy()
@@ -1659,24 +1659,22 @@ with aba_controle:
                                 lambda x: f"R$ {float(x):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".") if pd.notnull(x) else "R$ 0,00"
                             )
                         
+                        # Exibe a tabela Limpa (Padrão CPFL)
                         st.dataframe(df_setor_show, hide_index=True, use_container_width=True)
                         
-                        # Cartões com os Subtotais do Setor
-                        c1, c2, c3, c4 = st.columns(4)
-                        c1.metric("Energia ACL", f"R$ {s_energia:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                        c2.metric("ICMS ACL", f"R$ {s_icms:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                        c3.metric("IRPJ Retido", f"R$ {s_irpj:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                        c4.metric(f"TOTAL {setor_nome}", f"R$ {s_total:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                        # Exibe o Subtotal em texto logo abaixo da tabela (Padrão CPFL)
+                        texto_subtotal = f"**Subtotal {setor_nome}:** Energia: R$ {s_energia:,.2f} | ICMS: R$ {s_icms:,.2f} | IRPJ: R$ {s_irpj:,.2f} | **Fatura: R$ {s_total:,.2f}**"
+                        st.write(texto_subtotal.replace(",", "X").replace(".", ",").replace("X", "."))
                         
                         st.divider()
 
                     # --- PAINEL DE TOTAL GERAL CEMIG NA TELA ---
-                    st.markdown("### 💰 Total Geral CEMIG (Todos os Setores)")
-                    g1, g2, g3, g4 = st.columns(4)
-                    g1.metric("Total Energia ACL", f"R$ {tot_geral_energia:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                    g2.metric("Total ICMS ACL", f"R$ {tot_geral_icms:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                    g3.metric("Total IRPJ Retido", f"R$ {tot_geral_irpj:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
-                    g4.metric("TOTAL GERAL CEMIG", f"R$ {tot_geral_fatura:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                    st.markdown("### 💰 TOTAL GERAL CEMIG")
+                    st.write(f"**Total Energia ACL:** R$ {tot_geral_energia:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                    st.write(f"**Total ICMS ACL:** R$ {tot_geral_icms:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                    st.write(f"**Total IRPJ Retido:** R$ {tot_geral_irpj:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                    st.write(f"**TOTAL GERAL A PAGAR:** R$ {tot_geral_fatura:,.2f}".replace(",", "X").replace(".", ",").replace("X", "."))
+                    
                     st.divider()
 
                     # --- GERAÇÃO DO ARQUIVO EXCEL NA MEMÓRIA ---

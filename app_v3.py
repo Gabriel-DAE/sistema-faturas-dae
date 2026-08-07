@@ -1787,16 +1787,18 @@ with aba_controle:
                         if 'Sheet' in workbook.sheetnames:
                             workbook.remove(workbook['Sheet'])
                         
-                    st.download_button(
-                        label="🚀 Gerar Relatório Financeiro (CEMIG)",
-                        data=buffer_cemig.getvalue(),
-                        file_name=f"Financeiro_CEMIG_{'_'.join([m.replace('/', '_') for m in meses_selecionados])}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        type="primary",
-                        on_click=finalizar_lote_cemig,
-                        args=(df_pend_cemig,),
-                        use_container_width=True
-                    )
+                    col_btn_gerar, _, _ = st.columns([1, 2, 2])
+                    with col_btn_gerar:
+                        st.download_button(
+                            label="🚀 Gerar Relatório Financeiro (CEMIG)",
+                            data=buffer_cemig.getvalue(),
+                            file_name=f"Financeiro_CEMIG_{'_'.join([m.replace('/', '_') for m in meses_selecionados])}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            type="primary",
+                            on_click=finalizar_lote_cemig,
+                            args=(df_pend_cemig,),
+                            use_container_width=True
+                        )
                 else:
                     st.success("✅ Não existe pendência de envio para as faturas da CEMIG no(s) mês(es) selecionado(s).")
                 

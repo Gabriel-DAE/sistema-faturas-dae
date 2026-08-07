@@ -1623,9 +1623,7 @@ with aba_controle:
                         'Valor Total ACL (R$)': 'Valor Total Fatura'
                     }
 
-                    # --- EXIBIÇÃO NA TELA SEPARADA POR SETOR (PADRÃO EXPANDER) ---
-                    st.markdown("### 📊 Detalhamento por Setor - CEMIG")
-                    
+                    # --- EXIBIÇÃO NA TELA SEPARADA POR SETOR (PADRÃO EXPANDER) ---                  
                     # Variáveis para acumular o Total Geral na tela
                     tot_geral_energia = 0.0
                     tot_geral_icms = 0.0

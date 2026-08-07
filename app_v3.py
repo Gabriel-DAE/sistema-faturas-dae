@@ -1740,7 +1740,7 @@ with aba_controle:
                             worksheet.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=5) 
                             cell_total_setor = worksheet.cell(row=row_idx, column=1, value=f"TOTAL {setor_nome}")
                             cell_total_setor.fill = header_fill_colunas
-                            cell_total_setor.font = header_font_branca
+                            cell_total_setor.font = header_font_preta
                             cell_total_setor.alignment = alignment_center
                             
                             for c_idx in range(2, 6):
@@ -1750,7 +1750,7 @@ with aba_controle:
                                 col_idx = colunas_banco_cemig.index(c_name) + 1
                                 cell = worksheet.cell(row=row_idx, column=col_idx, value=t_val)
                                 cell.fill = header_fill_colunas
-                                cell.font = header_font_branca
+                                cell.font = header_font_preta
                                 cell.number_format = 'R$ #,##0.00'
                             
                             row_idx += 2
@@ -1759,7 +1759,7 @@ with aba_controle:
                         worksheet.merge_cells(start_row=row_idx, start_column=1, end_row=row_idx, end_column=5)
                         cell_total_geral = worksheet.cell(row=row_idx, column=1, value="TOTAL GERAL CEMIG")
                         cell_total_geral.fill = header_fill_colunas
-                        cell_total_geral.font = header_font_branca
+                        cell_total_geral.font = header_font_preta
                         cell_total_geral.alignment = alignment_center
                         
                         for c_idx in range(2, 6):
@@ -1769,7 +1769,7 @@ with aba_controle:
                             col_idx = colunas_banco_cemig.index(c_name) + 1
                             cell = worksheet.cell(row=row_idx, column=col_idx, value=t_val)
                             cell.fill = header_fill_colunas
-                            cell.font = header_font_branca
+                            cell.font = header_font_preta
                             cell.number_format = 'R$ #,##0.00'
                             
                         # 6. Larguras de coluna

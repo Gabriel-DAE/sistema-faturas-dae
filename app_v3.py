@@ -1545,7 +1545,7 @@ with aba_controle:
                     col_btn_gerar, _, _ = st.columns([1, 2, 2])
                     with col_btn_gerar:
                         st.download_button(
-                            label="🚀 Gerar Relatório Financeiro",
+                            label="🚀 Gerar Relatório Financeiro (CPFL)",
                             data=buffer.getvalue(),
                             file_name=nome_arquivo_excel,
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -1650,16 +1650,18 @@ with aba_controle:
                         df_export_cemig = df_pend_cemig[colunas_banco_cemig].rename(columns=mapeamento_cemig)
                         df_export_cemig.to_excel(writer, index=False, sheet_name='Relatorio_CEMIG')
                         
-                    st.download_button(
-                        label="🚀 Gerar Relatório Financeiro (CEMIG)",
-                        data=buffer_cemig.getvalue(),
-                        file_name=f"Financeiro_CEMIG_{'_'.join([m.replace('/', '_') for m in meses_selecionados])}.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                        type="primary",
-                        on_click=finalizar_lote_cemig,
-                        args=(df_pend_cemig,),
-                        use_container_width=True
-                    )
+                    col_btn_gerar, _, _ = st.columns([1, 2, 2])
+                    with col_btn_gerar:
+                        st.download_button(
+                            label="🚀 Gerar Relatório Financeiro (CEMIG)",
+                            data=buffer_cemig.getvalue(),
+                            file_name=f"Financeiro_CEMIG_{'_'.join([m.replace('/', '_') for m in meses_selecionados])}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            type="primary",
+                            on_click=finalizar_lote_cemig,
+                            args=(df_pend_cemig,),
+                            use_container_width=True
+                        )
                 else:
                     st.success("✅ Não existe pendência de envio para as faturas da CEMIG no(s) mês(es) selecionado(s).")
                 

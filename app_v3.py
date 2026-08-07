@@ -1558,9 +1558,10 @@ with aba_controle:
                     st.success(f"✅ Não existe pendência de envio para as faturas da CPFL no(s) mês(es) selecionado(s).")
 
                 st.divider()
-                with st.expander("📜 Gestão de Envios (Visualizar ou Reverter)"):
-                    if not df_enviados.empty:
-                        df_hist_nomes = pd.merge(df_enviados, df_faturas[['UC', 'Nome da Unidade']].drop_duplicates(), left_on='unidade_consumidora', right_on='UC', how='left')
+                with st.expander("📜 Gestão de Envios (Visualizar ou Reverter) - CPFL"):
+                    if not df_enviados_cpfl.empty: # <- VARIÁVEL CORRIGIDA AQUI
+                        # E CORRIGIDA AQUI TAMBÉM:
+                        df_hist_nomes = pd.merge(df_enviados_cpfl, df_faturas[['UC', 'Nome da Unidade']].drop_duplicates(), left_on='unidade_consumidora', right_on='UC', how='left')
                         df_hist_nomes['data_envio'] = pd.to_datetime(df_hist_nomes['data_envio']).dt.strftime('%d/%m/%Y %H:%M')
                         st.write("Selecione para **REVERTER** (faturas voltam para a lista acima):")
                         
@@ -1568,7 +1569,7 @@ with aba_controle:
                             df_hist_nomes[['id', 'Nome da Unidade', 'unidade_consumidora', 'mes_referencia', 'data_envio', 'valor_fatura']],
                             use_container_width=True, hide_index=True, on_select="rerun", selection_mode="multi-row",
                             column_config={"id": None, "valor_fatura": st.column_config.NumberColumn("Valor (R$)", format="%.2f")},
-                            key=f"tabela_reversao_{'_'.join(meses_selecionados)}"
+                            key=f"tabela_reversao_cpfl_{'_'.join(meses_selecionados)}" # <- AJUSTE DE CHAVE PARA NÃO DAR CONFLITO
                         )
                         
                         if len(evento_hist.selection.rows) > 0:
@@ -1581,7 +1582,7 @@ with aba_controle:
                                     conexao.commit()
                                     st.rerun()
                     else:
-                        st.info("Nenhum envio registrado para o(s) mês(es) selecionado(s).")
+                        st.info("Nenhum envio registrado para a CPFL no(s) mês(es) selecionado(s).")
 
             # --- SUB-ABA 2: RELATÓRIO CEMIG ---
             with tab_rel_cemig:

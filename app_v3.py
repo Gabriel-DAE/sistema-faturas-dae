@@ -1301,7 +1301,9 @@ with aba_controle:
     # 1. Carregar dados básicos e cadastros ativos
     df_faturas = carregar_dados()
     conexao = obter_conexao()
-    df_cadastro = pd.read_sql_query("SELECT unidade_consumidora, nome_unidade, status, dia_vencimento, uc_cemig FROM cadastro_uc WHERE status = 'ATIVA'", conexao)
+    url_sqlalchemy = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://")
+    engine = create_engine(url_sqlalchemy)
+    df_cadastro = pd.read_sql_query("SELECT unidade_consumidora, nome_unidade, status, dia_vencimento, uc_cemig FROM cadastro_uc WHERE status = 'ATIVA'", engine)
     
     if df_faturas.empty:
         st.info("Nenhuma fatura carregada para auditoria.")
@@ -1341,7 +1343,7 @@ with aba_controle:
                 placeholders_mes = ','.join(['%s'] * len(meses_selecionados))
                 df_enviados_cpfl = pd.read_sql_query(
                     f"SELECT id, unidade_consumidora, mes_referencia, data_envio, valor_fatura FROM historico_financeiro WHERE tipo_fatura = 'CPFL' AND mes_referencia IN ({placeholders_mes})", 
-                    conexao, 
+                    engine, 
                     params=tuple(meses_selecionados)
                 )
                     
@@ -1604,7 +1606,7 @@ with aba_controle:
                 
                 df_enviados_cemig = pd.read_sql_query(
                     f"SELECT id, unidade_consumidora, mes_referencia, data_envio, valor_fatura FROM historico_financeiro WHERE tipo_fatura = 'CEMIG' AND mes_referencia IN ({placeholders_mes})", 
-                    conexao, params=tuple(meses_selecionados)
+                    engine, params=tuple(meses_selecionados)
                 )
                 
                 df_mes_cemig['Chave_Fatura'] = df_mes_cemig['UC'].astype(str) + "_" + df_mes_cemig['Mês Referência'].astype(str)
@@ -2602,9 +2604,9 @@ with aba_config:
     
     @st.cache_data(show_spinner=False, ttl=60)
     def gerar_excel_cadastro():
-        conn = obter_conexao()
-        df_cad = pd.read_sql_query("SELECT * FROM cadastro_uc", conn)
-        conn.close()
+        url_sqlalchemy = DATABASE_URL.replace("postgresql://", "postgresql+psycopg://")
+        engine = create_engine(url_sqlalchemy)
+        df_cad = pd.read_sql_query("SELECT * FROM cadastro_uc", engine)
         
         if not df_cad.empty:
             df_cad = df_cad.rename(columns={

@@ -2479,18 +2479,15 @@ with aba_pdf:
                                 
                                 if row_existente:
                                     id_linha, v_total_fatura = row_existente
-                                    # Se já tem valor da CPFL preenchido, trata como duplicada
-                                    if v_total_fatura > 0:
+                                    if v_total_fatura is not None and v_total_fatura > 0:
                                         duplicadas += 1
                                     else:
-                                        # Se a linha foi criada primeiro pela CEMIG, atualiza com os dados da CPFL
                                         colunas_up = [f"{k} = %s" for k in d_cpfl.keys() if k not in ('id', 'consumo_energia_acl_kwh', 'tarifa_energia_acl', 'valor_energia_acl', 'valor_total_acl', 'data_vencimento_acl')]
                                         valores_up = tuple(d_cpfl[k] for k in d_cpfl.keys() if k not in ('id', 'consumo_energia_acl_kwh', 'tarifa_energia_acl', 'valor_energia_acl', 'valor_total_acl', 'data_vencimento_acl'))
                                         query_up = f"UPDATE faturas_cpfl SET {', '.join(colunas_up)} WHERE id = %s"
                                         c.execute(query_up, valores_up + (id_linha,))
                                         sucessos += 1
                                 else:
-                                    # Inserção normal da CPFL
                                     colunas = ', '.join(d_cpfl.keys())
                                     placeholders = ', '.join(['%s'] * len(d_cpfl))
                                     valores = tuple(d_cpfl.values())

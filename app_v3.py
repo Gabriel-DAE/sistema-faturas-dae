@@ -1873,8 +1873,8 @@ with aba_controle:
                     
                     faturas_uc_mes = df_mes[df_mes['UC'] == uc]
                     
-                    tem_cpfl = not faturas_uc_mes[faturas_uc_mes['Classificação'] != 'Mercado Livre - ACL'].empty
-                    tem_cemig = not faturas_uc_mes[faturas_uc_mes['Classificação'] == 'Mercado Livre - ACL'].empty
+                    tem_cpfl = (faturas_uc_mes['Valor Total Fatura'].sum() > 0) or (faturas_uc_mes['Vencimento CPFL'].astype(str).str.len() > 5)
+                    tem_cemig = (faturas_uc_mes['Valor Total ACL (R$)'].sum() > 0) or (faturas_uc_mes['Vencimento ACL'].astype(str).str.len() > 5)
                     
                     status_pendencia = ""
                     if is_acl:

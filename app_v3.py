@@ -161,6 +161,8 @@ def inicializar_banco():
         INSERT INTO parametros_sistema (chave, valor)
         VALUES ('tarifa_te_ponta_ref', 0.0),
                ('tarifa_te_fponta_ref', 0.0),
+               ('tarifa_tusd_ponta_ref', 0.0),
+               ('tarifa_tusd_fponta_ref', 0.0),
                ('tarifa_bandeira_amarela', 0.0),
                ('tarifa_bandeira_vermelha1', 0.0),
                ('tarifa_bandeira_vermelha2', 0.0)
@@ -224,30 +226,33 @@ def obter_parametros_tarifas():
     try:
         conexao = obter_conexao()
         cursor = conexao.cursor()
-        cursor.execute("SELECT chave, valor FROM parametros_sistema WHERE chave IN ('tarifa_te_ponta_ref', 'tarifa_te_fponta_ref', 'tarifa_bandeira_amarela', 'tarifa_bandeira_vermelha1', 'tarifa_bandeira_vermelha2');")
+        cursor.execute("SELECT chave, valor FROM parametros_sistema WHERE chave IN ('tarifa_te_ponta_ref', 'tarifa_te_fponta_ref', 'tarifa_tusd_ponta_ref', 'tarifa_tusd_fponta_ref', 'tarifa_bandeira_amarela', 'tarifa_bandeira_vermelha1', 'tarifa_bandeira_vermelha2');")
         rows = cursor.fetchall()
         conexao.close()
         params = {r[0]: r[1] for r in rows}
         te_ponta = params.get('tarifa_te_ponta_ref', 0.0)
         te_fponta = params.get('tarifa_te_fponta_ref', 0.0)
+        tusd_ponta = params.get('tarifa_tusd_ponta_ref', 0.0)
+        tusd_fponta = params.get('tarifa_tusd_fponta_ref', 0.0)
         band_amarela = params.get('tarifa_bandeira_amarela', 0.0)
         band_verm1 = params.get('tarifa_bandeira_vermelha1', 0.0)
         band_verm2 = params.get('tarifa_bandeira_vermelha2', 0.0)
-        return te_ponta, te_fponta, band_amarela, band_verm1, band_verm2
+        return te_ponta, te_fponta, tusd_ponta, tusd_fponta, band_amarela, band_verm1, band_verm2
     except Exception:
-        return 0.0, 0.0, 0.0, 0.0, 0.0
+        return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 
-def salvar_parametros_tarifas(te_ponta, te_fponta, band_amarela, band_verm1, band_verm2):
+def salvar_parametros_tarifas(te_ponta, te_fponta, tusd_ponta, tusd_fponta, band_amarela, band_verm1, band_verm2):
     """Salva as tarifas e bandeiras no banco de dados e limpa o cache."""
     try:
         conexao = obter_conexao()
         cursor = conexao.cursor()
         cursor.execute("""
             INSERT INTO parametros_sistema (chave, valor)
-            VALUES ('tarifa_te_ponta_ref', %s), ('tarifa_te_fponta_ref', %s), 
+            VALUES ('tarifa_te_ponta_ref', %s), ('tarifa_te_fponta_ref', %s),
+                   ('tarifa_tusd_ponta_ref', %s), ('tarifa_tusd_fponta_ref', %s),
                    ('tarifa_bandeira_amarela', %s), ('tarifa_bandeira_vermelha1', %s), ('tarifa_bandeira_vermelha2', %s)
             ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor;
-        """, (te_ponta, te_fponta, band_amarela, band_verm1, band_verm2))
+        """, (te_ponta, te_fponta, tusd_ponta, tusd_fponta, band_amarela, band_verm1, band_verm2))
         conexao.commit()
         conexao.close()
         st.cache_data.clear() 
@@ -344,13 +349,19 @@ def carregar_dados():
     is_livre = df['Classificação'].astype(str).str.contains('Livre|ACL', case=False, na=False)
 
     # Puxa os parâmetros cadastrados
-    TARIFA_TE_PONTA_REF, TARIFA_TE_FPONTA_REF, BAND_AMARELA, BAND_VERM1, BAND_VERM2 = obter_parametros_tarifas()
+    TARIFA_TE_PONTA_REF, TARIFA_TE_FPONTA_REF, TARIFA_TUSD_PONTA_REF, TARIFA_TUSD_FPONTA_REF, BAND_AMARELA, BAND_VERM1, BAND_VERM2 = obter_parametros_tarifas()
 
     def calcular_simulacao_linha(r):
         if not r['is_livre']:
             return pd.Series([r['Valor Total de Energia'], 0.0])
         
-        demanda_tusd_acr = (r['Valor Dem. Ponta'] + r['Valor Dem. F.Ponta'] + r['Valor Dem. Ultrap. Ponta'] + r['Valor Dem. Ultrap. F.Ponta']) * 2.0
+        # Determina a demanda a faturar (a maior entre registrada e contratada, de acordo com o contrato)
+        dem_p_faturada = max(r['Dem. Reg. Ponta'], r['Dem. Contr. Ponta']) if r['Dem. Contr. Ponta'] > 0 else r['Dem. Reg. Ponta']
+        dem_fp_faturada = max(r['Dem. Reg. F.Ponta'], r['Dem. Contr. F.Ponta']) if r['Dem. Contr. F.Ponta'] > 0 else r['Dem. Reg. F.Ponta']
+
+        # Cálculo da Demanda TUSD integral no Cativo (ACR) usando a tarifa cadastrada em R$/kW
+        demanda_tusd_acr = (dem_p_faturada * TARIFA_TUSD_PONTA_REF) + (dem_fp_faturada * TARIFA_TUSD_FPONTA_REF) + r['Valor Dem. Ultrap. Ponta'] + r['Valor Dem. Ultrap. F.Ponta']
+        
         consumo_tusd_acr = r['Valor Cons. Ponta TUSD'] + r['Valor Cons. F.Ponta TUSD']
         consumo_te_acr = (r['Consumo Ponta'] * TARIFA_TE_PONTA_REF) + (r['Consumo F.Ponta'] * TARIFA_TE_FPONTA_REF)
         
@@ -2745,18 +2756,26 @@ with aba_config:
     # FORMULÁRIO DE TARIFA DE REFERÊNCIA ACR E BANDEIRAS
     # ---------------------------------------------------------
     st.divider()
-    st.markdown("##### ⚡ Tarifas TE e Bandeiras Tarifárias para Simulação ACR (Mercado Cativo)")
+    st.markdown("##### ⚡ Tarifas TE, TUSD Demanda e Bandeiras Tarifárias para Simulação ACR (Mercado Cativo)")
     st.caption("Defina os valores base de cada grandeza para o cálculo automático de economia no Mercado Livre.")
 
-    te_p_atual, te_fp_atual, band_amarela_atual, band_verm1_atual, band_verm2_atual = obter_parametros_tarifas()
+    te_p_atual, te_fp_atual, tusd_p_atual, tusd_fp_atual, band_amarela_atual, band_verm1_atual, band_verm2_atual = obter_parametros_tarifas()
 
     with st.form("form_tarifas_ref"):
+        st.markdown("###### 💡 Tarifas TE de Consumo (R$/kWh)")
         col_t1, col_t2 = st.columns(2)
         with col_t1:
             novo_te_ponta = st.number_input("Tarifa TE Ponta (R$/kWh)", value=float(te_p_atual), format="%.5f", step=0.00001)
         with col_t2:
             novo_te_fponta = st.number_input("Tarifa TE Fora Ponta (R$/kWh)", value=float(te_fp_atual), format="%.5f", step=0.00001)
-        
+
+        st.markdown("###### 📉 Tarifas TUSD de Demanda Integral (R$/kW)")
+        col_td1, col_td2 = st.columns(2)
+        with col_td1:
+            novo_tusd_ponta = st.number_input("Tarifa TUSD Demanda Ponta (R$/kW)", value=float(tusd_p_atual), format="%.5f", step=0.00001)
+        with col_td2:
+            novo_tusd_fponta = st.number_input("Tarifa TUSD Demanda Fora Ponta (R$/kW)", value=float(tusd_fp_atual), format="%.5f", step=0.00001)
+
         st.markdown("###### 🚩 Valores das Bandeiras Tarifárias (R$/kWh)")
         col_b1, col_b2, col_b3 = st.columns(3)
         with col_b1:
@@ -2769,8 +2788,8 @@ with aba_config:
         btn_salvar_tarifas = st.form_submit_button("💾 Salvar Tarifas e Bandeiras", type="primary")
         
         if btn_salvar_tarifas:
-            if salvar_parametros_tarifas(novo_te_ponta, novo_te_fponta, nova_band_amarela, nova_band_verm1, nova_band_verm2):
-                st.success("✅ Configurações atualizadas! O banco de dados foi recalculado usando o histórico de bandeiras extraído de cada fatura.")
+            if salvar_parametros_tarifas(novo_te_ponta, novo_te_fponta, novo_tusd_ponta, novo_tusd_fponta, nova_band_amarela, nova_band_verm1, nova_band_verm2):
+                st.success("✅ Configurações atualizadas! O banco de dados foi recalculado com as novas tarifas de referência.")
                 st.rerun()
     
     # ---------------------------------------------------------

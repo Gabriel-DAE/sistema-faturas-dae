@@ -737,7 +737,12 @@ def processar_pdf_cemig(arquivo_pdf):
     dados_cemig['valor_total_acl'] = limpar_numero(match_total.group(1)) if match_total else 0.0
 
     # Cálculo do ICMS (18% sobre a Energia) e do Valor Total c/ ICMS
-    dados_cemig['valor_icms_acl'] = round(dados_cemig['valor_energia_acl'] * 0.18, 2)
+    if dados_cemig['valor_energia_acl'] > 0:
+        base_cheia = dados_cemig['valor_energia_acl'] / 0.82
+        dados_cemig['valor_icms_acl'] = round(base_cheia * 0.18, 2)
+    else:
+        dados_cemig['valor_icms_acl'] = 0.0
+
     dados_cemig['valor_total_acl_com_icms'] = round(dados_cemig['valor_total_acl'] + dados_cemig['valor_icms_acl'], 2)
     
     match_irpj = re.search(r"Imposto\s+Retido.*?IRPJ.*?(?:R\$)?\s*(?:-)?\s*([\d\.,]+)", texto, re.IGNORECASE)

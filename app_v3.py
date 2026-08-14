@@ -355,13 +355,15 @@ def carregar_dados():
         if not r['is_livre']:
             return pd.Series([r['Valor Total de Energia'], 0.0])
         
-        # Determina a demanda a faturar (a maior entre registrada e contratada, de acordo com o contrato)
+        val_cemig = r.get('Valor Total ACL (R$)', 0.0)
+        venc_cemig = str(r.get('Vencimento ACL', '')).strip()
+        tem_cemig = (val_cemig is not None and float(val_cemig) > 0) or (venc_cemig not in ['', 'None', 'nan', 'NaT'] and len(venc_cemig) > 5)
+
+        # 2. Cálculo do Custo Estimado no Mercado Cativo (ACR)
         dem_p_faturada = max(r['Dem. Reg. Ponta'], r['Dem. Contr. Ponta']) if r['Dem. Contr. Ponta'] > 0 else r['Dem. Reg. Ponta']
         dem_fp_faturada = max(r['Dem. Reg. F.Ponta'], r['Dem. Contr. F.Ponta']) if r['Dem. Contr. F.Ponta'] > 0 else r['Dem. Reg. F.Ponta']
 
-        # Cálculo da Demanda TUSD integral no Cativo (ACR) usando a tarifa cadastrada em R$/kW
         demanda_tusd_acr = (dem_p_faturada * TARIFA_TUSD_PONTA_REF) + (dem_fp_faturada * TARIFA_TUSD_FPONTA_REF) + r['Valor Dem. Ultrap. Ponta'] + r['Valor Dem. Ultrap. F.Ponta']
-        
         consumo_tusd_acr = r['Valor Cons. Ponta TUSD'] + r['Valor Cons. F.Ponta TUSD']
         consumo_te_acr = (r['Consumo Ponta'] * TARIFA_TE_PONTA_REF) + (r['Consumo F.Ponta'] * TARIFA_TE_FPONTA_REF)
         
@@ -380,7 +382,12 @@ def carregar_dados():
         outros_encargos = r['CIP'] + r['Valor Total Reativo'] + adicional_bandeira_acr
         
         custo_acr = demanda_tusd_acr + consumo_tusd_acr + consumo_te_acr + outros_encargos
-        economia_acl = custo_acr - r['Valor Total de Energia']
+
+        if not tem_cemig:
+            return pd.Series([round(custo_acr, 2), 0.0])
+
+        custo_real_acl = r['Valor Total de Energia'] + float(val_cemig)
+        economia_acl = custo_acr - custo_real_acl
         
         return pd.Series([round(custo_acr, 2), round(economia_acl, 2)])
 

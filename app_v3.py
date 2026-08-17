@@ -383,10 +383,17 @@ def carregar_dados():
         custo_acr = demanda_tusd_acr + consumo_tusd_acr + consumo_te_acr + outros_encargos
         economia_acl = custo_acr - r['Valor Total de Energia']
         
-        return pd.Series([round(custo_acr, 2), round(economia_acl, 2)])
+        return pd.Series([
+            round(custo_acr, 2), 
+            round(economia_acl, 2),
+            round(demanda_tusd_acr, 2),
+            round(consumo_tusd_acr, 2),
+            round(consumo_te_acr, 2),
+            round(outros_encargos, 2)
+        ])
 
     df['is_livre'] = is_livre
-    df[['Valor Estimado ACR', 'Valor Economia ACL']] = df.apply(calcular_simulacao_linha, axis=1)
+    df[['Valor Estimado ACR', 'Valor Economia ACL', 'AUD_Demanda', 'AUD_TUSD', 'AUD_TE', 'AUD_Encargos']] = df.apply(calcular_simulacao_linha, axis=1)
     df = df.drop(columns=['is_livre'])
     
     # Converter Referência para ordenação cronológica
@@ -407,7 +414,7 @@ def carregar_dados():
         'id', 'Data Referência Oculta', 'UC', 'Nome da Unidade', 'Atividade', 'Classificação', 'Mês Referência', 'Vencimento CPFL', 'Vencimento ACL', 
         'Leitura Anterior', 'Leitura Atual', 'Próxima Leitura', 'Consumo Energia ACL (kWh)', 'Tarifa Energia ACL (R$/kWh)', 
         'Valor Energia ACL (R$)', 'IRPJ Retido ACL (R$)', 'Valor Total ACL (R$)', 'Valor ICMS ACL (R$)', 'Valor Total ACL c/ ICMS (R$)', 'Valor Total Fatura',
-        'Valor Total de Energia', 'Valor Estimado ACR', 'Valor Economia ACL', 'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Consumo Ponta', 
+        'Valor Total de Energia', 'Valor Estimado ACR', 'Valor Economia ACL', 'AUD_Demanda', 'AUD_TUSD', 'AUD_TE', 'AUD_Encargos', 'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Consumo Ponta', 
         'Tarifa Cons. Ponta TUSD', 'Tarifa Trib. Cons. Ponta TUSD', 'Valor Cons. Ponta TUSD', 'Tarifa Cons. Ponta TE', 'Tarifa Trib. Cons. Ponta TE', 
         'Valor Cons. Ponta TE', 'Consumo F.Ponta', 'Tarifa Cons. F.Ponta TUSD', 'Tarifa Trib. Cons. F.Ponta TUSD', 'Valor Cons. F.Ponta TUSD', 
         'Tarifa Cons. F.Ponta TE', 'Tarifa Trib. Cons. F.Ponta TE', 'Valor Cons. F.Ponta TE', 'Bandeira', 'Adicional Bandeira', 'Dem. Contr. Ponta', 

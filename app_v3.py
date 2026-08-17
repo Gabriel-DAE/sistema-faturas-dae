@@ -358,10 +358,26 @@ def carregar_dados():
         if r.get('Valor Total ACL (R$)', 0.0) == 0.0:
             return pd.Series([r['Valor Total de Energia'], 0.0])
 
-        dem_p_faturada = max(r['Dem. Reg. Ponta'], r['Dem. Contr. Ponta']) if r['Dem. Contr. Ponta'] > 0 else r['Dem. Reg. Ponta']
-        dem_fp_faturada = max(r['Dem. Reg. F.Ponta'], r['Dem. Contr. F.Ponta']) if r['Dem. Contr. F.Ponta'] > 0 else r['Dem. Reg. F.Ponta']
+        # Identifica se a UC é Tarifa Verde ou Azul
+        tipo_tarifa = str(r.get('Classificação', '')).upper()
 
-        demanda_tusd_acr = (dem_p_faturada * TARIFA_TUSD_PONTA_REF) + (dem_fp_faturada * TARIFA_TUSD_FPONTA_REF) + r['Valor Dem. Ultrap. Ponta'] + r['Valor Dem. Ultrap. F.Ponta']
+        if 'VERDE' in tipo_tarifa:
+            # 🟢 REGRA TARIFA VERDE: Demanda Única
+            # Pega a maior medida do mês (Ponta vs F.Ponta)
+            maior_medida = max(r['Dem. Reg. Ponta'], r['Dem. Reg. F.Ponta'])
+            
+            # Compara a maior medida com a contratada (que fica salva no F.Ponta)
+            dem_faturada = max(maior_medida, r['Dem. Contr. F.Ponta']) if r['Dem. Contr. F.Ponta'] > 0 else maior_medida
+            
+            # Aplica a tarifa única de demanda (usando a de F.Ponta como base)
+            demanda_tusd_acr = (dem_faturada * TARIFA_TUSD_FPONTA_REF) + r['Valor Dem. Ultrap. Ponta'] + r['Valor Dem. Ultrap. F.Ponta']
+            
+        else:
+            # 🔵 REGRA TARIFA AZUL: Duas Demandas Independentes
+            dem_p_faturada = max(r['Dem. Reg. Ponta'], r['Dem. Contr. Ponta']) if r['Dem. Contr. Ponta'] > 0 else r['Dem. Reg. Ponta']
+            dem_fp_faturada = max(r['Dem. Reg. F.Ponta'], r['Dem. Contr. F.Ponta']) if r['Dem. Contr. F.Ponta'] > 0 else r['Dem. Reg. F.Ponta']
+
+            demanda_tusd_acr = (dem_p_faturada * TARIFA_TUSD_PONTA_REF) + (dem_fp_faturada * TARIFA_TUSD_FPONTA_REF) + r['Valor Dem. Ultrap. Ponta'] + r['Valor Dem. Ultrap. F.Ponta']
         
         consumo_tusd_acr = r['Valor Cons. Ponta TUSD'] + r['Valor Cons. F.Ponta TUSD']
         consumo_te_acr = (r['Consumo Ponta'] * TARIFA_TE_PONTA_REF) + (r['Consumo F.Ponta'] * TARIFA_TE_FPONTA_REF)

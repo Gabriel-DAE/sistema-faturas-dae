@@ -352,33 +352,20 @@ def carregar_dados():
     TARIFA_TE_PONTA_REF, TARIFA_TE_FPONTA_REF, TARIFA_TUSD_PONTA_REF, TARIFA_TUSD_FPONTA_REF, BAND_AMARELA, BAND_VERM1, BAND_VERM2 = obter_parametros_tarifas()
 
     def calcular_simulacao_linha(r):
+        # 1. Se não for do Mercado Livre, retorna 2 valores reais e zera o resto da auditoria
         if not r['is_livre']:
-            return pd.Series([r['Valor Total de Energia'], 0.0])
+            return pd.Series([r['Valor Total de Energia'], 0.0, 0.0, 0.0, 0.0, 0.0])
         
-        if r.get('Valor Total ACL (R$)', 0.0) == 0.0:
-            return pd.Series([r['Valor Total de Energia'], 0.0])
+        # Checa se existe fatura da CEMIG cadastrada para esta linha/mês
+        val_cemig = r.get('Valor Total ACL (R$)', 0.0)
+        venc_cemig = str(r.get('Vencimento ACL', '')).strip()
+        tem_cemig = (val_cemig is not None and float(val_cemig) > 0) or (venc_cemig not in ['', 'None', 'nan', 'NaT'] and len(venc_cemig) > 5)
 
-        # Identifica se a UC é Tarifa Verde ou Azul
-        tipo_tarifa = str(r.get('Classificação', '')).upper()
+        # Cálculo do Custo Estimado no Mercado Cativo (ACR)
+        dem_p_faturada = max(r['Dem. Reg. Ponta'], r['Dem. Contr. Ponta']) if r['Dem. Contr. Ponta'] > 0 else r['Dem. Reg. Ponta']
+        dem_fp_faturada = max(r['Dem. Reg. F.Ponta'], r['Dem. Contr. F.Ponta']) if r['Dem. Contr. F.Ponta'] > 0 else r['Dem. Reg. F.Ponta']
 
-        if 'VERDE' in tipo_tarifa:
-            # 🟢 REGRA TARIFA VERDE: Demanda Única
-            # Pega a maior medida do mês (Ponta vs F.Ponta)
-            maior_medida = max(r['Dem. Reg. Ponta'], r['Dem. Reg. F.Ponta'])
-            
-            # Compara a maior medida com a contratada (que fica salva no F.Ponta)
-            dem_faturada = max(maior_medida, r['Dem. Contr. F.Ponta']) if r['Dem. Contr. F.Ponta'] > 0 else maior_medida
-            
-            # Aplica a tarifa única de demanda (usando a de F.Ponta como base)
-            demanda_tusd_acr = (dem_faturada * TARIFA_TUSD_FPONTA_REF) + r['Valor Dem. Ultrap. Ponta'] + r['Valor Dem. Ultrap. F.Ponta']
-            
-        else:
-            # 🔵 REGRA TARIFA AZUL: Duas Demandas Independentes
-            dem_p_faturada = max(r['Dem. Reg. Ponta'], r['Dem. Contr. Ponta']) if r['Dem. Contr. Ponta'] > 0 else r['Dem. Reg. Ponta']
-            dem_fp_faturada = max(r['Dem. Reg. F.Ponta'], r['Dem. Contr. F.Ponta']) if r['Dem. Contr. F.Ponta'] > 0 else r['Dem. Reg. F.Ponta']
-
-            demanda_tusd_acr = (dem_p_faturada * TARIFA_TUSD_PONTA_REF) + (dem_fp_faturada * TARIFA_TUSD_FPONTA_REF) + r['Valor Dem. Ultrap. Ponta'] + r['Valor Dem. Ultrap. F.Ponta']
-        
+        demanda_tusd_acr = (dem_p_faturada * TARIFA_TUSD_PONTA_REF) + (dem_fp_faturada * TARIFA_TUSD_FPONTA_REF) + r['Valor Dem. Ultrap. Ponta'] + r['Valor Dem. Ultrap. F.Ponta']
         consumo_tusd_acr = r['Valor Cons. Ponta TUSD'] + r['Valor Cons. F.Ponta TUSD']
         consumo_te_acr = (r['Consumo Ponta'] * TARIFA_TE_PONTA_REF) + (r['Consumo F.Ponta'] * TARIFA_TE_FPONTA_REF)
         
@@ -397,7 +384,21 @@ def carregar_dados():
         outros_encargos = r['CIP'] + r['Valor Total Reativo'] + adicional_bandeira_acr
         
         custo_acr = demanda_tusd_acr + consumo_tusd_acr + consumo_te_acr + outros_encargos
-        economia_acl = custo_acr - r['Valor Total de Energia']
+
+        # SE NÃO HOUVER FATURA CEMIG: Trava a Economia ACL em 0.00, mas retorna os 6 itens!
+        if not tem_cemig:
+            return pd.Series([
+                round(custo_acr, 2), 
+                0.0, 
+                round(demanda_tusd_acr, 2),
+                round(consumo_tusd_acr, 2),
+                round(consumo_te_acr, 2),
+                round(outros_encargos, 2)
+            ])
+
+        # SE HOUVER FATURA CEMIG: Calcula a Economia Real e retorna todos os 6 itens!
+        custo_real_acl = r['Valor Total de Energia'] + float(val_cemig)
+        economia_acl = custo_acr - custo_real_acl
         
         return pd.Series([
             round(custo_acr, 2), 

@@ -397,7 +397,7 @@ def carregar_dados():
             ])
 
         # SE HOUVER FATURA CEMIG: Calcula a Economia Real e retorna todos os 6 itens!
-        custo_real_acl = r['Valor Total de Energia'] + float(val_cemig)
+        custo_real_acl = r['Valor Total de Energia']
         economia_acl = custo_acr - custo_real_acl
         
         return pd.Series([

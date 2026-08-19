@@ -2413,7 +2413,7 @@ with aba_pdf:
     tab_pdf, tab_excel = st.tabs(["📄 Upload de Faturas (PDF)", "📊 Upload em Lote (excel)"])
     
     with tab_pdf:
-        st.markdown("Faça o upload dos arquivos PDF originais da CPFL para extração automática.")
+        st.markdown("Faça o upload dos arquivos PDF originais para extração automática.")
         
         # 1. Cria a chave dinâmica do uploader na memória
         if "pdf_uploader_key" not in st.session_state:
@@ -2860,64 +2860,7 @@ with aba_config:
         )
 
     # ---------------------------------------------------------
-    # 3. ATUALIZAÇÃO EM LOTE DO CADASTRO (VIA EXCEL)
-    # ---------------------------------------------------------
-    st.divider()
-    st.markdown("###### 🚀 Atualização em Lote de UCs (CEMIG e Antigas)")
-    st.info("Baixe a planilha de cadastros acima, preencha as colunas **UC Antiga** ou **UC CEMIG** no Excel e faça o upload aqui para atualizar todo o sistema de uma só vez.")
-
-    arquivo_atualizacao = st.file_uploader("Upload da Planilha de Cadastro Atualizada (.xlsx)", type=["xlsx"], key="up_cad_lote")
-
-    if arquivo_atualizacao is not None:
-        if st.button("🔄 Processar Atualização em Lote", type="primary"):
-            try:
-                df_cad_lote = pd.read_excel(arquivo_atualizacao)
-                
-                if 'UC' not in df_cad_lote.columns:
-                    st.error("A planilha precisa ter a coluna 'UC' para identificar as instalações.")
-                else:
-                    conexao = obter_conexao()
-                    c = conexao.cursor()
-                    
-                    ucs_atualizadas = 0
-                    
-                    for index, row in df_cad_lote.iterrows():
-                        uc_atual = str(row['UC']).strip()
-                        
-                        if not uc_atual or uc_atual == 'nan':
-                            continue
-                            
-                        def limpar_uc_excel(valor):
-                            if pd.isna(valor) or valor == "": return ""
-                            try:
-                                return str(int(float(valor))).strip()
-                            except:
-                                return str(valor).strip()
-                                
-                        uc_cemig_excel = limpar_uc_excel(row.get('UC CEMIG', row.get('uc_cemig', '')))
-                        uc_antiga_excel = limpar_uc_excel(row.get('UC Antiga', row.get('uc_antiga', '')))
-                        
-                        c.execute('''
-                            UPDATE cadastro_uc 
-                            SET uc_cemig = %s, uc_antiga = %s
-                            WHERE unidade_consumidora = %s
-                        ''', (uc_cemig_excel, uc_antiga_excel, uc_atual))
-                        
-                        ucs_atualizadas += 1
-                        
-                    conexao.commit()
-                    conexao.close()
-                    
-                    # Limpa todas as caches do Streamlit de forma 100% segura
-                    st.cache_data.clear()
-                    
-                    st.success(f"✅ Sucesso! {ucs_atualizadas} unidades foram atualizadas com os vínculos antigos e da CEMIG.")
-                    st.balloons()
-            except Exception as e:
-                st.error(f"Ocorreu um erro ao ler a planilha: {e}")
-
-    # ---------------------------------------------------------
-    # 4. CORREÇÃO DO BANCO DE DADOS
+    # 3. CORREÇÃO DO BANCO DE DADOS
     # ---------------------------------------------------------
     st.divider()
     st.markdown("###### 🔄 Correção do Banco de Dados")

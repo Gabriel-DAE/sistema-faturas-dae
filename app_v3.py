@@ -107,6 +107,7 @@ with col_titulo:
     st.subheader("⚡ Sistema de Faturas de Energia - DAE Bauru")
 
 # --- 1. BANCO DE DADOS: CRIAÇÃO E PRÉ-CADASTRO ---
+@st.cache_resource(show_spinner=False)
 def inicializar_banco():
     conexao = obter_conexao()
     cursor = conexao.cursor()
@@ -218,9 +219,12 @@ def inicializar_banco():
     conexao.commit()
     conexao.close()
 
+    return True
+
 inicializar_banco()
 
 # --- 2. FUNÇÕES DE EXTRAÇÃO DE PDF E MANIPULAÇÃO DE DADOS ---
+@st.cache_data(ttl=3600, show_spinner=False)
 def obter_parametros_tarifas():
     """Busca as tarifas e bandeiras salvas no banco de dados."""
     try:

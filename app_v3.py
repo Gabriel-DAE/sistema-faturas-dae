@@ -1217,14 +1217,23 @@ with aba_dash:
         st.divider()
         
        # --- GRÁFICO 3: Participação Total por Unidade ---     
-        df_unidades = df_para_uc.groupby('Nome da Unidade')[param_coluna].sum().reset_index()
-        total_indicador = df_unidades[param_coluna].sum()
+        # Se for Economia ACL, removemos apenas os zeros do Cativo, mantendo positivos e negativos
+        if param_coluna == 'Valor Economia ACL':
+            df_filtrado_grafico = df_para_uc[df_para_uc[param_coluna] != 0]
+        else:
+            df_filtrado_grafico = df_para_uc[df_para_uc[param_coluna] > 0]
+
+        df_unidades = df_filtrado_grafico.groupby('Nome da Unidade')[param_coluna].sum().reset_index()
         
-        if total_indicador > 0:
-            df_unidades['Percentual'] = (df_unidades[param_coluna] / total_indicador) * 100
+        # Base para o cálculo de percentual proporcional
+        soma_base = df_unidades[df_unidades[param_coluna] > 0][param_coluna].sum() if param_coluna == 'Valor Economia ACL' else df_unidades[param_coluna].sum()
+        
+        if soma_base > 0:
+            df_unidades['Percentual'] = (df_unidades[param_coluna] / soma_base) * 100
         else:
             df_unidades['Percentual'] = 0
             
+        # Ordena da maior economia para a menor (as negativas ficarão no final da barra, apontando para baixo)
         df_unidades = df_unidades.sort_values(param_coluna, ascending=False).head(30)
         
         # Gera a lista de cores dinamicamente
@@ -1233,11 +1242,13 @@ with aba_dash:
         fig_unidades = px.bar(df_unidades, x='Nome da Unidade', y=param_coluna, title=f"📊 Top 30 Unidades por {param_nome}")
         
         fig_unidades.update_layout(
-            xaxis_title=None, yaxis_title=param_nome, xaxis_tickangle=-45, 
-            margin=dict(b=120), font=dict(size=14)
+            xaxis_title=None, 
+            yaxis_title=param_nome, 
+            xaxis_tickangle=-45, 
+            margin=dict(b=120), 
+            font=dict(size=14)
         )
         
-        # --- CORREÇÃO APLICADA AQUI: textposition='auto' e cliponaxis=False ---
         if is_dinheiro:
             fig_unidades.update_traces(
                 marker_color=cores_uc, 
@@ -1256,7 +1267,6 @@ with aba_dash:
                 textfont_size=13,
                 cliponaxis=False
             )
-        # ----------------------------------------------------------------------
         
         evento_uc = st.plotly_chart(fig_unidades, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         

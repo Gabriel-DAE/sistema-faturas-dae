@@ -1216,7 +1216,7 @@ with aba_dash:
 
         st.divider()
         
-        # --- GRÁFICO 3: Participação Total por Unidade ---     
+       # --- GRÁFICO 3: Participação Total por Unidade ---     
         df_unidades = df_para_uc.groupby('Nome da Unidade')[param_coluna].sum().reset_index()
         total_indicador = df_unidades[param_coluna].sum()
         
@@ -1237,10 +1237,26 @@ with aba_dash:
             margin=dict(b=120), font=dict(size=14)
         )
         
+        # --- CORREÇÃO APLICADA AQUI: textposition='auto' e cliponaxis=False ---
         if is_dinheiro:
-            fig_unidades.update_traces(marker_color=cores_uc, customdata=df_unidades['Percentual'], texttemplate='R$ %{y:.3s}<br>(%{customdata:.1f}%)', textposition='outside', textfont_size=13)
+            fig_unidades.update_traces(
+                marker_color=cores_uc, 
+                customdata=df_unidades['Percentual'], 
+                texttemplate='R$ %{y:.3s}<br>(%{customdata:.1f}%)', 
+                textposition='auto', 
+                textfont_size=13,
+                cliponaxis=False
+            )
         else:
-            fig_unidades.update_traces(marker_color=cores_uc, customdata=df_unidades['Percentual'], texttemplate='%{y:.3s}<br>(%{customdata:.1f}%)', textposition='outside', textfont_size=13)
+            fig_unidades.update_traces(
+                marker_color=cores_uc, 
+                customdata=df_unidades['Percentual'], 
+                texttemplate='%{y:.3s}<br>(%{customdata:.1f}%)', 
+                textposition='auto', 
+                textfont_size=13,
+                cliponaxis=False
+            )
+        # ----------------------------------------------------------------------
         
         evento_uc = st.plotly_chart(fig_unidades, use_container_width=True, on_select="rerun", selection_mode=("points", "box", "lasso"))
         

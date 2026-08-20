@@ -945,6 +945,16 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     elif len(linhas_fponta) == 1:
         dados['demanda_registrada_fora_ponta'], dados['tarifa_aneel_dem_fponta'], dados['tarifa_trib_dem_fponta'], dados['valor_dem_fponta'] = [limpar_numero(x) for x in linhas_fponta[0]]
 
+    # Ultrapassagem Ponta
+    m_ultrap_p = re.search(r"Uso Sist Distr Ultr Ponta.*?kW\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    if m_ultrap_p: 
+        dados['demanda_ultrapassagem_ponta'], dados['tarifa_aneel_dem_ultrap_ponta'], dados['tarifa_trib_dem_ultrap_ponta'], dados['valor_dem_ultrap_ponta'] = [limpar_numero(x) for x in m_ultrap_p.groups()]
+
+    # Ultrapassagem Fora Ponta
+    m_ultrap_fp = re.search(r"Uso Sist Distr Ul F Ponta.*?kW\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    if m_ultrap_fp: 
+        dados['demanda_ultrapassagem_fora_ponta'], dados['tarifa_aneel_dem_ultrap_fponta'], dados['tarifa_trib_dem_ultrap_fponta'], dados['valor_dem_ultrap_fponta'] = [limpar_numero(x) for x in m_ultrap_fp.groups()]
+    
     # Reativos
     m_reat_p = re.search(r"USD Consumo Reativo Ponta.*?kWh\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
     if m_reat_p: dados['consumo_reativo_ponta'], dados['tarifa_aneel_cons_reativo_ponta'], dados['tarifa_trib_cons_reativo_ponta'], dados['valor_cons_reativo_ponta'] = [limpar_numero(x) for x in m_reat_p.groups()]

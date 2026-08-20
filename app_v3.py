@@ -356,60 +356,57 @@ def carregar_dados():
     TARIFA_TE_PONTA_REF, TARIFA_TE_FPONTA_REF, TARIFA_TUSD_PONTA_REF, TARIFA_TUSD_FPONTA_REF, BAND_AMARELA, BAND_VERM1, BAND_VERM2 = obter_parametros_tarifas()
 
     def calcular_simulacao_linha(r):
-        # 1. Se não for do Mercado Livre, retorna os valores base sem auditoria
-        if not r['is_livre']:
-            return pd.Series([r['Valor Total de Energia'], 0.0])
-        
-        # Checa se existe fatura da CEMIG cadastrada para esta linha/mês
-        val_cemig = r.get('Valor Total ACL (R$)', 0.0)
-        venc_cemig = str(r.get('Vencimento ACL', '')).strip()
-        tem_cemig = (val_cemig is not None and float(val_cemig) > 0) or (venc_cemig not in ['', 'None', 'nan', 'NaT'] and len(venc_cemig) > 5)
+        # 1. VALOR TOTAL DE ENERGIA (CPFL + CEMIG c/ ICMS)
+    df['Valor Total de Energia'] = df['Valor Total Fatura'] + df['Valor Total ACL c/ ICMS (R$)']
 
-        # Cálculo do Custo Estimado no Mercado Cativo (ACR)
-        dem_p_faturada = max(r['Dem. Reg. Ponta'], r['Dem. Contr. Ponta']) if r['Dem. Contr. Ponta'] > 0 else r['Dem. Reg. Ponta']
-        dem_fp_faturada = max(r['Dem. Reg. F.Ponta'], r['Dem. Contr. F.Ponta']) if r['Dem. Contr. F.Ponta'] > 0 else r['Dem. Reg. F.Ponta']
+    # 2. CÁLCULO DA ESTIMATIVA ACR E ECONOMIA ACL (LEITURA INTELIGENTE DE BANDEIRAS)
+    is_livre = df['Classificação'].astype(str).str.contains('Livre|ACL', case=False, na=False)
 
-        demanda_tusd_acr = (dem_p_faturada * TARIFA_TUSD_PONTA_REF) + (dem_fp_faturada * TARIFA_TUSD_FPONTA_REF) + r['Valor Dem. Ultrap. Ponta'] + r['Valor Dem. Ultrap. F.Ponta']
-        consumo_tusd_acr = r['Valor Cons. Ponta TUSD'] + r['Valor Cons. F.Ponta TUSD']
-        consumo_te_acr = (r['Consumo Ponta'] * TARIFA_TE_PONTA_REF) + (r['Consumo F.Ponta'] * TARIFA_TE_FPONTA_REF)
-        
-        tipo_bandeira_pdf = str(r['Bandeira']).upper()
-        tarifa_band_aplicada = 0.0
-        if 'AMARELA' in tipo_bandeira_pdf:
-            tarifa_band_aplicada = BAND_AMARELA
-        elif 'VERMELHA' in tipo_bandeira_pdf:
-            if '1' in tipo_bandeira_pdf or 'I' in tipo_bandeira_pdf:
-                tarifa_band_aplicada = BAND_VERM1
-            elif '2' in tipo_bandeira_pdf or 'II' in tipo_bandeira_pdf:
-                tarifa_band_aplicada = BAND_VERM2
+    # Puxa os parâmetros cadastrados
+    TARIFA_TE_PONTA_REF, TARIFA_TE_FPONTA_REF, TARIFA_TUSD_PONTA_REF, TARIFA_TUSD_FPONTA_REF, BAND_AMARELA, BAND_VERM1, BAND_VERM2 = obter_parametros_tarifas()
 
-        consumo_total_kwh = r['Consumo Ponta'] + r['Consumo F.Ponta']
-        adicional_bandeira_acr = consumo_total_kwh * tarifa_band_aplicada
-        outros_encargos = r['CIP'] + r['Valor Total Reativo'] + adicional_bandeira_acr
-        
-        custo_acr = demanda_tusd_acr + consumo_tusd_acr + consumo_te_acr + outros_encargos
-
-        # SE NÃO HOUVER FATURA CEMIG: Trava a Economia ACL em 0.00
-        if not tem_cemig:
-            return pd.Series([
-                round(custo_acr, 2), 
-                0.0
-            ])
-
-        # SE HOUVER FATURA CEMIG: Calcula a Economia Real
-        custo_real_acl = r['Valor Total de Energia']
-        economia_acl = custo_acr - custo_real_acl
-        
-        return pd.Series([
-            round(custo_acr, 2), 
-            round(economia_acl, 2)
-        ])
-
-    df['is_livre'] = is_livre
-    # Atribuímos apenas as duas colunas cruciais
-    df[['Valor Estimado ACR', 'Valor Economia ACL']] = df.apply(calcular_simulacao_linha, axis=1)
-    df = df.drop(columns=['is_livre'])
+    # --- INÍCIO DA VETORIZAÇÃO (ALTA PERFORMANCE) ---
+    import numpy as np # Adicionamos o numpy para os cálculos ultrarrápidos
     
+    # 1. Identificar se tem fatura CEMIG (Opera na coluna toda de uma vez)
+    val_cemig = df['Valor Total ACL (R$)'].fillna(0.0).astype(float)
+    venc_cemig = df['Vencimento ACL'].astype(str).str.strip()
+    venc_cemig_valido = (venc_cemig.str.len() > 5) & (~venc_cemig.str.contains('None|nan|NaT', case=False, na=False))
+    tem_cemig = (val_cemig > 0) | venc_cemig_valido
+
+    # 2. Demandas Faturadas (Registrada vs Contratada) usando o SE do numpy (np.where)
+    dem_p_faturada = np.where(df['Dem. Contr. Ponta'] > 0, np.maximum(df['Dem. Reg. Ponta'], df['Dem. Contr. Ponta']), df['Dem. Reg. Ponta'])
+    dem_fp_faturada = np.where(df['Dem. Contr. F.Ponta'] > 0, np.maximum(df['Dem. Reg. F.Ponta'], df['Dem. Contr. F.Ponta']), df['Dem. Reg. F.Ponta'])
+
+    # 3. Custos Simulação ACR
+    demanda_tusd_acr = (dem_p_faturada * TARIFA_TUSD_PONTA_REF) + (dem_fp_faturada * TARIFA_TUSD_FPONTA_REF) + df['Valor Dem. Ultrap. Ponta'] + df['Valor Dem. Ultrap. F.Ponta']
+    consumo_tusd_acr = df['Valor Cons. Ponta TUSD'] + df['Valor Cons. F.Ponta TUSD']
+    consumo_te_acr = (df['Consumo Ponta'] * TARIFA_TE_PONTA_REF) + (df['Consumo F.Ponta'] * TARIFA_TE_FPONTA_REF)
+
+    # 4. Extração Inteligente da Bandeira Tarifária
+    bandeira_str = df['Bandeira'].astype(str).str.upper()
+    tarifa_band = np.zeros(len(df))
+    
+    tarifa_band = np.where(bandeira_str.str.contains('AMARELA'), BAND_AMARELA, tarifa_band)
+    
+    mask_verm1 = bandeira_str.str.contains('VERMELHA') & (bandeira_str.str.contains('1') | bandeira_str.str.contains('I')) & ~bandeira_str.str.contains('2|II')
+    tarifa_band = np.where(mask_verm1, BAND_VERM1, tarifa_band)
+    
+    mask_verm2 = bandeira_str.str.contains('VERMELHA') & (bandeira_str.str.contains('2') | bandeira_str.str.contains('II'))
+    tarifa_band = np.where(mask_verm2, BAND_VERM2, tarifa_band)
+
+    adicional_bandeira_acr = (df['Consumo Ponta'] + df['Consumo F.Ponta']) * tarifa_band
+    outros_encargos = df['CIP'] + df['Valor Total Reativo'] + adicional_bandeira_acr
+
+    custo_acr = demanda_tusd_acr + consumo_tusd_acr + consumo_te_acr + outros_encargos
+
+    # 5. Atribuição Final com as Regras de Negócio (Sem iterrows/apply!)
+    df['Valor Estimado ACR'] = np.where(is_livre, custo_acr.round(2), df['Valor Total de Energia'])
+    
+    economia_acl = custo_acr - df['Valor Total de Energia']
+    df['Valor Economia ACL'] = np.where(is_livre & tem_cemig, economia_acl.round(2), 0.0)
+    # --- FIM DA VETORIZAÇÃO ---
+
     # Converter Referência para ordenação cronológica
     mes_map = {'JAN': '01', 'FEV': '02', 'MAR': '03', 'ABR': '04', 'MAI': '05', 'JUN': '06', 
                'JUL': '07', 'AGO': '08', 'SET': '09', 'OUT': '10', 'NOV': '11', 'DEZ': '12'}

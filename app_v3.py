@@ -355,8 +355,7 @@ def carregar_dados():
     # Puxa os parâmetros cadastrados
     TARIFA_TE_PONTA_REF, TARIFA_TE_FPONTA_REF, TARIFA_TUSD_PONTA_REF, TARIFA_TUSD_FPONTA_REF, BAND_AMARELA, BAND_VERM1, BAND_VERM2 = obter_parametros_tarifas()
 
-    def calcular_simulacao_linha(r):
-        # 1. VALOR TOTAL DE ENERGIA (CPFL + CEMIG c/ ICMS)
+    # 1. VALOR TOTAL DE ENERGIA (CPFL + CEMIG c/ ICMS)
     df['Valor Total de Energia'] = df['Valor Total Fatura'] + df['Valor Total ACL c/ ICMS (R$)']
 
     # 2. CÁLCULO DA ESTIMATIVA ACR E ECONOMIA ACL (LEITURA INTELIGENTE DE BANDEIRAS)

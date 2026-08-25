@@ -2710,7 +2710,7 @@ with aba_config:
     
     col, _, _, _ = st.columns(4)
     with col:
-        uc_busca = st.text_input("Buscar UC CPFL Atual (Ex: 40190245)", value="").strip()
+        uc_busca = st.text_input("Buscar UC CPFL Atual", value="").strip()
     
     if uc_busca:
         conexao = obter_conexao()

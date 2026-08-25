@@ -2800,9 +2800,10 @@ with aba_config:
                     
                     c.execute('''
                         UPDATE faturas_cpfl 
-                        SET nome_unidade = %s 
+                        SET nome_unidade = %s, 
+                            classificacao=%s
                         WHERE unidade_consumidora = %s;
-                    ''', (nome_input, uc_busca))
+                    ''', (nome_input, classif_input, uc_busca))
                     
                     conexao.commit()
                     conexao.close()

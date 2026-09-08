@@ -570,12 +570,17 @@ def processar_pdf(arquivo_pdf):
         dados['data_vencimento'] = extrair_texto_regex(r"[A-Z]{3}/\d{4}\s+(\d{2}/\d{2}/\d{4})\s+R\$", texto)
         dados['valor_total_fatura'] = 0.0
 
+    # 1. Próxima Leitura
     dados['data_proxima_leitura'] = extrair_texto_regex(r"Próxima [Ll]eitura\s+(\d{2}/\d{2}/\d{4})", texto, padrao_falha="")
-    
-    leitura = re.search(r"\b\d{5,12}\s+(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+\d{2,3}\b", texto)
-    if leitura:
-        dados['periodo_leitura_fim'] = leitura.group(1)
-        dados['periodo_leitura_inicio'] = leitura.group(2)
+    leitura_nova = re.search(r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+(\d{2,3})\s*(?:\n|DEPARTAMENTO|DAE)", texto)
+    leitura_antiga = re.search(r"(?m)^\s*\d{6,10}\s+(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4})", texto)
+
+    if leitura_nova:
+        dados['periodo_leitura_fim'] = leitura_nova.group(1)
+        dados['periodo_leitura_inicio'] = leitura_nova.group(2)
+    elif leitura_antiga:
+        dados['periodo_leitura_fim'] = leitura_antiga.group(1)
+        dados['periodo_leitura_inicio'] = leitura_antiga.group(2)
     else:
         leitura_alt = re.search(r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+\d{2,3}", texto)
         dados['periodo_leitura_fim'] = leitura_alt.group(1) if leitura_alt else ""
@@ -881,13 +886,21 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
         dados['data_vencimento'] = extrair_texto_regex(r"Data de Vencimento\s*(\d{2}/\d{2}/\d{4})", texto)
         dados['mes_referencia'] = extrair_texto_regex(r"Referente a\s*([A-Z]{3}/\d{4})", texto)
 
-    leitura_ant = re.search(r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+\d{2,3}", texto)
-    if leitura_ant:
-        dados['periodo_leitura_inicio'] = leitura_ant.group(1)
-        dados['periodo_leitura_fim'] = leitura_ant.group(2)
-        
-    dados['data_proxima_leitura'] = extrair_texto_regex(r"Próxima Leitura\s*(\d{2}/\d{2}/\d{4})", texto)
+    dados['data_proxima_leitura'] = extrair_texto_regex(r"Próxima [Ll]eitura\s+(\d{2}/\d{2}/\d{4})", texto, padrao_falha="")
+    leitura_nova = re.search(r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+(\d{2,3})\s*(?:\n|DEPARTAMENTO|DAE)", texto)
+    leitura_antiga = re.search(r"(?m)^\s*\d{6,10}\s+(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4})", texto)
 
+    if leitura_nova:
+        dados['periodo_leitura_fim'] = leitura_nova.group(1)
+        dados['periodo_leitura_inicio'] = leitura_nova.group(2)
+    elif leitura_antiga:
+        dados['periodo_leitura_fim'] = leitura_antiga.group(1)
+        dados['periodo_leitura_inicio'] = leitura_antiga.group(2)
+    else:
+        leitura_alt = re.search(r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+\d{2,3}", texto)
+        dados['periodo_leitura_fim'] = leitura_alt.group(1) if leitura_alt else ""
+        dados['periodo_leitura_inicio'] = leitura_alt.group(2) if leitura_alt else ""
+        
     # 5. Busca Contratos e padronização cega
     uc_apenas_digitos = re.sub(r'\D', '', dados['unidade_consumidora'])
 

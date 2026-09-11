@@ -189,6 +189,7 @@ def inicializar_banco():
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS uc_cemig TEXT;''')
         cursor.execute('''ALTER TABLE cadastro_uc ADD COLUMN IF NOT EXISTS uc_antiga TEXT;''')
         cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS uc_original TEXT;''')
+        cursor.execute('''ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS uc_cemig TEXT;''')
         cursor.execute("ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS nota_fiscal TEXT;")
         cursor.execute("ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS data_emissao TEXT;")
         cursor.execute("ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS desconto_acl REAL DEFAULT 0.0;")
@@ -275,7 +276,7 @@ def carregar_dados():
         return df
         
     dicionario_nomes = {
-        'classificacao': 'Classificação', 'unidade_consumidora': 'UC', 'nome_unidade': 'Nome da Unidade',
+        'classificacao': 'Classificação', 'unidade_consumidora': 'UC', 'uc_cemig': 'UC CEMIG', 'nome_unidade': 'Nome da Unidade',
         'atividade': 'Atividade', 'periodo_leitura_inicio': 'Leitura Anterior', 'periodo_leitura_fim': 'Leitura Atual',
         'data_proxima_leitura': 'Próxima Leitura', 'mes_referencia': 'Mês Referência', 'data_vencimento': 'Vencimento CPFL',
         'demanda_contratada_ponta': 'Dem. Contr. Ponta', 'demanda_contratada_fponta': 'Dem. Contr. F.Ponta',
@@ -421,7 +422,7 @@ def carregar_dados():
     df = df.sort_values(by=['Data Referência Oculta', 'UC'], ascending=[False, True])
 
     ordem_colunas = [
-        'id', 'Data Referência Oculta', 'UC', 'Nome da Unidade', 'Atividade', 'Classificação', 'Mês Referência', 'Vencimento CPFL', 'Vencimento ACL', 
+        'id', 'Data Referência Oculta', 'UC', 'UC CEMIG', 'Nome da Unidade', 'Atividade', 'Classificação', 'Mês Referência', 'Vencimento CPFL', 'Vencimento ACL', 
         'Leitura Anterior', 'Leitura Atual', 'Próxima Leitura', 'Consumo Energia ACL (kWh)', 'Tarifa Energia ACL (R$/kWh)', 
         'Valor Energia ACL (R$)', 'IRPJ Retido ACL (R$)', 'Valor Total ACL (R$)', 'Valor ICMS ACL (R$)', 'Valor Total ACL c/ ICMS (R$)', 'Valor Total Fatura',
         'Valor Total de Energia', 'Valor Estimado ACR', 'Valor Economia ACL', 'Desconto ACL (R$)', 'Crédito Subvenção (R$)', 'Consumo Ponta', 
@@ -522,7 +523,7 @@ def processar_pdf(arquivo_pdf):
     
     # O regexp_replace compara APENAS OS NÚMEROS, ignorando pontos, traços e espaços
     c_pdf.execute("""
-        SELECT unidade_consumidora, nome_unidade, atividade, demanda_contratada_ponta, demanda_contratada_fponta 
+        SELECT unidade_consumidora, nome_unidade, atividade, demanda_contratada_ponta, demanda_contratada_fponta, uc_cemig 
         FROM cadastro_uc 
         WHERE regexp_replace(unidade_consumidora, '\D', '', 'g') = %s 
            OR regexp_replace(uc_antiga, '\D', '', 'g') = %s
@@ -533,17 +534,19 @@ def processar_pdf(arquivo_pdf):
     
     if res_uc:
         dados['uc_original'] = dados['unidade_consumidora']
-        dados['unidade_consumidora'] = res_uc[0] # Padroniza para a UC cadastrada
+        dados['unidade_consumidora'] = res_uc[0]
         dados['nome_unidade'] = res_uc[1]
         dados['atividade'] = res_uc[2] 
         dados['demanda_contratada_ponta'] = res_uc[3]
         dados['demanda_contratada_fponta'] = res_uc[4]
+        dados['uc_cemig'] = res_uc[5] if res_uc[5] else ""
     else:
         dados['uc_original'] = dados['unidade_consumidora']
         dados['nome_unidade'] = "Não Cadastrada"
         dados['atividade'] = "Administrativa" 
         dados['demanda_contratada_ponta'] = 0.0
         dados['demanda_contratada_fponta'] = 0.0
+        dados['uc_cemig'] = ""
     
     dc_p_pdf = extrair_valor_regex(r"Demanda P\.? kW\s+([\d\.,]+)", texto)
     if dc_p_pdf > 0: dados['demanda_contratada_ponta'] = dc_p_pdf
@@ -723,16 +726,17 @@ def processar_pdf_cemig(arquivo_pdf):
     conexao_pdf.close()
     
     if res_uc:
-        dados_cemig['unidade_consumidora'] = res_uc[0] # Associa magicamente à UC Master da CPFL!
+        dados_cemig['unidade_consumidora'] = res_uc[0]
         dados_cemig['nome_unidade'] = res_uc[1]
         dados_cemig['atividade'] = res_uc[2]
         dados_cemig['uc_original'] = uc_cemig_lida
+        dados_cemig['uc_cemig'] = uc_cemig_lida
     else:
-        # ALERTA VISUAL: Se não achar, não falha em silêncio. Avisa o utilizador!
         dados_cemig['unidade_consumidora'] = uc_cemig_lida
         dados_cemig['nome_unidade'] = "⚠️ VINCULAR UC CEMIG NO CADASTRO"
         dados_cemig['atividade'] = "Administrativa" 
         dados_cemig['uc_original'] = uc_cemig_lida
+        dados_cemig['uc_cemig'] = uc_cemig_lida
     
     # 3. Extração de Valores ACL
     linha_energia = re.search(r"Energia Ativa HFP.*?(?:kWh)\s+([\d\.]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
@@ -853,8 +857,8 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     c_pdf = conexao_pdf.cursor()
     
     # O regexp_replace compara APENAS OS NÚMEROS, ignorando pontos, traços e espaços
-    c_pdf.execute("""
-        SELECT unidade_consumidora, nome_unidade, atividade, demanda_contratada_ponta, demanda_contratada_fponta 
+   c_pdf.execute("""
+        SELECT unidade_consumidora, nome_unidade, atividade, demanda_contratada_ponta, demanda_contratada_fponta, uc_cemig 
         FROM cadastro_uc 
         WHERE regexp_replace(unidade_consumidora, '\D', '', 'g') = %s 
            OR regexp_replace(uc_antiga, '\D', '', 'g') = %s
@@ -865,17 +869,19 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     
     if res_uc:
         dados['uc_original'] = dados['unidade_consumidora']
-        dados['unidade_consumidora'] = res_uc[0] # Padroniza para a UC cadastrada
+        dados['unidade_consumidora'] = res_uc[0]
         dados['nome_unidade'] = res_uc[1]
         dados['atividade'] = res_uc[2] 
         dados['demanda_contratada_ponta'] = res_uc[3]
         dados['demanda_contratada_fponta'] = res_uc[4]
+        dados['uc_cemig'] = res_uc[5] if res_uc[5] else ""
     else:
         dados['uc_original'] = dados['unidade_consumidora']
         dados['nome_unidade'] = "Não Cadastrada"
         dados['atividade'] = "Administrativa" 
         dados['demanda_contratada_ponta'] = 0.0
         dados['demanda_contratada_fponta'] = 0.0
+        dados['uc_cemig'] = ""
     
     # 4. Datas
     m_venc_ref = re.search(r"([A-Z]{3}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+R\$", texto)
@@ -2504,6 +2510,7 @@ with aba_pdf:
                                     id_linha = row_existente[0]
                                     c.execute("""
                                         UPDATE faturas_cpfl SET
+                                            uc_cemig = %s,
                                             data_vencimento_acl = %s,
                                             consumo_energia_acl_kwh = %s,
                                             tarifa_energia_acl = %s,
@@ -2516,6 +2523,7 @@ with aba_pdf:
                                             irpj_retido_acl = %s
                                         WHERE id = %s
                                     """, (
+                                        d_cemig['uc_cemig'],
                                         d_cemig['data_vencimento_acl'],
                                         d_cemig['consumo_energia_acl_kwh'],
                                         d_cemig['tarifa_energia_acl'],
@@ -2533,13 +2541,13 @@ with aba_pdf:
                                     # Se a fatura da CPFL ainda não foi carregada, cria a linha inicial
                                     c.execute("""
                                         INSERT INTO faturas_cpfl (
-                                            unidade_consumidora, nome_unidade, atividade, mes_referencia, classificacao,
+                                            unidade_consumidora, uc_cemig, nome_unidade, atividade, mes_referencia, classificacao,
                                             data_vencimento_acl, consumo_energia_acl_kwh, tarifa_energia_acl, valor_energia_acl,
                                             valor_icms_acl, valor_total_acl, valor_total_acl_com_icms, irpj_retido_acl,
                                             nota_fiscal_cemig, data_emissao_cemig
-                                        ) VALUES (%s, %s, %s, %s, 'Mercado Livre - ACL', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                        ) VALUES (%s, %s, %s, %s, %s, 'Mercado Livre - ACL', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                                     """, (
-                                        uc_alvo, d_cemig['nome_unidade'], d_cemig['atividade'], mes_alvo,
+                                        uc_alvo, d_cemig['uc_cemig'], d_cemig['nome_unidade'], d_cemig['atividade'], mes_alvo,
                                         d_cemig['data_vencimento_acl'], d_cemig['consumo_energia_acl_kwh'],
                                         d_cemig['tarifa_energia_acl'], d_cemig['valor_energia_acl'],
                                         d_cemig['valor_icms_acl'], d_cemig['valor_total_acl'], d_cemig['valor_total_acl_com_icms'],
@@ -2901,6 +2909,7 @@ with aba_config:
                     SET nome_unidade = cadastro_uc.nome_unidade,
                         atividade = cadastro_uc.atividade,
                         classificacao = cadastro_uc.classificacao
+                        uc_cemig = cadastro_uc.uc_cemig
                     FROM cadastro_uc
                     WHERE faturas_cpfl.unidade_consumidora = cadastro_uc.unidade_consumidora;
                 ''')

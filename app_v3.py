@@ -857,7 +857,7 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     c_pdf = conexao_pdf.cursor()
     
     # O regexp_replace compara APENAS OS NÚMEROS, ignorando pontos, traços e espaços
-   c_pdf.execute("""
+    c_pdf.execute("""
         SELECT unidade_consumidora, nome_unidade, atividade, demanda_contratada_ponta, demanda_contratada_fponta, uc_cemig 
         FROM cadastro_uc 
         WHERE regexp_replace(unidade_consumidora, '\D', '', 'g') = %s 

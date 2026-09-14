@@ -786,7 +786,7 @@ def processar_pdf_cemig(arquivo_pdf):
 def processar_pdf_cpfl_acl(arquivo_pdf):
     with pdfplumber.open(arquivo_pdf) as pdf:
         texto = ""
-        # LÊ TODAS AS PÁGINAS DO PDF (Garante a captura da Bandeira nas páginas finais)
+        # Lê todas as páginas do PDF para garantir a captura da Bandeira no final
         for page in pdf.pages:
             texto_pagina = page.extract_text()
             if texto_pagina:
@@ -821,7 +821,6 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     dados['tipo_bandeira'] = "VERDE"
     dados['adicional_bandeira'] = 0.0
     dados['data_vencimento_acl'] = ""
-    dados['data_vencimento_acl'] = ""
     dados['nota_fiscal'] = ""
     dados['data_emissao'] = ""
     
@@ -834,29 +833,26 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     elif "AZUL" in classificacao_bruta and "LIVRE" in classificacao_bruta:
         dados['classificacao'] = "Tarifa Azul Livre-A4"
     elif "LIVRE" in classificacao_bruta:
-        if re.search(r"Uso Sist Distr Ponta", texto, re.IGNORECASE):
+        if re.search(r"Uso Sist\.?\s*Distr\.?\s*Ponta", texto, re.IGNORECASE):
             dados['classificacao'] = "Tarifa Azul Livre-A4"
         else:
             dados['classificacao'] = "Tarifa Verde Livre-A4"
     else:
         dados['classificacao'] = "Tarifa Verde Livre-A4"
 
-    # 1. Extrator Universal de UC (Aceita 11 e 12 dígitos, com ou sem pontuação)
+    # 3. Extrator Universal de UC (11 e 12 dígitos, com ou sem pontuação)
     match_uc = re.search(r"(\d{1,3}\.\d{3}\.\d{3}\.\d{3}-\d{2}|\d{3}\.\d{3}\.\d{3}-\d{2})", texto)
     if match_uc:
         dados['unidade_consumidora'] = match_uc.group(1).strip()
     else:
-        # Fallback para busca perto do rótulo
         match_uc_alt = re.search(r"(?:Número da UC|DAE)[\s\S]*?([\d\.-]{8,20})", texto, re.IGNORECASE)
         dados['unidade_consumidora'] = match_uc_alt.group(1).strip() if match_uc_alt else ""
 
-    # 2. Limpa os dígitos para busca blindada no Banco de Dados
+    # 4. Busca Cadastro da UC no Banco de Dados
     uc_apenas_digitos = re.sub(r'\D', '', dados['unidade_consumidora'])
 
     conexao_pdf = obter_conexao()
     c_pdf = conexao_pdf.cursor()
-    
-    # O regexp_replace compara APENAS OS NÚMEROS, ignorando pontos, traços e espaços
     c_pdf.execute("""
         SELECT unidade_consumidora, nome_unidade, atividade, demanda_contratada_ponta, demanda_contratada_fponta, uc_cemig 
         FROM cadastro_uc 
@@ -883,7 +879,11 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
         dados['demanda_contratada_fponta'] = 0.0
         dados['uc_cemig'] = ""
     
-    # 4. Datas
+    # Se for Tarifa Verde, garante que a Demanda de Ponta seja 0.0
+    if "Verde" in dados['classificacao']:
+        dados['demanda_contratada_ponta'] = 0.0
+
+    # 5. Datas
     m_venc_ref = re.search(r"([A-Z]{3}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+R\$", texto)
     if m_venc_ref:
         dados['mes_referencia'] = m_venc_ref.group(1)
@@ -906,32 +906,6 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
         leitura_alt = re.search(r"(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s+\d{2,3}", texto)
         dados['periodo_leitura_fim'] = leitura_alt.group(1) if leitura_alt else ""
         dados['periodo_leitura_inicio'] = leitura_alt.group(2) if leitura_alt else ""
-        
-    # 5. Busca Contratos e padronização cega
-    uc_apenas_digitos = re.sub(r'\D', '', dados['unidade_consumidora'])
-
-    conexao_pdf = obter_conexao()
-    c_pdf = conexao_pdf.cursor()
-    c_pdf.execute("""
-        SELECT nome_unidade, atividade, demanda_contratada_ponta, demanda_contratada_fponta, unidade_consumidora 
-        FROM cadastro_uc 
-        WHERE regexp_replace(unidade_consumidora, '\D', '', 'g') = %s 
-           OR regexp_replace(uc_antiga, '\D', '', 'g') = %s
-    """, (uc_apenas_digitos, uc_apenas_digitos))
-    res_uc = c_pdf.fetchone()
-    conexao_pdf.close()
-    
-    if res_uc:
-        dados['nome_unidade'] = res_uc[0]
-        dados['atividade'] = res_uc[1]
-        dados['demanda_contratada_ponta'] = res_uc[2]
-        dados['demanda_contratada_fponta'] = res_uc[3]
-        dados['unidade_consumidora'] = res_uc[4] # Força o número da UC igual ao do banco
-    else:
-        dados['nome_unidade'] = "Não Cadastrada"
-        dados['atividade'] = "Administrativa" 
-        dados['demanda_contratada_ponta'] = 0.0
-        dados['demanda_contratada_fponta'] = 0.0
 
     # 6. Extração de Itens Faturados (TUSD, Demandas e Reativos)
     # Consumo Ponta
@@ -940,12 +914,12 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
         dados['consumo_ponta'], dados['tarifa_aneel_cons_ponta_tusd'], dados['tarifa_trib_cons_ponta_tusd'], dados['valor_cons_ponta_tusd'] = [limpar_numero(x) for x in m_tusd_p.groups()]
 
     # Consumo Fora Ponta
-    m_tusd_fp = re.search(r"Tusd Enc Cons F Ponta.*?kWh\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    m_tusd_fp = re.search(r"Tusd Enc Cons (?:F(?:ora)?\s*Ponta).*?kWh\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
     if m_tusd_fp: 
         dados['consumo_fora_ponta'], dados['tarifa_aneel_cons_fponta_tusd'], dados['tarifa_trib_cons_fponta_tusd'], dados['valor_cons_fponta_tusd'] = [limpar_numero(x) for x in m_tusd_fp.groups()]
 
-    # Demanda Ponta
-    linhas_ponta = re.findall(r"Uso Sist Distr Ponta.*?kW\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    # Demanda Ponta (Presente apenas na Tarifa Azul Livre)
+    linhas_ponta = re.findall(r"Uso Sist\.?\s*Distr\.?\s*Ponta.*?kW\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
     if len(linhas_ponta) >= 2:
         parsed = [[limpar_numero(x) for x in linha] for linha in linhas_ponta]
         parsed.sort(key=lambda x: x[0], reverse=True)
@@ -954,8 +928,12 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     elif len(linhas_ponta) == 1:
         dados['demanda_registrada_ponta'], dados['tarifa_aneel_dem_ponta'], dados['tarifa_trib_dem_ponta'], dados['valor_dem_ponta'] = [limpar_numero(x) for x in linhas_ponta[0]]
 
-    # Demanda Fora Ponta
-    linhas_fponta = re.findall(r"Uso Sist Distr F Ponta.*?kW\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    # Demanda Fora Ponta (Tarifa Azul) ou Demanda Única (Tarifa Verde)
+    linhas_fponta = re.findall(r"Uso Sist\.?\s*Distr\.?\s*(?:F(?:ora)?\s*Ponta).*?kW\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    if not linhas_fponta:
+        # Padrão Tarifa Verde: captura "Uso Sist. Distr." sem Ponta nem Ultrapassagem
+        linhas_fponta = re.findall(r"Uso Sist\.?\s*Distr\.?(?!\s*(?:Ultr|Ul|Ponta)).*?kW\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+
     if len(linhas_fponta) >= 2:
         parsed = [[limpar_numero(x) for x in linha] for linha in linhas_fponta]
         parsed.sort(key=lambda x: x[0], reverse=True)
@@ -964,13 +942,13 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     elif len(linhas_fponta) == 1:
         dados['demanda_registrada_fora_ponta'], dados['tarifa_aneel_dem_fponta'], dados['tarifa_trib_dem_fponta'], dados['valor_dem_fponta'] = [limpar_numero(x) for x in linhas_fponta[0]]
 
-    # Ultrapassagem Ponta
-    m_ultrap_p = re.search(r"Uso Sist Distr Ultr Ponta.*?kW\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    # Ultrapassagem Ponta (Azul)
+    m_ultrap_p = re.search(r"Uso Sist\.?\s*Distr\.?\s*(?:Ultr|Ul)\s*Ponta.*?kW\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
     if m_ultrap_p: 
         dados['demanda_ultrapassagem_ponta'], dados['tarifa_aneel_dem_ultrap_ponta'], dados['tarifa_trib_dem_ultrap_ponta'], dados['valor_dem_ultrap_ponta'] = [limpar_numero(x) for x in m_ultrap_p.groups()]
 
-    # Ultrapassagem Fora Ponta
-    m_ultrap_fp = re.search(r"Uso Sist Distr Ul F Ponta.*?kW\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
+    # Ultrapassagem Fora Ponta (Azul) ou Ultrapassagem Única (Verde)
+    m_ultrap_fp = re.search(r"Uso Sist\.?\s*Distr\.?\s*(?:Ul\s*F\s*Ponta|Ultr\s*F\s*Ponta|Ultr(?!\s*Ponta)).*?kW\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
     if m_ultrap_fp: 
         dados['demanda_ultrapassagem_fora_ponta'], dados['tarifa_aneel_dem_ultrap_fponta'], dados['tarifa_trib_dem_ultrap_fponta'], dados['valor_dem_ultrap_fponta'] = [limpar_numero(x) for x in m_ultrap_fp.groups()]
     
@@ -987,7 +965,7 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     m_dem_reat_fp = re.search(r"Dem Reat Exc FPonta.*?kW\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
     if m_dem_reat_fp: dados['demanda_reativa_fora_ponta'], dados['tarifa_aneel_dem_reativa_fponta'], dados['tarifa_trib_dem_reativa_fponta'], dados['valor_dem_reativa_fponta'] = [limpar_numero(x) for x in m_dem_reat_fp.groups()]
 
-    # 7. EXTRAÇÃO ATUALIZADA DA BANDEIRA TARIFÁRIA
+    # 7. Bandeira Tarifária
     match_bandeira = re.search(
         r"Energia Ativa[^\n]*?\b(Verde|Amarela|Vermelha\s*I{1,2}|Vermelha|Escassez Hídrica)\b",
         texto,
@@ -1024,7 +1002,6 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     desc_acl_p = extrair_valor_regex(r"Desc Energia ACL Ponta\s+([\d\.,]+)", texto)
     desc_acl_fp = extrair_valor_regex(r"Desc Energia ACL Fora Ponta\s+([\d\.,]+)", texto)
     dados['desconto_acl'] = desc_acl_p + desc_acl_fp
-    
     dados['credito_subvencao'] = extrair_valor_regex(r"Crédito Subvenção Tarifaria[^\d]*([\d\.,]+)", texto)
     
     valor_pagar_fim = extrair_valor_regex(r"Total a Pagar\s*([\d\.,]+)", texto)
@@ -2573,8 +2550,13 @@ with aba_pdf:
                                     if v_total_fatura is not None and v_total_fatura > 0:
                                         duplicadas += 1
                                     else:
-                                        colunas_up = [f"{k} = %s" for k in d_cpfl.keys() if k not in ('id', 'consumo_energia_acl_kwh', 'tarifa_energia_acl', 'valor_energia_acl', 'valor_total_acl', 'data_vencimento_acl')]
-                                        valores_up = tuple(d_cpfl[k] for k in d_cpfl.keys() if k not in ('id', 'consumo_energia_acl_kwh', 'tarifa_energia_acl', 'valor_energia_acl', 'valor_total_acl', 'data_vencimento_acl'))
+                                        colunas_bloqueadas = (
+                                            'id', 'consumo_energia_acl_kwh', 'tarifa_energia_acl', 'valor_energia_acl', 
+                                            'valor_total_acl', 'valor_icms_acl', 'valor_total_acl_com_icms', 'irpj_retido_acl', 
+                                            'data_vencimento_acl', 'nota_fiscal_cemig', 'data_emissao_cemig'
+                                        )
+                                        colunas_up = [f"{k} = %s" for k in d_cpfl.keys() if k not in colunas_bloqueadas]
+                                        valores_up = tuple(d_cpfl[k] for k in d_cpfl.keys() if k not in colunas_bloqueadas)
                                         query_up = f"UPDATE faturas_cpfl SET {', '.join(colunas_up)} WHERE id = %s"
                                         c.execute(query_up, valores_up + (id_linha,))
                                         sucessos += 1

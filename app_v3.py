@@ -2904,11 +2904,12 @@ with aba_config:
             try:
                 conexao = obter_conexao()
                 c = conexao.cursor()
+                c.execute("ALTER TABLE faturas_cpfl ADD COLUMN IF NOT EXISTS uc_cemig TEXT;")
                 c.execute('''
                     UPDATE faturas_cpfl
                     SET nome_unidade = cadastro_uc.nome_unidade,
                         atividade = cadastro_uc.atividade,
-                        classificacao = cadastro_uc.classificacao
+                        classificacao = cadastro_uc.classificacao,
                         uc_cemig = cadastro_uc.uc_cemig
                     FROM cadastro_uc
                     WHERE faturas_cpfl.unidade_consumidora = cadastro_uc.unidade_consumidora;

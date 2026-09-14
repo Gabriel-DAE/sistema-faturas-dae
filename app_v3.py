@@ -615,10 +615,22 @@ def processar_pdf(arquivo_pdf):
             vals = [limpar_numero(x) for x in m_te_b3.groups()]
             dados['tarifa_aneel_cons_fponta_te'], dados['tarifa_trib_cons_fponta_te'], dados['valor_cons_fponta_te'] = vals[1], vals[2], vals[3]
 
-    dados['tipo_bandeira'] = extrair_texto_regex(r"Adicional Band (Verde|Amarela|Vermelha I|Vermelha II|Escassez Hídrica)", texto, padrao_falha="VERDE").upper()
-    vp = extrair_valor_regex(r"Adicional Band.*?Ponta.*?kWh\s+([\d\.]+,\d{2})", texto)
-    vfp = extrair_valor_regex(r"Adicional Band.*?FPonta.*?kWh\s+([\d\.]+,\d{2})", texto)
-    dados['adicional_bandeira'] = vp + vfp
+    # Captura flexível do nome da bandeira tarifária (com ou sem ponto em "Band.")
+    match_band_cativo = re.search(
+        r"(?:Adicional Band(?:eira)?\.?|Bandeira(?:\s+Tarifária)?[:\s]+)\s*(Verde|Amarela|Vermelha\s*I{1,2}|Vermelha|Escassez Hídrica)",
+        texto,
+        re.IGNORECASE
+    )
+    dados['tipo_bandeira'] = match_band_cativo.group(1).strip().upper() if match_band_cativo else "VERDE"
+
+    # Captura o valor em R$ (4ª coluna numérica da linha: Quantidade, Tarifa ANEEL, Tarifa Trib, Valor Total R$)
+    # Funciona para Convencional B3 (linha única) e Grupo A Cativo (Ponta e Fora Ponta)
+    linhas_bandeira = re.findall(
+        r"Adicional Band(?:eira)?\.?.*?kWh\s+[\d\.,]+\s+[\d\.,]+\s+[\d\.,]+\s+([\d\.,]+)",
+        texto,
+        re.IGNORECASE
+    )
+    dados['adicional_bandeira'] = sum(limpar_numero(v) for v in linhas_bandeira) if linhas_bandeira else 0.0
 
     linhas_ponta = re.findall(r"Demanda Ponta \[kW\]\s*-\s*TUSD.*?kW\s+([\d\.]+,\d+)\s+([\d\.]+,\d+)\s+([\d\.]+,\d+)\s+([\d\.]+,\d+)", texto, re.IGNORECASE)
     if len(linhas_ponta) >= 2:
@@ -965,7 +977,7 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     m_dem_reat_fp = re.search(r"Dem Reat Exc FPonta.*?kW\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)", texto, re.IGNORECASE)
     if m_dem_reat_fp: dados['demanda_reativa_fora_ponta'], dados['tarifa_aneel_dem_reativa_fponta'], dados['tarifa_trib_dem_reativa_fponta'], dados['valor_dem_reativa_fponta'] = [limpar_numero(x) for x in m_dem_reat_fp.groups()]
 
-    # 7. Bandeira Tarifária
+    # 7. Bandeira Tarifária (Identifica o nome da bandeira para a simulação ACR; valor em R$ é sempre 0.0 no ACL)
     match_bandeira = re.search(
         r"Energia Ativa[^\n]*?\b(Verde|Amarela|Vermelha\s*I{1,2}|Vermelha|Escassez Hídrica)\b",
         texto,
@@ -983,8 +995,8 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     else:
         dados['tipo_bandeira'] = "VERDE"
 
-    vp = extrair_valor_regex(r"CDE Escassez Hídrica Ponta.*?kWh\s+[\d\.,]+\s+[\d\.,]+\s+[\d\.,]+\s+([\d\.,]+)", texto)
-    vfp = extrair_valor_regex(r"CDE Escassez Hídrica F(?:ora)? Ponta.*?kWh\s+[\d\.,]+\s+[\d\.,]+\s+[\d\.,]+\s+([\d\.,]+)", texto)
+    # Unidades do Mercado Livre não sofrem cobrança monetária de bandeira na distribuidora
+    dados['adicional_bandeira'] = 0.0
 
     # 8. Impostos e Totais
     dados['cip'] = extrair_valor_regex(r"Contribuição Custeio IP-CIP.*?\s([\d\.,]+)", texto)

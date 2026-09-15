@@ -615,22 +615,30 @@ def processar_pdf(arquivo_pdf):
             vals = [limpar_numero(x) for x in m_te_b3.groups()]
             dados['tarifa_aneel_cons_fponta_te'], dados['tarifa_trib_cons_fponta_te'], dados['valor_cons_fponta_te'] = vals[1], vals[2], vals[3]
 
-    # Captura flexível do nome da bandeira tarifária (com ou sem ponto em "Band.")
+    # Captura flexível do nome da bandeira tarifária
     match_band_cativo = re.search(
-        r"(?:Adicional Band(?:eira)?\.?|Bandeira(?:\s+Tarifária)?[:\s]+)\s*(Verde|Amarela|Vermelha\s*I{1,2}|Vermelha|Escassez Hídrica)",
+        r"(?:(?:Adicional|Adic\.?)\s*Band(?:eira)?\.?|Bandeira(?:\s+Tarifária)?[:\s]+)\s*(Verde|Amarela|Vermelha\s*I{1,2}|Vermelha|Escassez Hídrica)",
         texto,
         re.IGNORECASE
     )
+    if not match_band_cativo:
+        match_band_cativo = re.search(
+            r"\b(Verde|Amarela|Vermelha\s*I{1,2}|Vermelha|Escassez Hídrica)\b\s*\d{1,3}\s*Dias",
+            texto,
+            re.IGNORECASE
+        )
     dados['tipo_bandeira'] = match_band_cativo.group(1).strip().upper() if match_band_cativo else "VERDE"
 
-    # Captura o valor em R$ (4ª coluna numérica da linha: Quantidade, Tarifa ANEEL, Tarifa Trib, Valor Total R$)
-    # Funciona para Convencional B3 (linha única) e Grupo A Cativo (Ponta e Fora Ponta)
-    linhas_bandeira = re.findall(
-        r"Adicional Band(?:eira)?\.?.*?kWh\s+[\d\.,]+\s+[\d\.,]+\s+[\d\.,]+\s+([\d\.,]+)",
-        texto,
-        re.IGNORECASE
-    )
-    dados['adicional_bandeira'] = sum(limpar_numero(v) for v in linhas_bandeira) if linhas_bandeira else 0.0
+    # Captura o valor em R$ (4ª coluna numérica da linha) - Blindado contra variações de texto
+    linhas_bandeira = re.findall(r"(?:(?:Adicional|Adic\.?)\s*Band|CDE Escassez)[^\n]+", texto, re.IGNORECASE)
+    total_bandeira = 0.0
+    for linha in linhas_bandeira:
+        # Encontra dinamicamente os números no padrão brasileiro (ex: 33.734,4800 ou 0,018)
+        numeros = re.findall(r"-?\d{1,3}(?:\.\d{3})*,\d+", linha)
+        if len(numeros) >= 4:
+            total_bandeira += limpar_numero(numeros[3])  # O índice 3 refere-se ao 4º número capturado (Valor R$)
+            
+    dados['adicional_bandeira'] = total_bandeira
 
     linhas_ponta = re.findall(r"Demanda Ponta \[kW\]\s*-\s*TUSD.*?kW\s+([\d\.]+,\d+)\s+([\d\.]+,\d+)\s+([\d\.]+,\d+)\s+([\d\.]+,\d+)", texto, re.IGNORECASE)
     if len(linhas_ponta) >= 2:

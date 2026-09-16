@@ -690,7 +690,7 @@ def processar_pdf(arquivo_pdf):
     dados['valor_total_cofins'] = extrair_valor_regex(r"COFINS.*?\s([\d\.]+,\d+)$", texto)
     dados['valor_total_icms'] = extrair_valor_regex(r"ICMS.*?\s([\d\.]+,\d+)$", texto)
     dados['nota_fiscal'] = extrair_texto_regex(r"NOTA FISCAL Nº\s*(\d+)", texto)
-    dados['data_emissao'] = extrair_texto_regex(r"DATA DE EMISSÃO:\s*(\d{2}/\d{2}/\d{4})", texto)
+    dados['data_emissao'] = extrair_texto_regex(r"DATA DE EMISSÃO:(?:[^\n]*\n)?[^\n]*?(\d{2}/\d{2}/\d{4})", texto)
     desc_acl_p = extrair_valor_regex(r"Desc Energia ACL Ponta\s+([\d\.,]+)", texto)
     desc_acl_fp = extrair_valor_regex(r"Desc Energia ACL Fora Ponta\s+([\d\.,]+)", texto)
     dados['desconto_acl'] = desc_acl_p + desc_acl_fp
@@ -1019,7 +1019,7 @@ def processar_pdf_cpfl_acl(arquivo_pdf):
     dados['valor_total_cofins'] = extrair_valor_regex(r"COFINS.*?\s([\d\.,]+)$", texto)
     dados['valor_total_icms'] = extrair_valor_regex(r"ICMS.*?\s([\d\.,]+)$", texto)
     dados['nota_fiscal'] = extrair_texto_regex(r"NOTA FISCAL Nº\s*(\d+)", texto)
-    dados['data_emissao'] = extrair_texto_regex(r"DATA DE EMISSÃO:\s*(\d{2}/\d{2}/\d{4})", texto)
+    dados['data_emissao'] = extrair_texto_regex(r"DATA DE EMISSÃO:(?:[^\n]*\n)?[^\n]*?(\d{2}/\d{2}/\d{4})", texto)
     desc_acl_p = extrair_valor_regex(r"Desc Energia ACL Ponta\s+([\d\.,]+)", texto)
     desc_acl_fp = extrair_valor_regex(r"Desc Energia ACL Fora Ponta\s+([\d\.,]+)", texto)
     dados['desconto_acl'] = desc_acl_p + desc_acl_fp

@@ -615,7 +615,7 @@ def processar_pdf(arquivo_pdf):
             vals = [limpar_numero(x) for x in m_te_b3.groups()]
             dados['tarifa_aneel_cons_fponta_te'], dados['tarifa_trib_cons_fponta_te'], dados['valor_cons_fponta_te'] = vals[1], vals[2], vals[3]
 
-    # Captura flexível do nome da bandeira tarifária
+    # 7. Captura do Tipo e Valor do Adicional Bandeira (Mercado Cativo e B3)
     match_band_cativo = re.search(
         r"(?:(?:Adicional|Adic\.?)\s*Band(?:eira)?\.?|Bandeira(?:\s+Tarifária)?[:\s]+)\s*(Verde|Amarela|Vermelha\s*I{1,2}|Vermelha|Escassez Hídrica)",
         texto,
@@ -629,16 +629,16 @@ def processar_pdf(arquivo_pdf):
         )
     dados['tipo_bandeira'] = match_band_cativo.group(1).strip().upper() if match_band_cativo else "VERDE"
 
-    # Captura o valor em R$ (4ª coluna numérica da linha) - Blindado contra variações de texto
-    linhas_bandeira = re.findall(r"(?:(?:Adicional|Adic\.?)\s*Band|CDE Escassez)[^\n]+", texto, re.IGNORECASE)
-    total_bandeira = 0.0
-    for linha in linhas_bandeira:
-        # Encontra dinamicamente os números no padrão brasileiro (ex: 33.734,4800 ou 0,018)
-        numeros = re.findall(r"-?\d{1,3}(?:\.\d{3})*,\d+", linha)
-        if len(numeros) >= 4:
-            total_bandeira += limpar_numero(numeros[3])  # O índice 3 refere-se ao 4º número capturado (Valor R$)
-            
-    dados['adicional_bandeira'] = total_bandeira
+    # Captura o valor em R$ da Bandeira (funciona para B3, A4 Cativo, Ponta e F.Ponta)
+    # A regex tolera quebra de linha (\n) e captura as 4 colunas numéricas independente de terem vírgula ou não
+    linhas_bandeira = re.findall(
+        r"(?:(?:Adicional|Adic\.?)\s*Band(?:eira)?|CDE Escassez)(?:[^\n]*?\n)?[^\n]*?kWh\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)",
+        texto,
+        re.IGNORECASE
+    )
+    
+    # O índice [3] garante que estamos pegando a 4ª coluna (Valor Total em R$) e somando tudo
+    dados['adicional_bandeira'] = sum(limpar_numero(linha[3]) for linha in linhas_bandeira) if linhas_bandeira else 0.0
 
     linhas_ponta = re.findall(r"Demanda Ponta \[kW\]\s*-\s*TUSD.*?kW\s+([\d\.]+,\d+)\s+([\d\.]+,\d+)\s+([\d\.]+,\d+)\s+([\d\.]+,\d+)", texto, re.IGNORECASE)
     if len(linhas_ponta) >= 2:

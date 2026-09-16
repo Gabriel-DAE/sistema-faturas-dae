@@ -616,8 +616,9 @@ def processar_pdf(arquivo_pdf):
             dados['tarifa_aneel_cons_fponta_te'], dados['tarifa_trib_cons_fponta_te'], dados['valor_cons_fponta_te'] = vals[1], vals[2], vals[3]
 
     # 7. Captura do Tipo e Valor do Adicional Bandeira (Mercado Cativo e B3)
+    # A regex agora tolera a preposição "de" entre "Adicional" e "Bandeira"
     match_band_cativo = re.search(
-        r"(?:(?:Adicional|Adic\.?)\s*Band(?:eira)?\.?|Bandeira(?:\s+Tarifária)?[:\s]+)\s*(Verde|Amarela|Vermelha\s*I{1,2}|Vermelha|Escassez Hídrica)",
+        r"(?:(?:Adicional|Adic\.?)\s*(?:de\s+)?Band(?:eira)?\.?|Bandeira(?:\s+Tarifária)?[:\s]+)\s*(Verde|Amarela|Vermelha\s*I{1,2}|Vermelha|Escassez Hídrica)",
         texto,
         re.IGNORECASE
     )
@@ -630,9 +631,9 @@ def processar_pdf(arquivo_pdf):
     dados['tipo_bandeira'] = match_band_cativo.group(1).strip().upper() if match_band_cativo else "VERDE"
 
     # Captura o valor em R$ da Bandeira (funciona para B3, A4 Cativo, Ponta e F.Ponta)
-    # A regex tolera quebra de linha (\n) e captura as 4 colunas numéricas independente de terem vírgula ou não
+    # A regex tolera a inclusão do "de" e extrai a 4ª coluna numérica
     linhas_bandeira = re.findall(
-        r"(?:(?:Adicional|Adic\.?)\s*Band(?:eira)?|CDE Escassez)(?:[^\n]*?\n)?[^\n]*?kWh\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)",
+        r"(?:(?:Adicional|Adic\.?)\s*(?:de\s+)?Band(?:eira)?|CDE Escassez)(?:[^\n]*?\n)?[^\n]*?kWh\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)\s+([\d\.,]+)",
         texto,
         re.IGNORECASE
     )

@@ -14,7 +14,7 @@ import gc
 from openpyxl.styles import Font, PatternFill, Alignment
 
 st.set_page_config(page_title="Gestão de Energia - DAE", layout="wide", page_icon="⚡")
-
+# teste    Victor
 # --- 1. SISTEMA DE LOGIN DAE ---
 def check_password():
     """Valida se o usuário e senha digitados batem com os dados do Secrets."""

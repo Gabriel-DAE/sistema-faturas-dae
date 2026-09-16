@@ -356,6 +356,15 @@ def carregar_dados():
     # Puxa os parâmetros cadastrados
     TARIFA_TE_PONTA_REF, TARIFA_TE_FPONTA_REF, TARIFA_TUSD_PONTA_REF, TARIFA_TUSD_FPONTA_REF, BAND_AMARELA, BAND_VERM1, BAND_VERM2 = obter_parametros_tarifas()
 
+    # 1. VALOR TOTAL DE ENERGIA (CPFL + CEMIG c/ ICMS)
+    df['Valor Total de Energia'] = df['Valor Total Fatura'] + df['Valor Total ACL c/ ICMS (R$)']
+
+    # 2. CÁLCULO DA ESTIMATIVA ACR E ECONOMIA ACL (LEITURA INTELIGENTE DE BANDEIRAS)
+    is_livre = df['Classificação'].astype(str).str.contains('Livre|ACL', case=False, na=False)
+
+    # Puxa os parâmetros cadastrados
+    TARIFA_TE_PONTA_REF, TARIFA_TE_FPONTA_REF, TARIFA_TUSD_PONTA_REF, TARIFA_TUSD_FPONTA_REF, BAND_AMARELA, BAND_VERM1, BAND_VERM2 = obter_parametros_tarifas()
+
     # --- INÍCIO DA VETORIZAÇÃO (ALTA PERFORMANCE) ---
     import numpy as np # Adicionamos o numpy para os cálculos ultrarrápidos
     
@@ -1648,35 +1657,31 @@ with aba_controle:
 
                 st.divider()
                 with st.expander("📜 Gestão de Envios (Visualizar ou Reverter) - CPFL"):
-                    if not df_enviados_cpfl.empty:
+                    if not df_enviados_cpfl.empty: # <- VARIÁVEL CORRIGIDA AQUI
+                        # E CORRIGIDA AQUI TAMBÉM:
                         df_hist_nomes = pd.merge(df_enviados_cpfl, df_faturas[['UC', 'Nome da Unidade']].drop_duplicates(), left_on='unidade_consumidora', right_on='UC', how='left')
                         df_hist_nomes['data_envio'] = pd.to_datetime(df_hist_nomes['data_envio']).dt.strftime('%d/%m/%Y %H:%M')
+                        st.write("Selecione para **REVERTER** (faturas voltam para a lista acima):")
                         
-                        st.dataframe(
+                        evento_hist = st.dataframe(
                             df_hist_nomes[['id', 'Nome da Unidade', 'unidade_consumidora', 'mes_referencia', 'data_envio', 'valor_fatura']],
-                            use_container_width=True, hide_index=True,
-                            column_config={"id": None, "valor_fatura": st.column_config.NumberColumn("Valor (R$)", format="%.2f")}
+                            use_container_width=True, hide_index=True, on_select="rerun", selection_mode="multi-row",
+                            column_config={"id": None, "valor_fatura": st.column_config.NumberColumn("Valor (R$)", format="%.2f")},
+                            key=f"tabela_reversao_cpfl_{'_'.join(meses_selecionados)}" # <- AJUSTE DE CHAVE PARA NÃO DAR CONFLITO
                         )
                         
-                        # Cria lista de busca
-                        opcoes_rev_cpfl = df_hist_nomes.apply(lambda x: f"{x['unidade_consumidora']} - {x['mes_referencia']} (R$ {x['valor_fatura']}) | ID: {x['id']}", axis=1).tolist()
-                        
-                        faturas_rev_cpfl = st.multiselect(
-                            "🔍 Busque as faturas para **REVERTER** (voltarão para a lista acima):",
-                            options=opcoes_rev_cpfl,
-                            placeholder="Selecione as faturas enviadas para remover do Histórico..."
-                        )
-                        
-                        if faturas_rev_cpfl:
-                            ids_reverter = [int(f.split("| ID: ")[-1]) for f in faturas_rev_cpfl]
-                            if st.button(f"🔄 Reverter {len(ids_reverter)} selecionada(s)", type="secondary"):
-                                cursor = conexao.cursor()
-                                cursor.execute(f"DELETE FROM historico_financeiro WHERE id IN ({','.join(['%s']*len(ids_reverter))})", tuple(ids_reverter))
-                                conexao.commit()
-                                st.rerun()
+                        if len(evento_hist.selection.rows) > 0:
+                            linhas_validas = [i for i in evento_hist.selection.rows if i < len(df_hist_nomes)]
+                            if len(linhas_validas) > 0:
+                                ids_reverter = [int(df_hist_nomes.iloc[i]['id']) for i in linhas_validas]
+                                if st.button(f"🔄 Reverter {len(ids_reverter)} selecionada(s)", type="secondary"):
+                                    cursor = conexao.cursor()
+                                    cursor.execute(f"DELETE FROM historico_financeiro WHERE id IN ({','.join(['%s']*len(ids_reverter))})", tuple(ids_reverter))
+                                    conexao.commit()
+                                    st.rerun()
                     else:
                         st.info("Nenhum envio registrado para a CPFL no(s) mês(es) selecionado(s).")
-                        
+
             # --- SUB-ABA 2: RELATÓRIO CEMIG ---
             with tab_rel_cemig:
                 # Isola as faturas que possuem valor na CEMIG
@@ -1899,12 +1904,15 @@ with aba_controle:
                 st.divider()
                 with st.expander("📜 Gestão de Envios (Visualizar ou Reverter) - CEMIG"):
                     if not df_enviados_cemig.empty:
+                        # Cruzamos com df_cadastro para puxar o nome da unidade para a visualização
                         df_hist_nomes_cemig = pd.merge(df_enviados_cemig, df_cadastro[['unidade_consumidora', 'nome_unidade']], on='unidade_consumidora', how='left')
                         df_hist_nomes_cemig['data_envio'] = pd.to_datetime(df_hist_nomes_cemig['data_envio']).dt.strftime('%d/%m/%Y %H:%M')
                         
-                        st.dataframe(
+                        st.write("Selecione para **REVERTER** (faturas voltam para a lista de lote pendente acima):")
+                        
+                        evento_hist_cemig = st.dataframe(
                             df_hist_nomes_cemig[['id', 'nome_unidade', 'unidade_consumidora', 'mes_referencia', 'data_envio', 'valor_fatura']],
-                            use_container_width=True, hide_index=True,
+                            use_container_width=True, hide_index=True, on_select="rerun", selection_mode="multi-row",
                             column_config={
                                 "id": None, 
                                 "nome_unidade": "Nome da Unidade",
@@ -1912,25 +1920,19 @@ with aba_controle:
                                 "mes_referencia": "Referência",
                                 "data_envio": "Data do Envio",
                                 "valor_fatura": st.column_config.NumberColumn("Valor Enviado (R$)", format="%.2f")
-                            }
+                            },
+                            key=f"tabela_reversao_cemig_{'_'.join(meses_selecionados)}"
                         )
                         
-                        # Cria lista de busca
-                        opcoes_rev_cemig = df_hist_nomes_cemig.apply(lambda x: f"{x['unidade_consumidora']} - {x['mes_referencia']} (R$ {x['valor_fatura']}) | ID: {x['id']}", axis=1).tolist()
-                        
-                        faturas_rev_cemig = st.multiselect(
-                            "🔍 Busque as faturas para **REVERTER** (voltarão para a lista de lote pendente acima):",
-                            options=opcoes_rev_cemig,
-                            placeholder="Selecione as faturas enviadas para remover do Histórico..."
-                        )
-                        
-                        if faturas_rev_cemig:
-                            ids_reverter_cemig = [int(f.split("| ID: ")[-1]) for f in faturas_rev_cemig]
-                            if st.button(f"🔄 Reverter {len(ids_reverter_cemig)} fatura(s) da CEMIG", type="secondary"):
-                                cursor = conexao.cursor()
-                                cursor.execute(f"DELETE FROM historico_financeiro WHERE id IN ({','.join(['%s']*len(ids_reverter_cemig))})", tuple(ids_reverter_cemig))
-                                conexao.commit()
-                                st.rerun()
+                        if len(evento_hist_cemig.selection.rows) > 0:
+                            linhas_validas_cemig = [i for i in evento_hist_cemig.selection.rows if i < len(df_hist_nomes_cemig)]
+                            if len(linhas_validas_cemig) > 0:
+                                ids_reverter_cemig = [int(df_hist_nomes_cemig.iloc[i]['id']) for i in linhas_validas_cemig]
+                                if st.button(f"🔄 Reverter {len(ids_reverter_cemig)} fatura(s) da CEMIG", type="secondary", key="btn_reverte_cemig"):
+                                    cursor = conexao.cursor()
+                                    cursor.execute(f"DELETE FROM historico_financeiro WHERE id IN ({','.join(['%s']*len(ids_reverter_cemig))})", tuple(ids_reverter_cemig))
+                                    conexao.commit()
+                                    st.rerun()
                     else:
                         st.info("Nenhum envio registrado para as faturas da CEMIG no(s) mês(es) selecionado(s).")
             
@@ -2092,9 +2094,9 @@ with aba_dados:
                 df_filtrado['Nome da Unidade'].astype(str).str.contains(filtro_busca, case=False, na=False)
             ]
 
-        # --- TABELA DE VISUALIZAÇÃO SEGURA (ESTÁTICA) ---
-        st.dataframe(
-            df_filtrado, 
+        # --- TABELA NATIVA (AGORA COM DADOS FILTRADOS) ---
+        evento = st.dataframe(
+            df_filtrado, # Usa a tabela já filtrada
             hide_index=True,
             use_container_width=True,
             height=400,
@@ -2103,23 +2105,16 @@ with aba_dados:
                 "Data Referência Oculta": None,
                 "Valor Total Cons. Reat": None,
                 "Valor Total Dem. Reat.": None
-            }
+            },
+            selection_mode="multi-row",
+            on_select="rerun"
         )
         
-        st.markdown("🔴 **Ações em Faturas (Excluir/Limpar)**")
+        linhas_selecionadas = evento.selection.rows
         
-        # Cria uma lista de busca amigável (UC - Mês (Nome) | ID)
-        opcoes_faturas = df_filtrado.apply(lambda x: f"{x['UC']} - {x['Mês Referência']} ({x['Nome da Unidade']}) | ID: {x['id']}", axis=1).tolist()
-        
-        faturas_selecionadas = st.multiselect(
-            "🔍 Busque e selecione as faturas abaixo para apagar/alterar:",
-            options=opcoes_faturas,
-            placeholder="Clique aqui e digite a UC ou Mês..."
-        )
-        
-        if faturas_selecionadas:
-            # Extrai apenas o ID escondido no final do texto
-            ids_para_excluir = [int(f.split("| ID: ")[-1]) for f in faturas_selecionadas]
+        if len(linhas_selecionadas) > 0:
+            # Puxa o ID correto da tabela filtrada
+            ids_para_excluir = [int(df_filtrado.iloc[i]['id']) for i in linhas_selecionadas]
             qtd_selecionada = len(ids_para_excluir)
             
             st.markdown(f"🔴 **{qtd_selecionada} Fatura(s) Selecionada(s)** para modificação/exclusão.")
@@ -2131,6 +2126,7 @@ with aba_dados:
             else:
                 st.warning(f"⚠️ TEM CERTEZA? Escolha o que deseja fazer com as {qtd_selecionada} fatura(s) selecionada(s):")
                 
+                # --- NOVO MENU DE OPÇÕES DE EXCLUSÃO ---
                 opcao_exclusao = st.radio(
                     "⚙️ Opções de Exclusão:",
                     [
@@ -2140,6 +2136,7 @@ with aba_dados:
                     ]
                 )
                 
+                # Ajustei o tamanho das colunas para caber os novos botões confortavelmente
                 col1, col2, _ = st.columns([1.5, 1.5, 3]) 
                 
                 with col1:
@@ -2147,8 +2144,10 @@ with aba_dados:
                         conexao = obter_conexao()
                         c = conexao.cursor()
                         
+                        # Preparação SQL para o Postgres (%s)
                         placeholders = ','.join('%s' for _ in ids_para_excluir)
                         
+                        # --- LÓGICA CONDICIONAL DE EXCLUSÃO ---
                         if "Completo" in opcao_exclusao:
                             query = f"DELETE FROM faturas_cpfl WHERE id IN ({placeholders})"
                             c.execute(query, tuple(ids_para_excluir))
@@ -2184,6 +2183,7 @@ with aba_dados:
                         conexao.close()
                         
                         carregar_dados.clear()
+                        
                         st.session_state['confirmar_exclusao_ids'] = None
                         st.success(msg_sucesso)
                         st.rerun()

@@ -1651,22 +1651,24 @@ with aba_controle:
                     if not df_enviados_cpfl.empty:
                         df_hist_nomes = pd.merge(df_enviados_cpfl, df_faturas[['UC', 'Nome da Unidade']].drop_duplicates(), left_on='unidade_consumidora', right_on='UC', how='left')
                         df_hist_nomes['data_envio'] = pd.to_datetime(df_hist_nomes['data_envio']).dt.strftime('%d/%m/%Y %H:%M')
-                        st.write("Marque a caixa na primeira coluna para **REVERTER** (faturas voltam para a lista acima):")
                         
-                        df_hist_nomes.insert(0, "Reverter", False)
-                        
-                        tabela_rev_cpfl = st.data_editor(
-                            df_hist_nomes[['Reverter', 'id', 'Nome da Unidade', 'unidade_consumidora', 'mes_referencia', 'data_envio', 'valor_fatura']],
+                        st.dataframe(
+                            df_hist_nomes[['id', 'Nome da Unidade', 'unidade_consumidora', 'mes_referencia', 'data_envio', 'valor_fatura']],
                             use_container_width=True, hide_index=True,
-                            disabled=['id', 'Nome da Unidade', 'unidade_consumidora', 'mes_referencia', 'data_envio', 'valor_fatura'],
-                            column_config={"id": None, "valor_fatura": st.column_config.NumberColumn("Valor (R$)", format="%.2f")},
-                            key=f"tabela_reversao_cpfl_{'_'.join(meses_selecionados)}"
+                            column_config={"id": None, "valor_fatura": st.column_config.NumberColumn("Valor (R$)", format="%.2f")}
                         )
                         
-                        faturas_rev_cpfl = tabela_rev_cpfl[tabela_rev_cpfl["Reverter"] == True]
+                        # Cria lista de busca
+                        opcoes_rev_cpfl = df_hist_nomes.apply(lambda x: f"{x['unidade_consumidora']} - {x['mes_referencia']} (R$ {x['valor_fatura']}) | ID: {x['id']}", axis=1).tolist()
                         
-                        if not faturas_rev_cpfl.empty:
-                            ids_reverter = faturas_rev_cpfl["id"].tolist()
+                        faturas_rev_cpfl = st.multiselect(
+                            "🔍 Busque as faturas para **REVERTER** (voltarão para a lista acima):",
+                            options=opcoes_rev_cpfl,
+                            placeholder="Selecione as faturas enviadas para remover do Histórico..."
+                        )
+                        
+                        if faturas_rev_cpfl:
+                            ids_reverter = [int(f.split("| ID: ")[-1]) for f in faturas_rev_cpfl]
                             if st.button(f"🔄 Reverter {len(ids_reverter)} selecionada(s)", type="secondary"):
                                 cursor = conexao.cursor()
                                 cursor.execute(f"DELETE FROM historico_financeiro WHERE id IN ({','.join(['%s']*len(ids_reverter))})", tuple(ids_reverter))
@@ -1674,7 +1676,7 @@ with aba_controle:
                                 st.rerun()
                     else:
                         st.info("Nenhum envio registrado para a CPFL no(s) mês(es) selecionado(s).")
-
+                        
             # --- SUB-ABA 2: RELATÓRIO CEMIG ---
             with tab_rel_cemig:
                 # Isola as faturas que possuem valor na CEMIG
@@ -1900,14 +1902,9 @@ with aba_controle:
                         df_hist_nomes_cemig = pd.merge(df_enviados_cemig, df_cadastro[['unidade_consumidora', 'nome_unidade']], on='unidade_consumidora', how='left')
                         df_hist_nomes_cemig['data_envio'] = pd.to_datetime(df_hist_nomes_cemig['data_envio']).dt.strftime('%d/%m/%Y %H:%M')
                         
-                        st.write("Marque a caixa na primeira coluna para **REVERTER** (faturas voltam para a lista de lote pendente acima):")
-                        
-                        df_hist_nomes_cemig.insert(0, "Reverter", False)
-                        
-                        tabela_rev_cemig = st.data_editor(
-                            df_hist_nomes_cemig[['Reverter', 'id', 'nome_unidade', 'unidade_consumidora', 'mes_referencia', 'data_envio', 'valor_fatura']],
+                        st.dataframe(
+                            df_hist_nomes_cemig[['id', 'nome_unidade', 'unidade_consumidora', 'mes_referencia', 'data_envio', 'valor_fatura']],
                             use_container_width=True, hide_index=True,
-                            disabled=['id', 'nome_unidade', 'unidade_consumidora', 'mes_referencia', 'data_envio', 'valor_fatura'],
                             column_config={
                                 "id": None, 
                                 "nome_unidade": "Nome da Unidade",
@@ -1915,15 +1912,21 @@ with aba_controle:
                                 "mes_referencia": "Referência",
                                 "data_envio": "Data do Envio",
                                 "valor_fatura": st.column_config.NumberColumn("Valor Enviado (R$)", format="%.2f")
-                            },
-                            key=f"tabela_reversao_cemig_{'_'.join(meses_selecionados)}"
+                            }
                         )
                         
-                        faturas_rev_cemig = tabela_rev_cemig[tabela_rev_cemig["Reverter"] == True]
+                        # Cria lista de busca
+                        opcoes_rev_cemig = df_hist_nomes_cemig.apply(lambda x: f"{x['unidade_consumidora']} - {x['mes_referencia']} (R$ {x['valor_fatura']}) | ID: {x['id']}", axis=1).tolist()
                         
-                        if not faturas_rev_cemig.empty:
-                            ids_reverter_cemig = faturas_rev_cemig["id"].tolist()
-                            if st.button(f"🔄 Reverter {len(ids_reverter_cemig)} fatura(s) da CEMIG", type="secondary", key="btn_reverte_cemig"):
+                        faturas_rev_cemig = st.multiselect(
+                            "🔍 Busque as faturas para **REVERTER** (voltarão para a lista de lote pendente acima):",
+                            options=opcoes_rev_cemig,
+                            placeholder="Selecione as faturas enviadas para remover do Histórico..."
+                        )
+                        
+                        if faturas_rev_cemig:
+                            ids_reverter_cemig = [int(f.split("| ID: ")[-1]) for f in faturas_rev_cemig]
+                            if st.button(f"🔄 Reverter {len(ids_reverter_cemig)} fatura(s) da CEMIG", type="secondary"):
                                 cursor = conexao.cursor()
                                 cursor.execute(f"DELETE FROM historico_financeiro WHERE id IN ({','.join(['%s']*len(ids_reverter_cemig))})", tuple(ids_reverter_cemig))
                                 conexao.commit()
@@ -2089,15 +2092,12 @@ with aba_dados:
                 df_filtrado['Nome da Unidade'].astype(str).str.contains(filtro_busca, case=False, na=False)
             ]
 
-        # --- TABELA NATIVA (AGORA COM DADOS FILTRADOS) ---
-        df_filtrado.insert(0, "Selecionar", False)
-        
-        tabela_editavel = st.data_editor(
-            df_filtrado,
+        # --- TABELA DE VISUALIZAÇÃO SEGURA (ESTÁTICA) ---
+        st.dataframe(
+            df_filtrado, 
             hide_index=True,
             use_container_width=True,
             height=400,
-            disabled=df_filtrado.columns.drop("Selecionar"), # Bloqueia edição nas outras colunas
             column_config={
                 "id": None, 
                 "Data Referência Oculta": None,
@@ -2106,10 +2106,20 @@ with aba_dados:
             }
         )
         
-        faturas_marcadas = tabela_editavel[tabela_editavel["Selecionar"] == True]
+        st.markdown("🔴 **Ações em Faturas (Excluir/Limpar)**")
         
-        if not faturas_marcadas.empty:
-            ids_para_excluir = faturas_marcadas["id"].tolist()
+        # Cria uma lista de busca amigável (UC - Mês (Nome) | ID)
+        opcoes_faturas = df_filtrado.apply(lambda x: f"{x['UC']} - {x['Mês Referência']} ({x['Nome da Unidade']}) | ID: {x['id']}", axis=1).tolist()
+        
+        faturas_selecionadas = st.multiselect(
+            "🔍 Busque e selecione as faturas abaixo para apagar/alterar:",
+            options=opcoes_faturas,
+            placeholder="Clique aqui e digite a UC ou Mês..."
+        )
+        
+        if faturas_selecionadas:
+            # Extrai apenas o ID escondido no final do texto
+            ids_para_excluir = [int(f.split("| ID: ")[-1]) for f in faturas_selecionadas]
             qtd_selecionada = len(ids_para_excluir)
             
             st.markdown(f"🔴 **{qtd_selecionada} Fatura(s) Selecionada(s)** para modificação/exclusão.")

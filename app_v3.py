@@ -1696,8 +1696,8 @@ with aba_controle:
                     engine, params=tuple(meses_selecionados)
                 )
                 
-                df_mes_cemig['Chave_Fatura'] = df_mes_cemig['UC'].astype(str) + "_" + df_mes_cemig['Mês Referência'].astype(str)
-                df_enviados_cemig['Chave_Fatura'] = df_enviados_cemig['unidade_consumidora'].astype(str) + "_" + df_enviados_cemig['mes_referencia'].astype(str)
+                df_mes_cemig['Chave_Fatura'] = df_mes_cemig['UC'].astype(str) + "_" + df_mes_cemig['Mês Referência'].astype(str) + "_" + df_mes_cemig['Valor Total ACL (R$)'].round(2).astype(str)
+                df_enviados_cemig['Chave_Fatura'] = df_enviados_cemig['unidade_consumidora'].astype(str) + "_" + df_enviados_cemig['mes_referencia'].astype(str) + "_" + df_enviados_cemig['valor_fatura'].round(2).astype(str)
                 faturas_ja_enviadas_cemig = df_enviados_cemig['Chave_Fatura'].tolist()
                 
                 df_pend_cemig = df_mes_cemig[~df_mes_cemig['Chave_Fatura'].isin(faturas_ja_enviadas_cemig)].copy()
@@ -2114,9 +2114,90 @@ with aba_dados:
         linhas_selecionadas = evento.selection.rows
         
         if len(linhas_selecionadas) > 0:
-            # Puxa o ID correto da tabela filtrada
             ids_para_excluir = [int(df_filtrado.iloc[i]['id']) for i in linhas_selecionadas]
             qtd_selecionada = len(ids_para_excluir)
+            
+            # --- NOVO BLOCO: EDIÇÃO DO MÊS DE REFERÊNCIA ---
+            if qtd_selecionada == 1:
+                linha_sel = df_filtrado.iloc[linhas_selecionadas[0]]
+                id_sel = int(linha_sel['id'])
+                mes_atual_sel = str(linha_sel['Mês Referência'])
+                uc_sel = str(linha_sel['UC'])
+                nf_cemig_sel = str(linha_sel.get('Nota Fiscal CEMIG', '') or '')
+                
+                with st.expander(f"✏️ Alterar Mês de Referência da Fatura Selecionada (UC: {uc_sel} | NF CEMIG: {nf_cemig_sel})"):
+                    c_ref1, c_ref2, c_ref3 = st.columns([1.5, 2.5, 1.5])
+                    novo_mes_ref = c_ref1.text_input("Novo Mês (Ex: MAI/2026):", value=mes_atual_sel, key=f"input_mes_{id_sel}").strip().upper()
+                    modo_alteracao = c_ref2.radio(
+                        "Como aplicar a alteração?",
+                        [
+                            "Manter como linha separada no mês de destino",
+                            "Mesclar na linha existente do mês de destino (se houver vaga CEMIG)"
+                        ],
+                        key=f"radio_mes_{id_sel}"
+                    )
+                    c_ref3.markdown("<div style='margin-top: 28px;'></div>", unsafe_allow_html=True)
+                    if c_ref3.button("💾 Salvar Novo Mês", type="primary", use_container_width=True, key=f"btn_mes_{id_sel}"):
+                        if not re.match(r"^[A-Z]{3}/\d{4}$", novo_mes_ref):
+                            st.error("⚠️ Formato inválido! Use o padrão MÊS/ANO (ex: MAI/2026).")
+                        else:
+                            conn_ref = obter_conexao()
+                            cur_ref = conn_ref.cursor()
+                            
+                            # Verifica se pode mesclar caso o usuário tenha escolhido a 2ª opção
+                            id_destino_vago = None
+                            if "Mesclar" in modo_alteracao:
+                                cur_ref.execute("""
+                                    SELECT id FROM faturas_cpfl 
+                                    WHERE unidade_consumidora = %s AND mes_referencia = %s 
+                                      AND (valor_total_acl IS NULL OR valor_total_acl = 0)
+                                      AND id != %s
+                                    LIMIT 1
+                                """, (uc_sel, novo_mes_ref, id_sel))
+                                res_vago = cur_ref.fetchone()
+                                if res_vago:
+                                    id_destino_vago = res_vago[0]
+                            
+                            if id_destino_vago:
+                                # Transfere os dados da CEMIG para a linha da CPFL que estava esperando no mês de destino
+                                cur_ref.execute("""
+                                    UPDATE faturas_cpfl dest SET
+                                        uc_cemig = orig.uc_cemig,
+                                        data_vencimento_acl = orig.data_vencimento_acl,
+                                        consumo_energia_acl_kwh = orig.consumo_energia_acl_kwh,
+                                        tarifa_energia_acl = orig.tarifa_energia_acl,
+                                        valor_energia_acl = orig.valor_energia_acl,
+                                        valor_icms_acl = orig.valor_icms_acl,
+                                        valor_total_acl = orig.valor_total_acl,
+                                        valor_total_acl_com_icms = orig.valor_total_acl_com_icms,
+                                        nota_fiscal_cemig = orig.nota_fiscal_cemig,
+                                        data_emissao_cemig = orig.data_emissao_cemig,
+                                        irpj_retido_acl = orig.irpj_retido_acl
+                                    FROM faturas_cpfl orig
+                                    WHERE dest.id = %s AND orig.id = %s
+                                """, (id_destino_vago, id_sel))
+                                
+                                # Se a linha de origem só tinha dados da CEMIG, apaga a linha sobressalente; se tinha CPFL, limpa apenas a CEMIG
+                                if float(linha_sel.get('Valor Total Fatura', 0.0) or 0.0) == 0.0:
+                                    cur_ref.execute("DELETE FROM faturas_cpfl WHERE id = %s", (id_sel,))
+                                else:
+                                    cur_ref.execute("""
+                                        UPDATE faturas_cpfl SET
+                                            data_vencimento_acl = NULL, consumo_energia_acl_kwh = 0.0, tarifa_energia_acl = 0.0,
+                                            valor_energia_acl = 0.0, valor_icms_acl = 0.0, valor_total_acl = 0.0,
+                                            valor_total_acl_com_icms = 0.0, irpj_retido_acl = 0.0,
+                                            nota_fiscal_cemig = NULL, data_emissao_cemig = NULL
+                                        WHERE id = %s
+                                    """, (id_sel,))
+                            else:
+                                # Apenas atualiza o Mês de Referência da linha atual
+                                cur_ref.execute("UPDATE faturas_cpfl SET mes_referencia = %s WHERE id = %s", (novo_mes_ref, id_sel))
+                                
+                            conn_ref.commit()
+                            conn_ref.close()
+                            carregar_dados.clear()
+                            st.success(f"✅ Mês de referência atualizado para {novo_mes_ref}!")
+                            st.rerun()
             
             st.markdown(f"🔴 **{qtd_selecionada} Fatura(s) Selecionada(s)** para modificação/exclusão.")
             
@@ -2498,14 +2579,40 @@ with aba_pdf:
                                 d_cemig = processar_pdf_cemig(arquivo)
                                 uc_alvo = d_cemig['unidade_consumidora']
                                 mes_alvo = d_cemig['mes_referencia']
+                                nf_nova = str(d_cemig.get('nota_fiscal_cemig') or '').strip()
                                 
-                                # Verifica se a linha da CPFL para essa UC e Mês já existe
-                                c.execute("SELECT id FROM faturas_cpfl WHERE unidade_consumidora = %s AND mes_referencia = %s", (uc_alvo, mes_alvo))
-                                row_existente = c.fetchone()
+                                # 1. Verifica se esta exata Nota Fiscal da CEMIG já foi cadastrada para esta UC
+                                if nf_nova:
+                                    c.execute("SELECT id FROM faturas_cpfl WHERE unidade_consumidora = %s AND nota_fiscal_cemig = %s", (uc_alvo, nf_nova))
+                                    if c.fetchone():
+                                        duplicadas += 1
+                                        barra_progresso.progress((i + 1) / total_arquivos)
+                                        continue
+
+                                # 2. Busca registros existentes para a UC e Mês de Referência
+                                c.execute("""
+                                    SELECT id, nota_fiscal_cemig, valor_total_acl, classificacao 
+                                    FROM faturas_cpfl 
+                                    WHERE unidade_consumidora = %s AND mes_referencia = %s
+                                    ORDER BY id ASC
+                                """, (uc_alvo, mes_alvo))
+                                rows_existentes = c.fetchall()
                                 
-                                if row_existente:
-                                    # ATUALIZA A MESMA LINHA EXISTENTE
-                                    id_linha = row_existente[0]
+                                id_vaga_cemig = None
+                                classif_herdar = 'Mercado Livre - ACL'
+                                
+                                for r in rows_existentes:
+                                    r_id, r_nf_cemig, r_val_acl, r_class = r
+                                    if r_class and r_class != 'Mercado Livre - ACL':
+                                        classif_herdar = r_class
+                                    # Verifica se a linha está com o espaço da CEMIG vazio (ex: linha criada pela CPFL)
+                                    nf_limpa = str(r_nf_cemig or '').strip()
+                                    val_limpo = float(r_val_acl or 0.0)
+                                    if not nf_limpa and val_limpo == 0.0 and id_vaga_cemig is None:
+                                        id_vaga_cemig = r_id
+                                
+                                if id_vaga_cemig is not None:
+                                    # Atualiza a linha existente que ainda não possuía fatura CEMIG
                                     c.execute("""
                                         UPDATE faturas_cpfl SET
                                             uc_cemig = %s,
@@ -2521,31 +2628,25 @@ with aba_pdf:
                                             irpj_retido_acl = %s
                                         WHERE id = %s
                                     """, (
-                                        d_cemig['uc_cemig'],
-                                        d_cemig['data_vencimento_acl'],
-                                        d_cemig['consumo_energia_acl_kwh'],
-                                        d_cemig['tarifa_energia_acl'],
-                                        d_cemig['valor_energia_acl'],
-                                        d_cemig['valor_icms_acl'],
-                                        d_cemig['valor_total_acl'],
-                                        d_cemig['valor_total_acl_com_icms'],
-                                        d_cemig['nota_fiscal_cemig'],
-                                        d_cemig['data_emissao_cemig'],
-                                        d_cemig['irpj_retido_acl'],
-                                        id_linha
+                                        d_cemig['uc_cemig'], d_cemig['data_vencimento_acl'],
+                                        d_cemig['consumo_energia_acl_kwh'], d_cemig['tarifa_energia_acl'],
+                                        d_cemig['valor_energia_acl'], d_cemig['valor_icms_acl'],
+                                        d_cemig['valor_total_acl'], d_cemig['valor_total_acl_com_icms'],
+                                        d_cemig['nota_fiscal_cemig'], d_cemig['data_emissao_cemig'],
+                                        d_cemig['irpj_retido_acl'], id_vaga_cemig
                                     ))
                                     sucessos += 1
                                 else:
-                                    # Se a fatura da CPFL ainda não foi carregada, cria a linha inicial
+                                    # Cria uma NOVA LINHA (seja porque a CPFL ainda não subiu, ou porque é Fatura Complementar com NF diferente)
                                     c.execute("""
                                         INSERT INTO faturas_cpfl (
                                             unidade_consumidora, uc_cemig, nome_unidade, atividade, mes_referencia, classificacao,
                                             data_vencimento_acl, consumo_energia_acl_kwh, tarifa_energia_acl, valor_energia_acl,
                                             valor_icms_acl, valor_total_acl, valor_total_acl_com_icms, irpj_retido_acl,
                                             nota_fiscal_cemig, data_emissao_cemig
-                                        ) VALUES (%s, %s, %s, %s, %s, 'Mercado Livre - ACL', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                                     """, (
-                                        uc_alvo, d_cemig['uc_cemig'], d_cemig['nome_unidade'], d_cemig['atividade'], mes_alvo,
+                                        uc_alvo, d_cemig['uc_cemig'], d_cemig['nome_unidade'], d_cemig['atividade'], mes_alvo, classif_herdar,
                                         d_cemig['data_vencimento_acl'], d_cemig['consumo_energia_acl_kwh'],
                                         d_cemig['tarifa_energia_acl'], d_cemig['valor_energia_acl'],
                                         d_cemig['valor_icms_acl'], d_cemig['valor_total_acl'], d_cemig['valor_total_acl_com_icms'],

@@ -2071,14 +2071,21 @@ with aba_dados:
         # --- NOVO PAINEL DE FILTROS ---
         st.write("") # Dá um espacinho
         
-        # Dividimos em 4 colunas agora
-        col_f1, col_f2, col_f3, col_f4 = st.columns(4)
+        # Dividimos em 5 colunas para acomodar o filtro de UC CEMIG
+        col_f1, col_f2, col_f3, col_f4, col_f5 = st.columns(5)
         
+        # Limpa valores vazios/nulos da coluna UC CEMIG para montar a lista de seleção limpa
+        opcoes_uc_cemig = sorted([
+            str(x).strip() for x in df['UC CEMIG'].dropna().unique() 
+            if str(x).strip() not in ("", "None", "nan")
+        ]) if 'UC CEMIG' in df.columns else []
+
         # Cria as caixas de seleção buscando os dados únicos
         filtro_mes = col_f1.multiselect("📅 Filtrar por Referência", options=df['Mês Referência'].unique())
         filtro_classe = col_f2.multiselect("⚡ Filtrar Classificação", options=df['Classificação'].unique())
-        filtro_uc = col_f3.multiselect("📍 Filtrar por UC", options=df['UC'].unique())
-        filtro_busca = col_f4.text_input("🔍 Busca Livre", placeholder="Nome da unidade...")
+        filtro_uc = col_f3.multiselect("📍 Filtrar por UC (CPFL)", options=df['UC'].unique())
+        filtro_uc_cemig = col_f4.multiselect("🏢 Filtrar por UC CEMIG", options=opcoes_uc_cemig)
+        filtro_busca = col_f5.text_input("🔍 Busca Livre", placeholder="Nome da unidade...")
 
         # Aplica a "peneira" sequencial nos dados
         df_filtrado = df
@@ -2089,9 +2096,12 @@ with aba_dados:
             df_filtrado = df_filtrado[df_filtrado['Classificação'].isin(filtro_classe)]
         if filtro_uc:
             df_filtrado = df_filtrado[df_filtrado['UC'].isin(filtro_uc)]
+        if filtro_uc_cemig:
+            df_filtrado = df_filtrado[df_filtrado['UC CEMIG'].astype(str).str.strip().isin(filtro_uc_cemig)]
         if filtro_busca:
             df_filtrado = df_filtrado[
                 df_filtrado['UC'].astype(str).str.contains(filtro_busca, case=False, na=False) |
+                df_filtrado['UC CEMIG'].astype(str).str.contains(filtro_busca, case=False, na=False) |
                 df_filtrado['Nome da Unidade'].astype(str).str.contains(filtro_busca, case=False, na=False)
             ]
 

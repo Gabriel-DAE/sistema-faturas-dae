@@ -764,7 +764,7 @@ def processar_pdf_cemig(arquivo_pdf):
     if linha_energia:
         dados_cemig['consumo_energia_acl_kwh'] = limpar_numero(linha_energia.group(1))
         dados_cemig['tarifa_energia_acl'] = float(linha_energia.group(2).replace(',', '.'))
-        dados_cemig['valor_energia_acl'] = round(dados_cemig['consumo_energia_acl_kwh'] * dados_cemig['tarifa_energia_acl'], 2)
+        dados_cemig['valor_energia_acl'] = limpar_numero(linha_energia.group(3))
     else:
         dados_cemig['consumo_energia_acl_kwh'] = 0.0
         dados_cemig['tarifa_energia_acl'] = 0.0
